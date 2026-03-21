@@ -1,0 +1,93 @@
+{
+  "config": {
+    "label_time": "time",
+    "label_event": "event",
+    "eval_metric": "harrell_c",
+    "presets": "medium",
+    "num_trials": null,
+    "random_state": 0
+  },
+  "best_method_id": "deepsurv",
+  "best_params": {
+    "hidden_layers": "256",
+    "activation": "gelu",
+    "dropout": 0.2954363806240866,
+    "batch_norm": false,
+    "optimizer": "adamw",
+    "lr": 0.003335844315572309,
+    "weight_decay": 6.883500530797719e-06,
+    "batch_size": 128,
+    "max_epochs": 241,
+    "patience": 13,
+    "device": "auto"
+  },
+  "test_metrics": {
+    "uno_c": 0.5851122736930847,
+    "harrell_c": 0.6401326656341553,
+    "ibs": 0.18196575343608856,
+    "td_auc_25": 0.7341835498809814,
+    "td_auc_50": 0.6405237913131714,
+    "td_auc_75": 0.5932592153549194
+  },
+  "results": [
+    {
+      "method_id": "coxph",
+      "validation_score": 0.6099096139272054,
+      "fit_time_sec": 0.24856645899990326,
+      "n_trials_completed": 8,
+      "params": {
+        "alpha": 0.22420123713724419
+      },
+      "status": "success",
+      "error": null
+    },
+    {
+      "method_id": "coxnet",
+      "validation_score": 0.6093324820200602,
+      "fit_time_sec": 0.09444016699990243,
+      "n_trials_completed": 8,
+      "params": {
+        "alpha": 0.0003482802087028331,
+        "l1_ratio": 0.6635994074133232
+      },
+      "status": "success",
+      "error": null
+    },
+    {
+      "method_id": "rsf",
+      "validation_score": 0.5738006830215454,
+      "fit_time_sec": 5.717276500000025,
+      "n_trials_completed": 8,
+      "params": {
+        "n_estimators": 229,
+        "max_depth": null,
+        "min_samples_split": 14,
+        "min_samples_leaf": 6,
+        "max_features": "sqrt"
+      },
+      "status": "success",
+      "error": null
+    },
+    {
+      "method_id": "deepsurv",
+      "validation_score": 0.6153267621994019,
+      "fit_time_sec": 1.5114013749998776,
+      "n_trials_completed": 8,
+      "params": {
+        "hidden_layers": "256",
+        "activation": "gelu",
+        "dropout": 0.2954363806240866,
+        "batch_norm": false,
+        "optimizer": "adamw",
+        "lr": 0.003335844315572309,
+        "weight_decay": 6.883500530797719e-06,
+        "batch_size": 128,
+        "max_epochs": 241,
+        "patience": 13,
+        "device": "auto"
+      },
+      "status": "success",
+      "error": null
+    }
+  ]
+}

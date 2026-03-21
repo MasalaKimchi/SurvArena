@@ -1,0 +1,16 @@
+method_id: tabpfn_survival
+family: foundation
+library: tabpfn + scikit-survival
+notes: Experimental tabular foundation-model adapter using TabPFN embeddings with a CoxPH survival head.
+search_space:
+  n_estimators:
+    type: categorical
+    choices: [4, 8]
+  fit_mode:
+    type: categorical
+    choices: [fit_preprocessors, fit_with_cache]
+default_params:
+  n_estimators: 8
+  fit_mode: fit_preprocessors
+  device: auto
+  seed: 0

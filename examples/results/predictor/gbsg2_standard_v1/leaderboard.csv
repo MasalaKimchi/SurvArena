@@ -1,0 +1,5 @@
+method_id,validation_score,fit_time_sec,n_trials_completed,status,error,params
+deepsurv,0.6153267621994019,1.5114013749998776,8,success,,"{'hidden_layers': '256', 'activation': 'gelu', 'dropout': 0.2954363806240866, 'batch_norm': False, 'optimizer': 'adamw', 'lr': 0.003335844315572309, 'weight_decay': 6.883500530797719e-06, 'batch_size': 128, 'max_epochs': 241, 'patience': 13, 'device': 'auto'}"
+coxph,0.6099096139272054,0.24856645899990326,8,success,,{'alpha': 0.22420123713724419}
+coxnet,0.6093324820200602,0.09444016699990243,8,success,,"{'alpha': 0.0003482802087028331, 'l1_ratio': 0.6635994074133232}"
+rsf,0.5738006830215454,5.717276500000025,8,success,,"{'n_estimators': 229, 'max_depth': None, 'min_samples_split': 14, 'min_samples_leaf': 6, 'max_features': 'sqrt'}"

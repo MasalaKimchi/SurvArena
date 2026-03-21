@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import yaml
 
+from src.data.profiling import build_dataset_diagnostics, infer_feature_metadata, summarize_feature_types
 from src.data.schema import DatasetMetadata, SurvivalDataset
 
 
@@ -85,20 +86,6 @@ def _load_kkbox_placeholder() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
 
 def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     dataset_cfg = _load_dataset_config(repo_root / "configs", dataset_id)
-    metadata = DatasetMetadata(
-        dataset_id=dataset_cfg["dataset_id"],
-        name=dataset_cfg.get("name", dataset_cfg["dataset_id"]),
-        source=dataset_cfg.get("source", "unknown"),
-        task_type=dataset_cfg.get("task_type", "right_censored_survival"),
-        event_col=dataset_cfg.get("event_col", "event"),
-        time_col=dataset_cfg.get("time_col", "time"),
-        group_col=dataset_cfg.get("group_col"),
-        feature_types=dataset_cfg.get("feature_types", []),
-        split_strategy=dataset_cfg.get("split_strategy", "stratified_event"),
-        primary_metric=dataset_cfg.get("primary_metric", "uno_c"),
-        notes=dataset_cfg.get("notes", ""),
-        raw=dataset_cfg,
-    )
 
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,
@@ -116,6 +103,28 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     X = pd.DataFrame(X).reset_index(drop=True)
     time = np.asarray(time, dtype=float)
     event = np.asarray(event, dtype=int)
+    feature_metadata = infer_feature_metadata(X)
+    diagnostics = build_dataset_diagnostics(
+        X,
+        event=event,
+        feature_metadata=feature_metadata,
+    )
+    metadata = DatasetMetadata(
+        dataset_id=dataset_cfg["dataset_id"],
+        name=dataset_cfg.get("name", dataset_cfg["dataset_id"]),
+        source=dataset_cfg.get("source", "unknown"),
+        task_type=dataset_cfg.get("task_type", "right_censored_survival"),
+        event_col=dataset_cfg.get("event_col", "event"),
+        time_col=dataset_cfg.get("time_col", "time"),
+        group_col=dataset_cfg.get("group_col"),
+        feature_types=dataset_cfg.get("feature_types", summarize_feature_types(feature_metadata)),
+        feature_metadata=feature_metadata,
+        diagnostics=diagnostics,
+        split_strategy=dataset_cfg.get("split_strategy", "stratified_event"),
+        primary_metric=dataset_cfg.get("primary_metric", "uno_c"),
+        notes=dataset_cfg.get("notes", ""),
+        raw={**dataset_cfg, "diagnostics": diagnostics.to_dict()},
+    )
 
     dataset = SurvivalDataset(metadata=metadata, X=X, time=time, event=event)
     dataset.validate()

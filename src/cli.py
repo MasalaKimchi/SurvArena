@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--random-state", type=int, default=0)
     fit_parser.add_argument("--save-path", default=None, help="Optional artifact directory root.")
     fit_parser.add_argument("--dataset-name", default="user_dataset")
+    fit_parser.add_argument("--verbose", action="store_true", help="Show underlying tuning logs.")
+    fit_parser.add_argument(
+        "--enable-foundation-models",
+        action="store_true",
+        help="Include experimental tabular foundation-model adapters when supported.",
+    )
     return parser.parse_args()
 
 
@@ -35,6 +41,8 @@ def main() -> None:
             num_trials=args.num_trials,
             random_state=args.random_state,
             save_path=args.save_path,
+            verbose=args.verbose,
+            enable_foundation_models=args.enable_foundation_models,
         )
         predictor.fit(args.train, test_data=args.test, dataset_name=args.dataset_name)
         print(json.dumps(predictor.fit_summary(), indent=2, sort_keys=True))

@@ -56,6 +56,13 @@ Under this interface, SurvArena should automatically:
 - tune and rank models consistently
 - save artifacts, validation summaries, and reusable predictors
 
+The predictor surface now also aims to be notebook-friendly by default:
+
+- quiet training output unless `verbose=True`
+- leaderboard columns with explicit validation metric names
+- Kaplan-Meier comparison plotting after fitting
+- optional experimental tabular foundation-model inclusion via `enable_foundation_models=True`
+
 ## What It Covers (Milestone 1)
 
 - **Datasets:** SUPPORT, METABRIC, GBSG2, FLCHAIN, WHAS500, PBC (+ KKBox target track)
@@ -69,6 +76,13 @@ Under this interface, SurvArena should automatically:
 - **Datasets and metadata:** [`docs/datasets.md`](docs/datasets.md)
 - **Environment setup and smoke checks:** [`docs/environment.md`](docs/environment.md)
 - **Design blueprint:** [`blueprint.md`](blueprint.md)
+- **AutoGluon-style comparison and current gaps:** [`docs/autogluon_comparison.md`](docs/autogluon_comparison.md)
+- **Tabular foundation-model roadmap:** [`docs/tabular_foundation_models_todo.md`](docs/tabular_foundation_models_todo.md)
+
+## Examples
+
+- **Quickstart notebook:** [`examples/survival_predictor_quickstart.ipynb`](examples/survival_predictor_quickstart.ipynb)
+- **Examples overview:** [`examples/README.md`](examples/README.md)
 
 ## Quick Start
 

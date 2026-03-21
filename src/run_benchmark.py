@@ -158,42 +158,46 @@ def tune_hyperparameters(
     n_trials: int,
     seed: int,
     timeout_seconds: float | None = None,
+    quiet: bool = False,
 ) -> dict[str, Any]:
     import importlib
 
     optuna = importlib.import_module("optuna")
 
-    defaults = _searchable_default_params(method_cfg)
-    default_score = _inner_cv_primary_metric(
-        method_id=method_id,
-        params=_resolve_runtime_method_params(defaults, seed=seed),
-        fold_cache=fold_cache,
-        primary_metric=primary_metric,
-    )
-    if not method_cfg.get("search_space") or n_trials <= 0:
-        return {
-            "best_params": defaults,
-            "best_score": default_score,
-            "n_trials_completed": 0,
-        }
+    from src.utils.quiet import quiet_training_output
 
-    def objective(trial: Any) -> float:
-        params = method_param_suggestions(trial, method_cfg)
-        return _inner_cv_primary_metric(
+    with quiet_training_output(enabled=quiet):
+        defaults = _searchable_default_params(method_cfg)
+        default_score = _inner_cv_primary_metric(
             method_id=method_id,
-            params=_resolve_runtime_method_params(params, seed=seed),
+            params=_resolve_runtime_method_params(defaults, seed=seed),
             fold_cache=fold_cache,
             primary_metric=primary_metric,
         )
+        if not method_cfg.get("search_space") or n_trials <= 0:
+            return {
+                "best_params": defaults,
+                "best_score": default_score,
+                "n_trials_completed": 0,
+            }
 
-    sampler = optuna.samplers.TPESampler(seed=seed)
-    study = optuna.create_study(direction=_metric_optimization_direction(primary_metric), sampler=sampler)
-    study.optimize(
-        objective,
-        n_trials=n_trials,
-        timeout=timeout_seconds,
-        show_progress_bar=False,
-    )
+        def objective(trial: Any) -> float:
+            params = method_param_suggestions(trial, method_cfg)
+            return _inner_cv_primary_metric(
+                method_id=method_id,
+                params=_resolve_runtime_method_params(params, seed=seed),
+                fold_cache=fold_cache,
+                primary_metric=primary_metric,
+            )
+
+        sampler = optuna.samplers.TPESampler(seed=seed)
+        study = optuna.create_study(direction=_metric_optimization_direction(primary_metric), sampler=sampler)
+        study.optimize(
+            objective,
+            n_trials=n_trials,
+            timeout=timeout_seconds,
+            show_progress_bar=False,
+        )
 
     completed_trials = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
     if not completed_trials:
@@ -578,6 +582,7 @@ def _method_registry() -> dict[str, Any]:
     from src.methods.classical.coxph import CoxPHMethod
     from src.methods.deep.deepsurv import DeepSurvMethod
     from src.methods.deep.deepsurv_moco import DeepSurvMomentumMethod
+    from src.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
     from src.methods.tree.rsf import RSFMethod
 
     return {
@@ -586,6 +591,7 @@ def _method_registry() -> dict[str, Any]:
         "rsf": RSFMethod,
         "deepsurv": DeepSurvMethod,
         "deepsurv_moco": DeepSurvMomentumMethod,
+        "tabpfn_survival": TabPFNSurvivalMethod,
     }
 
 

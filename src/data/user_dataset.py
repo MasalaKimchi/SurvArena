@@ -6,20 +6,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from src.data.io import read_tabular_data
+from src.data.profiling import build_dataset_diagnostics, infer_feature_metadata, summarize_feature_types
 from src.data.schema import DatasetMetadata, SurvivalDataset
-
-
-def _read_tabular_data(data: pd.DataFrame | str | Path) -> pd.DataFrame:
-    if isinstance(data, pd.DataFrame):
-        return data.copy()
-
-    path = Path(data)
-    suffix = path.suffix.lower()
-    if suffix == ".csv":
-        return pd.read_csv(path)
-    if suffix in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
-    raise ValueError(f"Unsupported file format '{suffix}'. Expected CSV or Parquet.")
 
 
 def _coerce_event_indicator(series: pd.Series, event_col: str) -> np.ndarray:
@@ -52,16 +41,6 @@ def _coerce_event_indicator(series: pd.Series, event_col: str) -> np.ndarray:
     return mapped.astype(int).to_numpy(dtype=np.int32)
 
 
-def _infer_feature_types(frame: pd.DataFrame) -> list[str]:
-    feature_types: list[str] = []
-    if not frame.empty:
-        if len(frame.select_dtypes(include=[np.number, "bool"]).columns) > 0:
-            feature_types.append("numerical")
-        if len(frame.select_dtypes(exclude=[np.number, "bool"]).columns) > 0:
-            feature_types.append("categorical")
-    return feature_types
-
-
 def load_user_dataset(
     data: pd.DataFrame | str | Path,
     *,
@@ -72,7 +51,7 @@ def load_user_dataset(
     id_col: str | None = None,
     drop_columns: list[str] | None = None,
 ) -> SurvivalDataset:
-    frame = _read_tabular_data(data).reset_index(drop=True)
+    frame = read_tabular_data(data).reset_index(drop=True)
     missing = [col for col in (time_col, event_col) if col not in frame.columns]
     if missing:
         raise ValueError(f"Missing required survival label columns: {missing}")
@@ -91,6 +70,12 @@ def load_user_dataset(
     if X.empty:
         raise ValueError("No feature columns remain after removing label columns.")
 
+    feature_metadata = infer_feature_metadata(X)
+    diagnostics = build_dataset_diagnostics(
+        X,
+        event=np.asarray(event, dtype=np.int32),
+        feature_metadata=feature_metadata,
+    )
     metadata = DatasetMetadata(
         dataset_id=dataset_id,
         name=dataset_name or dataset_id,
@@ -98,7 +83,9 @@ def load_user_dataset(
         task_type="right_censored_survival",
         event_col=event_col,
         time_col=time_col,
-        feature_types=_infer_feature_types(X),
+        feature_types=summarize_feature_types(feature_metadata),
+        feature_metadata=feature_metadata,
+        diagnostics=diagnostics,
         split_strategy="fixed_split",
         primary_metric="harrell_c",
         notes="User-provided dataset loaded through SurvivalPredictor.",
@@ -107,6 +94,7 @@ def load_user_dataset(
             "dataset_name": dataset_name or dataset_id,
             "id_col": id_col,
             "drop_columns": list(drop_columns or []),
+            "diagnostics": diagnostics.to_dict(),
         },
     )
     dataset = SurvivalDataset(
