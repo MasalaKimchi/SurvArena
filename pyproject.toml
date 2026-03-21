@@ -12,6 +12,9 @@ license = { text = "MIT" }
 authors = [{ name = "SurvArena Contributors" }]
 dependencies = []
 
+[project.scripts]
+survarena = "src.cli:main"
+
 [tool.setuptools]
 package-dir = { "" = "." }
 
