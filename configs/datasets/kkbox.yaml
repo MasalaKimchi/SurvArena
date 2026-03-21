@@ -1,0 +1,16 @@
+dataset_id: kkbox
+name: KKBox
+task_type: right_censored_survival
+source: custom
+citation: null
+event_col: event
+time_col: time
+group_col: null
+feature_types:
+  - numerical
+  - categorical
+primary_metric: harrell_c
+split_strategy: stratified_event
+recommended_split_strategy: fixed_split
+recommended_primary_metric: harrell_c
+notes: Large-scale placeholder using fixed train/validation/test with event stratification.

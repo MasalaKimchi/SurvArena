@@ -1,0 +1,16 @@
+dataset_id: flchain
+name: FLCHAIN
+task_type: right_censored_survival
+source: scikit-survival
+citation: null
+event_col: event
+time_col: time
+group_col: null
+feature_types:
+  - numerical
+  - categorical
+primary_metric: harrell_c
+split_strategy: stratified_event
+recommended_split_strategy: repeated_nested_cv
+recommended_primary_metric: harrell_c
+notes: Serum free light chain dataset.

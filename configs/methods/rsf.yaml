@@ -1,0 +1,29 @@
+method_id: rsf
+family: tree
+library: scikit-survival
+search_space:
+  n_estimators:
+    type: int
+    low: 100
+    high: 1000
+  max_depth:
+    type: int_or_none
+    low: 3
+    high: 30
+  min_samples_split:
+    type: int
+    low: 2
+    high: 30
+  min_samples_leaf:
+    type: int
+    low: 1
+    high: 20
+  max_features:
+    type: categorical
+    choices: [sqrt, log2, null]
+default_params:
+  n_estimators: 300
+  max_depth: null
+  min_samples_split: 10
+  min_samples_leaf: 5
+  max_features: sqrt

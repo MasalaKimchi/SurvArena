@@ -1,0 +1,78 @@
+method_id: deepsurv_moco
+family: deep
+library: torchsurv
+notes: Optional phase-2 DeepSurv momentum-loss variant using torchsurv.loss.momentum.Momentum.
+search_space:
+  hidden_layers:
+    type: categorical
+    choices: ["128-64", "256-128", "256-128-64"]
+  activation:
+    type: categorical
+    choices: [relu, gelu]
+  dropout:
+    type: float
+    low: 0.0
+    high: 0.4
+  batch_norm:
+    type: categorical
+    choices: [true, false]
+  optimizer:
+    type: categorical
+    choices: [adamw, adam]
+  lr:
+    type: float
+    low: 0.0001
+    high: 0.003
+    log: true
+  weight_decay:
+    type: float
+    low: 0.0000001
+    high: 0.01
+    log: true
+  batch_size:
+    type: categorical
+    choices: [64, 128, 256]
+  max_epochs:
+    type: int
+    low: 100
+    high: 300
+  patience:
+    type: int
+    low: 10
+    high: 40
+  use_momentum_encoder:
+    type: categorical
+    choices: [true]
+  momentum:
+    type: float
+    low: 0.99
+    high: 0.9999
+  queue_size:
+    type: categorical
+    choices: [256, 512, 1024]
+  temperature:
+    type: float
+    low: 0.5
+    high: 2.0
+  aux_loss_weight:
+    type: float
+    low: 0.1
+    high: 0.9
+default_params:
+  hidden_layers: "128-64"
+  activation: relu
+  dropout: 0.1
+  batch_norm: true
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 128
+  max_epochs: 200
+  patience: 20
+  use_momentum_encoder: true
+  momentum: 0.999
+  queue_size: 512
+  temperature: 1.0
+  aux_loss_weight: 0.5
+  seed: 0
+  device: auto

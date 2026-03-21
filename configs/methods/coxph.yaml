@@ -1,0 +1,11 @@
+method_id: coxph
+family: classical
+library: scikit-survival
+search_space:
+  alpha:
+    type: float
+    low: 0.000001
+    high: 1.0
+    log: true
+default_params:
+  alpha: 0.0001

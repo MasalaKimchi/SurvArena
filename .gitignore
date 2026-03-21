@@ -1,0 +1,9 @@
+.venv/
+survArena/
+__pycache__/
+*.py[cod]
+
+# Keep only compact benchmark summaries in git.
+results/*
+!results/summaries/
+!results/summaries/**

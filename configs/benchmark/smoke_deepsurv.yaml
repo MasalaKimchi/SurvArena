@@ -1,0 +1,22 @@
+benchmark_id: smoke_deepsurv_v1
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 2
+outer_repeats: 1
+inner_folds: 2
+seeds: [11]
+primary_metric: uno_c
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+tuning:
+  n_trials: 1
+  timeout_seconds: null
+  max_epochs: 60
+  patience: 10
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+datasets:
+  - support
+methods:
+  - deepsurv
