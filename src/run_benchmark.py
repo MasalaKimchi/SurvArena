@@ -4,7 +4,11 @@ import argparse
 import traceback
 from functools import lru_cache
 from pathlib import Path
+from time import perf_counter
 from typing import Any
+
+
+_RUNTIME_ONLY_METHOD_PARAMS = {"seed"}
 
 
 def parse_args() -> argparse.Namespace:
@@ -61,6 +65,17 @@ def _metric_optimization_direction(primary_metric: str) -> str:
     if primary_metric in {"harrell_c", "uno_c"}:
         return "maximize"
     raise ValueError(f"Unsupported primary metric for tuning direction: {primary_metric}")
+
+
+def _searchable_default_params(method_cfg: dict[str, Any]) -> dict[str, Any]:
+    defaults = dict(method_cfg.get("default_params", {}))
+    return {key: value for key, value in defaults.items() if key not in _RUNTIME_ONLY_METHOD_PARAMS}
+
+
+def _resolve_runtime_method_params(params: dict[str, Any], *, seed: int) -> dict[str, Any]:
+    resolved = dict(params)
+    resolved["seed"] = int(seed)
+    return resolved
 
 
 def _prepare_inner_cv_cache(
@@ -142,34 +157,62 @@ def tune_hyperparameters(
     primary_metric: str,
     n_trials: int,
     seed: int,
+    timeout_seconds: float | None = None,
 ) -> dict[str, Any]:
     import importlib
 
     optuna = importlib.import_module("optuna")
 
-    defaults = dict(method_cfg.get("default_params", {}))
-    if not method_cfg.get("search_space"):
-        return defaults
+    defaults = _searchable_default_params(method_cfg)
+    default_score = _inner_cv_primary_metric(
+        method_id=method_id,
+        params=_resolve_runtime_method_params(defaults, seed=seed),
+        fold_cache=fold_cache,
+        primary_metric=primary_metric,
+    )
+    if not method_cfg.get("search_space") or n_trials <= 0:
+        return {
+            "best_params": defaults,
+            "best_score": default_score,
+            "n_trials_completed": 0,
+        }
 
     def objective(trial: Any) -> float:
         params = method_param_suggestions(trial, method_cfg)
         return _inner_cv_primary_metric(
             method_id=method_id,
-            params=params,
+            params=_resolve_runtime_method_params(params, seed=seed),
             fold_cache=fold_cache,
             primary_metric=primary_metric,
         )
 
     sampler = optuna.samplers.TPESampler(seed=seed)
     study = optuna.create_study(direction=_metric_optimization_direction(primary_metric), sampler=sampler)
-    study.optimize(objective, n_trials=n_trials, show_progress_bar=False)
+    study.optimize(
+        objective,
+        n_trials=n_trials,
+        timeout=timeout_seconds,
+        show_progress_bar=False,
+    )
+
+    completed_trials = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
+    if not completed_trials:
+        return {
+            "best_params": defaults,
+            "best_score": default_score,
+            "n_trials_completed": 0,
+        }
 
     allowed_keys = set(method_cfg.get("search_space", {}).keys())
-    best_trial_params = dict(study.best_params if study.best_params else {})
+    best_trial_params = dict(study.best_trial.params if study.best_trial.params else {})
     filtered_trial_params = {k: v for k, v in best_trial_params.items() if k in allowed_keys}
     best_params = dict(defaults)
     best_params.update(filtered_trial_params)
-    return best_params
+    return {
+        "best_params": best_params,
+        "best_score": float(study.best_value),
+        "n_trials_completed": len(completed_trials),
+    }
 
 
 def evaluate_split(
@@ -184,6 +227,7 @@ def evaluate_split(
     method_cfg: dict[str, Any],
     inner_folds: int,
     n_trials: int,
+    timeout_seconds: float | None,
     primary_metric: str,
     horizons_quantiles: tuple[float, float, float],
     benchmark_cfg_hash: str,
@@ -193,12 +237,13 @@ def evaluate_split(
     from src.data.preprocess import TabularPreprocessor
     from src.evaluation.metrics import compute_survival_metrics, horizons_from_train_event_times
     from src.logging.manifest import RunManifest
-    from src.logging.tracker import current_memory_mb, payload_sha256
+    from src.logging.tracker import payload_sha256, peak_memory_mb as peak_process_memory_mb
     from src.utils.seeds import set_global_seed
     from src.utils.time import timer
 
     method_registry = _method_registry()
     run_id = f"{dataset_id}_{method_id}_{split.split_id}_seed{split.seed}"
+    started_at = perf_counter()
     split_indices_hash = payload_sha256(
         {
             "train_idx": split.train_idx.tolist(),
@@ -227,21 +272,25 @@ def evaluate_split(
         )
 
         with timer() as tune_timer:
-            best_params = tune_hyperparameters(
+            tuning_result = tune_hyperparameters(
                 method_id=method_id,
                 method_cfg=method_cfg,
                 fold_cache=fold_cache,
                 primary_metric=primary_metric,
                 n_trials=n_trials,
                 seed=split.seed,
+                timeout_seconds=timeout_seconds,
             )
         tuning_sec = tune_timer.elapsed
+        best_params = dict(tuning_result["best_params"])
+        validation_score = float(tuning_result["best_score"])
+        n_trials_completed = int(tuning_result["n_trials_completed"])
 
         pre = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
         X_train_proc = pre.fit_transform(X_train)
         X_test_proc = pre.transform(X_test)
 
-        model = method_registry[method_id](**best_params)
+        model = method_registry[method_id](**_resolve_runtime_method_params(best_params, seed=split.seed))
         with timer() as fit_timer:
             model.fit(X_train_proc.to_numpy(), t_train, e_train)
         fit_time_sec = fit_timer.elapsed
@@ -268,7 +317,7 @@ def evaluate_split(
             horizons=horizons,
         ).to_dict()
 
-        peak_memory_mb = current_memory_mb()
+        peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
 
         manifest = RunManifest(
@@ -301,12 +350,16 @@ def evaluate_split(
                 "seed": split.seed,
                 "split_id": split.split_id,
                 "primary_metric": primary_metric,
-                "validation_score": None,
+                "validation_score": validation_score,
                 "test_metrics": metrics,
+                "tuning_time_sec": tuning_sec,
                 "runtime_seconds": runtime_sec,
                 "fit_time_sec": fit_time_sec,
                 "infer_time_sec": infer_time_sec,
                 "peak_memory_mb": peak_memory_mb,
+                "n_trials_requested": n_trials,
+                "n_trials_completed": n_trials_completed,
+                "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
             },
@@ -320,15 +373,21 @@ def evaluate_split(
             "split_id": split.split_id,
             "seed": split.seed,
             "primary_metric": primary_metric,
+            "validation_score": validation_score,
             **metrics,
+            "tuning_time_sec": tuning_sec,
+            "runtime_sec": runtime_sec,
             "fit_time_sec": fit_time_sec,
             "infer_time_sec": infer_time_sec,
             "peak_memory_mb": peak_memory_mb,
+            "n_trials_requested": n_trials,
+            "n_trials_completed": n_trials_completed,
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
         tb_str = traceback.format_exc()
-        peak_memory_mb = current_memory_mb()
+        elapsed_before_failure = perf_counter() - started_at
+        peak_memory_mb = peak_process_memory_mb()
         manifest = RunManifest(
             run_id=run_id,
             benchmark_id=benchmark_id,
@@ -338,7 +397,7 @@ def evaluate_split(
             seed=split.seed,
             hyperparameters={},
             preprocessing_config={},
-            runtime_seconds=0.0,
+            runtime_seconds=elapsed_before_failure,
             peak_memory_mb=peak_memory_mb,
             status="failed",
             benchmark_config_hash=benchmark_cfg_hash,
@@ -358,7 +417,7 @@ def evaluate_split(
                 "status": "failed",
                 "failure_type": type(exc).__name__,
                 "exception_message": str(exc),
-                "elapsed_time_before_failure": 0.0,
+                "elapsed_time_before_failure": elapsed_before_failure,
                 "peak_memory_mb": peak_memory_mb,
             },
             "failure": {
@@ -373,15 +432,20 @@ def evaluate_split(
             "split_id": split.split_id,
             "seed": split.seed,
             "primary_metric": primary_metric,
+            "validation_score": np.nan,
             "uno_c": np.nan,
             "harrell_c": np.nan,
             "ibs": np.nan,
             "td_auc_25": np.nan,
             "td_auc_50": np.nan,
             "td_auc_75": np.nan,
+            "tuning_time_sec": np.nan,
+            "runtime_sec": elapsed_before_failure,
             "fit_time_sec": np.nan,
             "infer_time_sec": np.nan,
             "peak_memory_mb": peak_memory_mb,
+            "n_trials_requested": n_trials,
+            "n_trials_completed": 0,
             "status": "failed",
         }
 
@@ -410,14 +474,32 @@ def main() -> None:
     if not seeds:
         raise ValueError("Seed list cannot be empty.")
 
+    split_strategy = str(benchmark_cfg["split_strategy"])
+    requested_outer_repeats = int(benchmark_cfg.get("outer_repeats", 1))
+    if split_strategy == "repeated_nested_cv":
+        if args.limit_seeds is not None:
+            outer_repeats = min(requested_outer_repeats, len(seeds))
+        else:
+            outer_repeats = requested_outer_repeats
+        if outer_repeats > len(seeds):
+            raise ValueError(
+                f"Benchmark requests {outer_repeats} outer repeats but only {len(seeds)} seeds are available."
+            )
+    else:
+        outer_repeats = requested_outer_repeats
+
     n_trials = int(args.n_trials) if args.n_trials is not None else int(benchmark_cfg["tuning"]["n_trials"])
+    timeout_seconds = benchmark_cfg.get("tuning", {}).get("timeout_seconds")
+    timeout_seconds = None if timeout_seconds is None else float(timeout_seconds)
     if args.dry_run:
         print("Dry run complete.")
         print(f"benchmark_id={benchmark_id}")
         print(f"datasets={datasets}")
         print(f"methods={methods}")
         print(f"seeds={seeds}")
+        print(f"outer_repeats={outer_repeats}")
         print(f"n_trials={n_trials}")
+        print(f"timeout_seconds={timeout_seconds}")
         print(f"primary_metric={primary_metric}")
         return
 
@@ -448,7 +530,7 @@ def main() -> None:
             event=dataset.event,
             seeds=seeds,
             outer_folds=int(benchmark_cfg.get("outer_folds", 5)),
-            outer_repeats=int(benchmark_cfg.get("outer_repeats", 1)),
+            outer_repeats=outer_repeats,
         )
 
         filtered_splits = [s for s in splits if s.seed in seeds]
@@ -470,6 +552,7 @@ def main() -> None:
                     method_cfg=method_cfg,
                     inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
                     n_trials=n_trials,
+                    timeout_seconds=timeout_seconds,
                     primary_metric=primary_metric,
                     horizons_quantiles=horizons_q,  # type: ignore[arg-type]
                     benchmark_cfg_hash=benchmark_cfg_hash,
@@ -494,6 +577,7 @@ def _method_registry() -> dict[str, Any]:
     from src.methods.classical.coxnet import CoxNetMethod
     from src.methods.classical.coxph import CoxPHMethod
     from src.methods.deep.deepsurv import DeepSurvMethod
+    from src.methods.deep.deepsurv_moco import DeepSurvMomentumMethod
     from src.methods.tree.rsf import RSFMethod
 
     return {
@@ -501,6 +585,7 @@ def _method_registry() -> dict[str, Any]:
         "coxnet": CoxNetMethod,
         "rsf": RSFMethod,
         "deepsurv": DeepSurvMethod,
+        "deepsurv_moco": DeepSurvMomentumMethod,
     }
 
 

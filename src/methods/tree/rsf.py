@@ -13,6 +13,7 @@ class RSFMethod(BaseSurvivalMethod):
         min_samples_split: int = 10,
         min_samples_leaf: int = 5,
         max_features: str | None = "sqrt",
+        seed: int | None = None,
     ) -> None:
         super().__init__(
             n_estimators=n_estimators,
@@ -20,6 +21,7 @@ class RSFMethod(BaseSurvivalMethod):
             min_samples_split=min_samples_split,
             min_samples_leaf=min_samples_leaf,
             max_features=max_features,
+            seed=seed,
         )
         self.model = None
 
@@ -41,7 +43,7 @@ class RSFMethod(BaseSurvivalMethod):
             min_samples_leaf=int(self.params["min_samples_leaf"]),
             max_features=self.params["max_features"],
             n_jobs=-1,
-            random_state=0,
+            random_state=None if self.params.get("seed") is None else int(self.params["seed"]),
         )
         self.model.fit(X_train, to_structured_y(time_train, event_train))
         return self

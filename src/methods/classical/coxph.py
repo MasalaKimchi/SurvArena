@@ -6,8 +6,8 @@ from src.methods.base import BaseSurvivalMethod, to_structured_y
 
 
 class CoxPHMethod(BaseSurvivalMethod):
-    def __init__(self, alpha: float = 0.0001) -> None:
-        super().__init__(alpha=alpha)
+    def __init__(self, alpha: float = 0.0001, seed: int | None = None) -> None:
+        super().__init__(alpha=alpha, seed=seed)
         self.model = None
 
     def fit(

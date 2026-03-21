@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import sys
 from hashlib import sha256
 from pathlib import Path
 from typing import Any
@@ -12,6 +13,20 @@ import psutil
 def current_memory_mb() -> float:
     process = psutil.Process()
     return float(process.memory_info().rss / (1024**2))
+
+
+def peak_memory_mb() -> float:
+    try:
+        import resource
+
+        peak_rss = float(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        if peak_rss <= 0:
+            return current_memory_mb()
+        if sys.platform == "darwin":
+            return float(peak_rss / (1024**2))
+        return float(peak_rss / 1024.0)
+    except Exception:
+        return current_memory_mb()
 
 
 def write_json(path: Path, payload: dict[str, Any]) -> None:

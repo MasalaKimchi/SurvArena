@@ -11,6 +11,13 @@ from src.logging.tracker import write_json, write_jsonl_gz
 
 def export_fold_results(root: Path, records: list[dict]) -> pd.DataFrame:
     frame = pd.DataFrame(records)
+    sort_cols = [
+        col
+        for col in ["benchmark_id", "dataset_id", "method_id", "seed", "split_id"]
+        if col in frame.columns
+    ]
+    if sort_cols:
+        frame.sort_values(sort_cols, inplace=True)
     output = root / "results" / "tables" / "fold_results.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(output, index=False)
@@ -20,12 +27,15 @@ def export_fold_results(root: Path, records: list[dict]) -> pd.DataFrame:
 def export_seed_summary(root: Path, frame: pd.DataFrame) -> pd.DataFrame:
     by_cols = ["benchmark_id", "dataset_id", "method_id", "seed"]
     metric_cols = [
+        "validation_score",
         "uno_c",
         "harrell_c",
         "ibs",
         "td_auc_25",
         "td_auc_50",
         "td_auc_75",
+        "tuning_time_sec",
+        "runtime_sec",
         "fit_time_sec",
         "infer_time_sec",
         "peak_memory_mb",
@@ -38,7 +48,20 @@ def export_seed_summary(root: Path, frame: pd.DataFrame) -> pd.DataFrame:
 
 def export_overall_summary(root: Path, frame: pd.DataFrame) -> dict:
     by_cols = ["benchmark_id", "dataset_id", "method_id"]
-    metric_cols = ["uno_c", "harrell_c", "ibs", "td_auc_25", "td_auc_50", "td_auc_75"]
+    metric_cols = [
+        "validation_score",
+        "uno_c",
+        "harrell_c",
+        "ibs",
+        "td_auc_25",
+        "td_auc_50",
+        "td_auc_75",
+        "tuning_time_sec",
+        "runtime_sec",
+        "fit_time_sec",
+        "infer_time_sec",
+        "peak_memory_mb",
+    ]
     summary: dict[str, dict] = {}
 
     for key, sub in frame.groupby(by_cols):
@@ -53,13 +76,28 @@ def export_overall_summary(root: Path, frame: pd.DataFrame) -> dict:
 
 
 def export_leaderboard(root: Path, seed_summary: pd.DataFrame, primary_metric: str = "harrell_c") -> None:
-    metric_cols = ["uno_c", "harrell_c", "ibs"]
+    metric_cols = [
+        "validation_score",
+        "uno_c",
+        "harrell_c",
+        "ibs",
+        "tuning_time_sec",
+        "runtime_sec",
+        "fit_time_sec",
+        "infer_time_sec",
+        "peak_memory_mb",
+    ]
     leaderboard = seed_summary.groupby(["benchmark_id", "dataset_id", "method_id"], as_index=False)[
         metric_cols
     ].mean(numeric_only=True)
     if primary_metric not in leaderboard.columns:
         raise ValueError(f"Primary metric '{primary_metric}' not found in leaderboard columns.")
-    leaderboard.sort_values(by=["dataset_id", primary_metric], ascending=[True, False], inplace=True)
+    primary_metric_ascending = primary_metric in {"ibs"}
+    leaderboard.sort_values(
+        by=["dataset_id", primary_metric, "runtime_sec"],
+        ascending=[True, primary_metric_ascending, True],
+        inplace=True,
+    )
 
     csv_path = root / "results" / "tables" / "leaderboard.csv"
     json_path = root / "results" / "summaries" / "leaderboard.json"

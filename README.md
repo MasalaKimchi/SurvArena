@@ -1,12 +1,65 @@
 # SurvArena
 
-SurvArena is a concise, reproducible benchmark for tabular right-censored survival models.  
-It standardizes splits, tuning budgets, evaluation metrics, and artifacts so methods are compared as full pipelines.
+SurvArena is a concise, reproducible framework for tabular right-censored survival modeling.
+It pairs a rigorous benchmark engine with a simple AutoML-style user experience so teams can
+both compare methods fairly and run strong baselines on their own data with minimal setup.
+
+## Product Direction
+
+SurvArena should feel like **AutoGluon for tabular survival analysis**:
+
+- bring your own CSV, Parquet file, or DataFrame
+- specify `time` and `event` columns once
+- automatically preprocess features and validate labels
+- train and compare a portfolio of survival models under one interface
+- return a leaderboard, the best model, risk scores, and survival curves
+
+The key design principle is a two-layer workflow:
+
+- **Simple mode:** a high-level `SurvivalPredictor` API for user-owned datasets
+- **Research mode:** the current config-driven benchmark runner for reproducible comparisons
+
+This keeps the benchmark rigor already present in SurvArena while making the framework much
+easier for practitioners to adopt on private datasets.
+
+## Target User Experience
+
+```python
+from survarena import SurvivalPredictor
+
+predictor = SurvivalPredictor(
+    label_time="time",
+    label_event="event",
+    eval_metric="harrell_c",
+    presets="medium",
+)
+
+predictor.fit(train_data="my_data.csv")
+leaderboard = predictor.leaderboard()
+pred_risk = predictor.predict_risk("my_test.csv")
+pred_surv = predictor.predict_survival("my_test.csv")
+```
+
+```bash
+survarena fit \
+  --train my_data.csv \
+  --time-col time \
+  --event-col event \
+  --presets medium
+```
+
+Under this interface, SurvArena should automatically:
+
+- infer feature types and build a train-only preprocessing pipeline
+- validate right-censored survival targets
+- choose a model portfolio based on data shape and preset budget
+- tune and rank models consistently
+- save artifacts, validation summaries, and reusable predictors
 
 ## What It Covers (Milestone 1)
 
 - **Datasets:** SUPPORT, METABRIC, GBSG2, FLCHAIN, WHAS500, PBC (+ KKBox target track)
-- **Methods:** CoxPH, CoxNet, Random Survival Forest (RSF)
+- **Methods:** CoxPH, CoxNet, Random Survival Forest (RSF), DeepSurv
 - **Protocol:** repeated nested CV with shared seeds and comparable tuning budget
 - **Metrics:** Harrell's C-index (primary default), Uno's C-index, IBS, time-dependent AUC
 
@@ -29,6 +82,7 @@ python -m src.run_benchmark --benchmark-config configs/benchmark/standard_v1.yam
 SurvArena writes:
 
 - persisted splits to `data/splits/`
+- split manifests to `data/splits/<task_id>/manifest.json`
 - compact per-run ledger (`<benchmark_id>_run_records.jsonl.gz` + index JSON) to `results/runs/`
 - aggregate summaries/tables to `results/summaries/` and `results/tables/`
 
@@ -36,9 +90,12 @@ Only `results/summaries/` is intended for git tracking; run ledgers and table ex
 
 ## Planned Additions
 
+- **AutoML-style user data entrypoint:** add a `SurvivalPredictor` API and CLI so users can fit survival models on their own data without writing loaders or configs first
+- **Preset-driven portfolio search:** support `fast`, `medium`, and `best` modes that control model coverage, tuning depth, and optional ensembling
 - **Additional loss functions:** broader objective support for classic and neural survival models (protocol and metrics context in [`docs/protocol.md`](docs/protocol.md))
 - **TorchSurv deep survival model capacity:** expand beyond baseline classical methods with deep model training/evaluation support (evaluation workflow in [`docs/protocol.md`](docs/protocol.md))
 - **Expanded dataset tracks:** continue adding medium/large cohorts with loader and metadata standards (dataset standards in [`docs/datasets.md`](docs/datasets.md))
+- **Flexible model portfolio:** broaden support from classical baselines to tree, boosting, deep, and future tabular foundation-model integrations
 - **Leaderboard hardening:** stronger reporting fields and submission-readiness checks (artifact contract in [`docs/protocol.md`](docs/protocol.md))
 - **Stronger validation checks:** additional reproducibility and environment diagnostics for CI/local runs (setup and smoke checks in [`docs/environment.md`](docs/environment.md))
 

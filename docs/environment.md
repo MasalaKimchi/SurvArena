@@ -49,14 +49,15 @@ If dependencies are missing, `--dry-run` reports the issue and exits cleanly.
 ## Expected Artifacts After Runs
 
 - Split files: `data/splits/<task_id>/*.json`
+- Split manifest: `data/splits/<task_id>/manifest.json`
 - Per-run ledger: `results/runs/<benchmark_id>_run_records.jsonl.gz`
   - each line contains `manifest`, `metrics`, and optional failure traceback
 - Ledger index: `results/runs/<benchmark_id>_run_records_index.json`
 - Aggregates:
-  - `results/tables/fold_results.csv`
+  - `results/tables/fold_results.csv` (canonical per-run table)
   - `results/summaries/seed_summary.csv`
   - `results/summaries/overall_summary.json`
-  - `results/tables/leaderboard.csv`
-  - `results/summaries/leaderboard.json`
+  - `results/tables/leaderboard.csv` (aggregate summary)
+  - `results/summaries/leaderboard.json` (aggregate summary)
 
 Git tracking policy: only `results/summaries/` should be committed.

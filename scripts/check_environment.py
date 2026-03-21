@@ -36,6 +36,8 @@ def _check_imports() -> None:
 
 def _check_torchsurv_metrics() -> None:
     import torch
+    from torchsurv.loss.cox import neg_partial_log_likelihood
+    from torchsurv.loss.momentum import Momentum
     from torchsurv.metrics.auc import Auc
     from torchsurv.metrics.brier_score import BrierScore
     from torchsurv.metrics.cindex import ConcordanceIndex
@@ -76,10 +78,13 @@ def _check_torchsurv_metrics() -> None:
         weight=ipcw_eval,
         weight_new_time=ipcw_new_time,
     )
+    _ = neg_partial_log_likelihood(torch.tensor([0.1, 0.2]), torch.tensor([True, False]), torch.tensor([1.0, 2.0]))
+    _ = Momentum
     print(f"torchsurv.uno_c={float(uno):.6f}")
     print(f"torchsurv.harrell_c={float(harrell):.6f}")
     print(f"torchsurv.ibs={float(ibs):.6f}")
     print(f"torchsurv.auc_values={[float(x) for x in auc_values]}")
+    print("torchsurv.losses=ok")
 
 
 def main() -> None:
