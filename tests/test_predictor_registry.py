@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import importlib
 import numpy as np
 import pandas as pd
 
@@ -113,3 +114,78 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     loaded = SurvivalPredictor.load(saved_path)
     np.testing.assert_allclose(loaded.predict_risk(frame, model="mock_b"), best_risk)
+
+
+def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=1, inner_folds=2)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_inner_cv_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 1,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("src.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("src.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("src.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("src.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("src.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr(
+        SurvivalPredictor,
+        "_cross_validated_metric_summary",
+        lambda self, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected extra CV refit")),
+    )
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy")
+
+    leaderboard = predictor.leaderboard()
+    assert float(leaderboard.loc[0, "validation_harrell_c"]) == 0.8
+    assert float(leaderboard.loc[0, "validation_td_auc_75"]) == 0.77
+
+
+def test_public_package_exports_survival_predictor() -> None:
+    survarena = importlib.import_module("survarena")
+
+    assert survarena.SurvivalPredictor is SurvivalPredictor

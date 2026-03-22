@@ -43,6 +43,7 @@ def _configure_plotting_cache() -> None:
     os.environ["MPLCONFIGDIR"] = str(cache_root / "mplconfig")
     os.environ["XDG_CACHE_HOME"] = str(cache_root / "xdg")
 
+
 @dataclass(slots=True)
 class PredictorModelResult:
     method_id: str
@@ -166,11 +167,17 @@ class SurvivalPredictor:
                     seed=self.random_state,
                     timeout_seconds=None,
                     quiet=not self.verbose,
+                    metric_bundle_callback=self._collect_fold_metric_bundle,
                 )
-                validation_metrics = self._cross_validated_metric_summary(
-                    method_id=method_id,
-                    params=dict(tuning_result["best_params"]),
-                    fold_cache=fold_cache,
+                metric_rows = tuning_result.get("best_metric_rows")
+                validation_metrics = (
+                    self._summarize_metric_rows(metric_rows)
+                    if metric_rows
+                    else self._cross_validated_metric_summary(
+                        method_id=method_id,
+                        params=dict(tuning_result["best_params"]),
+                        fold_cache=fold_cache,
+                    )
                 )
                 results.append(
                     PredictorModelResult(
@@ -448,6 +455,28 @@ class SurvivalPredictor:
                 )
 
         bundle_frame = pd.DataFrame(bundle_rows)
+        return self._summarize_metric_rows(bundle_frame.to_dict(orient="records"))
+
+    def _collect_fold_metric_bundle(
+        self,
+        fold_data: dict[str, Any],
+        model: Any,
+        risk_scores: np.ndarray,
+    ) -> dict[str, float]:
+        eval_times = self._default_survival_times(fold_data["time_train"], fold_data["event_train"])
+        survival_probs = model.predict_survival(fold_data["X_val"], eval_times)
+        return self._compute_metric_bundle_safe(
+            train_time=fold_data["time_train"],
+            train_event=fold_data["event_train"],
+            test_time=fold_data["time_val"],
+            test_event=fold_data["event_val"],
+            risk_scores=risk_scores,
+            survival_probs=survival_probs,
+            survival_times=eval_times,
+        )
+
+    def _summarize_metric_rows(self, metric_rows: list[dict[str, float]]) -> dict[str, float]:
+        bundle_frame = pd.DataFrame(metric_rows)
         metric_summary = {
             f"validation_{name}": float(bundle_frame[name].mean())
             for name in MetricBundle.__annotations__.keys()

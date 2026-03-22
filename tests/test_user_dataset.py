@@ -45,3 +45,34 @@ def test_load_user_dataset_preserves_binary_string_event_labels() -> None:
     dataset = load_user_dataset(frame, time_col="time", event_col="event")
 
     assert dataset.event.tolist() == [1, 0, 1]
+
+
+def test_load_user_dataset_rejects_missing_or_nonbinary_numeric_event_labels() -> None:
+    missing_frame = pd.DataFrame(
+        {
+            "time": [1, 2, 3],
+            "event": [1, None, 0],
+            "x1": [0.2, 0.5, 0.7],
+        }
+    )
+    nonbinary_frame = pd.DataFrame(
+        {
+            "time": [1, 2, 3],
+            "event": [1.0, 0.5, 0.0],
+            "x1": [0.2, 0.5, 0.7],
+        }
+    )
+
+    try:
+        load_user_dataset(missing_frame, time_col="time", event_col="event")
+    except ValueError as exc:
+        assert "must not contain missing event indicators" in str(exc)
+    else:
+        raise AssertionError("Expected missing numeric event labels to raise a ValueError.")
+
+    try:
+        load_user_dataset(nonbinary_frame, time_col="time", event_col="event")
+    except ValueError as exc:
+        assert "must contain only binary event indicators" in str(exc)
+    else:
+        raise AssertionError("Expected non-binary numeric event labels to raise a ValueError.")

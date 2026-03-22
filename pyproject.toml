@@ -10,13 +10,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "SurvArena Contributors" }]
-dependencies = []
+dynamic = ["dependencies"]
 
 [project.scripts]
-survarena = "src.cli:main"
+survarena = "survarena:main"
 
 [tool.setuptools]
 package-dir = { "" = "." }
+py-modules = ["survarena"]
 
 [tool.setuptools.packages.find]
 include = ["src*"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }

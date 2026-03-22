@@ -5,7 +5,7 @@ import traceback
 from functools import lru_cache
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable
 
 
 _RUNTIME_ONLY_METHOD_PARAMS = {"seed"}
@@ -78,6 +78,14 @@ def _resolve_runtime_method_params(params: dict[str, Any], *, seed: int) -> dict
     return resolved
 
 
+def _is_better_score(candidate: float, reference: float, *, direction: str) -> bool:
+    if direction == "maximize":
+        return candidate > reference
+    if direction == "minimize":
+        return candidate < reference
+    raise ValueError(f"Unsupported optimization direction: {direction}")
+
+
 def _prepare_inner_cv_cache(
     *,
     method_id: str,
@@ -113,19 +121,21 @@ def _prepare_inner_cv_cache(
     return fold_cache
 
 
-def _inner_cv_primary_metric(
+def _inner_cv_evaluate(
     *,
     method_id: str,
     params: dict[str, Any],
     fold_cache: list[dict[str, Any]],
     primary_metric: str,
-) -> float:
+    metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
+) -> dict[str, Any]:
     import numpy as np
 
     from src.evaluation.metrics import compute_primary_metric_score
 
     method_registry = _method_registry()
     scores: list[float] = []
+    metric_rows: list[dict[str, float]] = []
     for fold_data in fold_cache:
         model = method_registry[method_id](**params)
         model.fit(
@@ -146,7 +156,29 @@ def _inner_cv_primary_metric(
             eval_risk_scores=risk,
         )
         scores.append(float(score))
-    return float(np.mean(scores))
+        if metric_bundle_callback is not None:
+            metric_rows.append(metric_bundle_callback(fold_data, model, risk))
+
+    result: dict[str, Any] = {"primary_score": float(np.mean(scores))}
+    if metric_bundle_callback is not None:
+        result["metric_rows"] = metric_rows
+    return result
+
+
+def _inner_cv_primary_metric(
+    *,
+    method_id: str,
+    params: dict[str, Any],
+    fold_cache: list[dict[str, Any]],
+    primary_metric: str,
+) -> float:
+    evaluation = _inner_cv_evaluate(
+        method_id=method_id,
+        params=params,
+        fold_cache=fold_cache,
+        primary_metric=primary_metric,
+    )
+    return float(evaluation["primary_score"])
 
 
 def tune_hyperparameters(
@@ -159,6 +191,7 @@ def tune_hyperparameters(
     seed: int,
     timeout_seconds: float | None = None,
     quiet: bool = False,
+    metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
 ) -> dict[str, Any]:
     import importlib
 
@@ -168,30 +201,40 @@ def tune_hyperparameters(
 
     with quiet_training_output(enabled=quiet):
         defaults = _searchable_default_params(method_cfg)
-        default_score = _inner_cv_primary_metric(
+        direction = _metric_optimization_direction(primary_metric)
+        default_eval = _inner_cv_evaluate(
             method_id=method_id,
             params=_resolve_runtime_method_params(defaults, seed=seed),
             fold_cache=fold_cache,
             primary_metric=primary_metric,
+            metric_bundle_callback=metric_bundle_callback,
         )
+        default_score = float(default_eval["primary_score"])
+        default_metric_rows = default_eval.get("metric_rows")
         if not method_cfg.get("search_space") or n_trials <= 0:
             return {
                 "best_params": defaults,
                 "best_score": default_score,
                 "n_trials_completed": 0,
+                "best_metric_rows": default_metric_rows,
             }
 
         def objective(trial: Any) -> float:
             params = method_param_suggestions(trial, method_cfg)
-            return _inner_cv_primary_metric(
+            trial_eval = _inner_cv_evaluate(
                 method_id=method_id,
                 params=_resolve_runtime_method_params(params, seed=seed),
                 fold_cache=fold_cache,
                 primary_metric=primary_metric,
+                metric_bundle_callback=metric_bundle_callback,
             )
+            metric_rows = trial_eval.get("metric_rows")
+            if metric_rows is not None:
+                trial.set_user_attr("metric_rows", metric_rows)
+            return float(trial_eval["primary_score"])
 
         sampler = optuna.samplers.TPESampler(seed=seed)
-        study = optuna.create_study(direction=_metric_optimization_direction(primary_metric), sampler=sampler)
+        study = optuna.create_study(direction=direction, sampler=sampler)
         study.optimize(
             objective,
             n_trials=n_trials,
@@ -205,17 +248,29 @@ def tune_hyperparameters(
             "best_params": defaults,
             "best_score": default_score,
             "n_trials_completed": 0,
+            "best_metric_rows": default_metric_rows,
+        }
+
+    best_trial = study.best_trial
+    best_trial_score = float(study.best_value)
+    if _is_better_score(default_score, best_trial_score, direction=direction):
+        return {
+            "best_params": defaults,
+            "best_score": default_score,
+            "n_trials_completed": len(completed_trials),
+            "best_metric_rows": default_metric_rows,
         }
 
     allowed_keys = set(method_cfg.get("search_space", {}).keys())
-    best_trial_params = dict(study.best_trial.params if study.best_trial.params else {})
+    best_trial_params = dict(best_trial.params if best_trial.params else {})
     filtered_trial_params = {k: v for k, v in best_trial_params.items() if k in allowed_keys}
     best_params = dict(defaults)
     best_params.update(filtered_trial_params)
     return {
         "best_params": best_params,
-        "best_score": float(study.best_value),
+        "best_score": best_trial_score,
         "n_trials_completed": len(completed_trials),
+        "best_metric_rows": best_trial.user_attrs.get("metric_rows", default_metric_rows),
     }
 
 

@@ -17,10 +17,11 @@ def _coerce_event_indicator(series: pd.Series, event_col: str) -> np.ndarray:
 
     if pd.api.types.is_numeric_dtype(series):
         values = pd.to_numeric(series, errors="coerce")
-        unique = set(values.dropna().astype(int).tolist())
-        if not unique.issubset({0, 1}):
+        if values.isna().any():
+            raise ValueError(f"Column '{event_col}' must not contain missing event indicators.")
+        if ((values != 0) & (values != 1)).any():
             raise ValueError(f"Column '{event_col}' must contain only binary event indicators.")
-        return values.fillna(0).astype(int).to_numpy(dtype=np.int32)
+        return values.astype(int).to_numpy(dtype=np.int32)
 
     normalized = series.astype(str).str.strip().str.lower()
     truth_map = {
