@@ -1,31 +1,73 @@
 # SurvArena
 
-SurvArena is a concise, reproducible framework for tabular right-censored survival modeling.
-It pairs a rigorous benchmark engine with a simple AutoML-style user experience so teams can
-both compare methods fairly and run strong baselines on their own data with minimal setup.
+SurvArena is a reproducible framework for tabular right-censored survival modeling.
+It combines two workflows in one repo:
 
-## Product Direction
+- a high-level `SurvivalPredictor` API for fitting survival models on user-owned tabular data
+- a config-driven benchmark runner for fair, repeatable method comparisons on built-in datasets
 
-SurvArena should feel like **AutoGluon for tabular survival analysis**:
+The project aims to feel like AutoML for survival analysis without dropping the benchmark rigor
+needed for research and reproducibility.
 
-- bring your own CSV, Parquet file, or DataFrame
-- specify `time` and `event` columns once
-- automatically preprocess features and validate labels
-- train and compare a portfolio of survival models under one interface
-- return a leaderboard, the best model, risk scores, and survival curves
+## What SurvArena Supports Today
 
-The key design principle is a two-layer workflow:
+### User-facing predictor workflow
 
-- **Simple mode:** a high-level `SurvivalPredictor` API for user-owned datasets
-- **Research mode:** the current config-driven benchmark runner for reproducible comparisons
+The current predictor stack can:
 
-This keeps the benchmark rigor already present in SurvArena while making the framework much
-easier for practitioners to adopt on private datasets.
+- read training and test data from a pandas `DataFrame`, CSV, or Parquet file
+- validate `time` and `event` labels and infer feature metadata for numerical, categorical, datetime, and text columns
+- surface dataset diagnostics such as low-event warnings, ID-like features, and high-cardinality columns
+- fit a preset-driven model portfolio and rank candidates with a unified leaderboard
+- return the best model, model-specific predictions, survival curves, fit summaries, and persisted predictor artifacts
+- stay quiet by default for notebook use, with `verbose=True` available when you want tuning logs
 
-## Target User Experience
+Available predictor presets:
+
+- `fast`: `coxph`, `rsf`
+- `medium`: `coxph`, `coxnet`, `rsf`, `deepsurv`
+- `best`: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`
+- `foundation`: starts with `coxph` and adds eligible foundation-model adapters
+
+Experimental foundation-model support is available through:
+
+- `tabpfn_survival`
+- `mitra_survival`
+
+Those adapters are optional, depend on extra packages already listed in `requirements.txt`, and are
+added only when dataset-shape and dependency checks pass.
+
+### Benchmark workflow
+
+The benchmark runner currently covers:
+
+- datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`, `pbc`
+- a placeholder config track for `kkbox`
+- methods: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`, `tabpfn_survival`, `mitra_survival`
+- metrics: Harrell's C-index, Uno's C-index, integrated Brier score, and time-dependent AUC
+- protocol infrastructure for repeated nested CV, shared seeds, manifests, and aggregated summaries
+
+## Installation
+
+```bash
+./scripts/setup_env.sh
+source .venv/bin/activate
+```
+
+If you want the `survarena` shell command in addition to `python -m ...` entrypoints:
+
+```bash
+python -m pip install -e .
+```
+
+## Quick Start
+
+### Python predictor API
+
+In this repo layout, import the predictor from `src`:
 
 ```python
-from survarena import SurvivalPredictor
+from src import SurvivalPredictor
 
 predictor = SurvivalPredictor(
     label_time="time",
@@ -34,42 +76,85 @@ predictor = SurvivalPredictor(
     presets="medium",
 )
 
-predictor.fit(train_data="my_data.csv")
+predictor.fit(
+    train_data="my_train.csv",
+    test_data="my_test.csv",
+    dataset_name="my_dataset",
+)
+
 leaderboard = predictor.leaderboard()
-pred_risk = predictor.predict_risk("my_test.csv")
-pred_surv = predictor.predict_survival("my_test.csv")
+risk_scores = predictor.predict_risk("my_test.csv")
+survival_curves = predictor.predict_survival("my_test.csv")
+summary = predictor.fit_summary()
+predictor.plot_kaplan_meier_comparison("my_test.csv")
+predictor.save()
 ```
+
+### CLI predictor API
+
+Repo-local invocation:
+
+```bash
+python -m src.cli fit \
+  --train my_train.csv \
+  --test my_test.csv \
+  --time-col time \
+  --event-col event \
+  --presets medium \
+  --dataset-name my_dataset
+```
+
+After `python -m pip install -e .`, the equivalent console command is:
 
 ```bash
 survarena fit \
-  --train my_data.csv \
+  --train my_train.csv \
+  --test my_test.csv \
   --time-col time \
   --event-col event \
-  --presets medium
+  --presets medium \
+  --dataset-name my_dataset
 ```
 
-Under this interface, SurvArena should automatically:
+### Benchmark runner
 
-- infer feature types and build a train-only preprocessing pipeline
-- validate right-censored survival targets
-- choose a model portfolio based on data shape and preset budget
-- tune and rank models consistently
-- save artifacts, validation summaries, and reusable predictors
+```bash
+python -m src.run_benchmark \
+  --benchmark-config configs/benchmark/standard_v1.yaml \
+  --dataset support \
+  --method coxph \
+  --limit-seeds 1 \
+  --n-trials 2
+```
 
-The predictor surface now also aims to be notebook-friendly by default:
+## Predictor Artifacts
 
-- quiet training output unless `verbose=True`
-- leaderboard columns with explicit validation metric names
-- Kaplan-Meier comparison plotting after fitting
-- optional experimental tabular foundation-model inclusion via `enable_foundation_models=True`
-- a dedicated `foundation` preset for users who want the foundation-model portfolio first
+By default, `SurvivalPredictor.fit(...)` writes artifacts to `results/predictor/<dataset_name>/`:
 
-## What It Covers (Milestone 1)
+- `leaderboard.csv`
+- `fit_summary.json`
+- `predictor.pkl`
+- `predictor_manifest.json`
+- `kaplan_meier_comparison.png` when `plot_kaplan_meier_comparison(...)` is called
 
-- **Datasets:** SUPPORT, METABRIC, AIDS, GBSG2, FLCHAIN, WHAS500, PBC (+ KKBox target track)
-- **Methods:** CoxPH, CoxNet, Random Survival Forest (RSF), DeepSurv
-- **Protocol:** repeated nested CV with shared seeds and comparable tuning budget
-- **Metrics:** Harrell's C-index (primary default), Uno's C-index, IBS, time-dependent AUC
+The fit summary includes:
+
+- best method and best params
+- resolved portfolio and portfolio notes
+- dataset diagnostics
+- per-model test metrics when test data is provided
+- foundation-model catalog metadata
+
+## Benchmark Artifacts
+
+The benchmark engine writes:
+
+- persisted splits to `data/splits/`
+- split manifests to `data/splits/<task_id>/manifest.json`
+- compact per-run ledgers to `results/runs/`
+- aggregate summaries and tables to `results/summaries/` and `results/tables/`
+
+Only `results/summaries/` is intended for git tracking; run ledgers and table exports are local artifacts.
 
 ## Documentation
 
@@ -77,47 +162,28 @@ The predictor surface now also aims to be notebook-friendly by default:
 - **Datasets and metadata:** [`docs/datasets.md`](docs/datasets.md)
 - **Environment setup and smoke checks:** [`docs/environment.md`](docs/environment.md)
 - **Design blueprint:** [`blueprint.md`](blueprint.md)
-- **AutoGluon-style comparison and current gaps:** [`docs/autogluon_comparison.md`](docs/autogluon_comparison.md)
+- **AutoML positioning notes:** [`docs/autogluon_comparison.md`](docs/autogluon_comparison.md)
 - **Tabular foundation-model roadmap:** [`docs/tabular_foundation_models_todo.md`](docs/tabular_foundation_models_todo.md)
 
 ## Examples
 
-- **Quickstart notebook:** [`examples/survival_predictor_quickstart.ipynb`](examples/survival_predictor_quickstart.ipynb) - detailed beginner-friendly walkthrough of the AutoML-style `SurvivalPredictor` workflow on the built-in `gbsg2` dataset
-- **Examples overview:** [`examples/README.md`](examples/README.md)
+- **Quickstart notebook:** [`examples/survival_predictor_quickstart.ipynb`](examples/survival_predictor_quickstart.ipynb)
+- **Examples overview and shipped sample artifacts:** [`examples/README.md`](examples/README.md)
 
-## Quick Start
+## Current Gaps and Next Steps
 
-```bash
-./scripts/setup_env.sh
-python -m src.run_benchmark --benchmark-config configs/benchmark/standard_v1.yaml --dataset support --method coxph --limit-seeds 1 --n-trials 2
-```
+SurvArena still has room to grow, especially around:
 
-## Outputs
-
-SurvArena writes:
-
-- persisted splits to `data/splits/`
-- split manifests to `data/splits/<task_id>/manifest.json`
-- compact per-run ledger (`<benchmark_id>_run_records.jsonl.gz` + index JSON) to `results/runs/`
-- aggregate summaries/tables to `results/summaries/` and `results/tables/`
-
-Only `results/summaries/` is intended for git tracking; run ledgers and table exports are local artifacts.
-
-## Planned Additions
-
-- **AutoML-style user data entrypoint:** add a `SurvivalPredictor` API and CLI so users can fit survival models on their own data without writing loaders or configs first
-- **Preset-driven portfolio search:** support `fast`, `medium`, and `best` modes that control model coverage, tuning depth, and optional ensembling
-- **Additional loss functions:** broader objective support for classic and neural survival models (protocol and metrics context in [`docs/protocol.md`](docs/protocol.md))
-- **TorchSurv deep survival model capacity:** expand beyond baseline classical methods with deep model training/evaluation support (evaluation workflow in [`docs/protocol.md`](docs/protocol.md))
-- **Expanded dataset tracks:** continue adding medium/large cohorts with loader and metadata standards (dataset standards in [`docs/datasets.md`](docs/datasets.md))
-- **Flexible model portfolio:** broaden support from classical baselines to tree, boosting, deep, and future tabular foundation-model integrations
-- **Leaderboard hardening:** stronger reporting fields and submission-readiness checks (artifact contract in [`docs/protocol.md`](docs/protocol.md))
-- **Stronger validation checks:** additional reproducibility and environment diagnostics for CI/local runs (setup and smoke checks in [`docs/environment.md`](docs/environment.md))
+- ensembling, bagging, and richer AutoML orchestration
+- stronger artifact management for all trained models
+- more adaptive portfolio search and runtime budgeting
+- broader foundation-model coverage beyond the currently wired adapters
+- more large-cohort dataset integrations such as a real KKBox loader
 
 ## Add a New Method
 
 1. Implement `BaseSurvivalMethod` in `src/methods/`.
-2. Add method config in `configs/methods/`.
+2. Add a method config in `configs/methods/`.
 3. Register the method in `src/run_benchmark.py`.
 4. Ensure `predict_risk` and `predict_survival` return standardized outputs.
 
