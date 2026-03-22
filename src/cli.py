@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--test", default=None, help="Optional test CSV or Parquet data.")
     fit_parser.add_argument("--time-col", required=True, help="Name of the duration column.")
     fit_parser.add_argument("--event-col", required=True, help="Name of the event indicator column.")
-    fit_parser.add_argument("--presets", default="medium", choices=["fast", "medium", "best"])
+    fit_parser.add_argument("--presets", default="medium", choices=["fast", "medium", "best", "foundation"])
     fit_parser.add_argument("--eval-metric", default="harrell_c", choices=["harrell_c", "uno_c"])
     fit_parser.add_argument("--num-trials", type=int, default=None)
     fit_parser.add_argument("--random-state", type=int, default=0)

@@ -8,6 +8,15 @@ def _print_header() -> None:
     print("SurvArena environment check")
     print(f"python={sys.version.split()[0]}")
     print(f"platform={platform.platform()}")
+    print(f"executable={sys.executable}")
+
+
+def _check_virtualenv() -> None:
+    in_venv = sys.prefix != getattr(sys, "base_prefix", sys.prefix)
+    if in_venv:
+        print(f"venv=ok ({sys.prefix})")
+        return
+    print("venv=warning (global interpreter detected; prefer a repo-local .venv to avoid dependency conflicts)")
 
 
 def _check_imports() -> None:
@@ -22,11 +31,15 @@ def _check_imports() -> None:
         "optuna",
         "lifelines",
         "sksurv",
+        "tabpfn",
+        "autogluon.tabular",
     ]
     missing: list[str] = []
     for pkg in required:
         try:
-            importlib.import_module(pkg)
+            module = importlib.import_module(pkg)
+            version = getattr(module, "__version__", "unknown")
+            print(f"import[{pkg}]={version}")
         except Exception:
             missing.append(pkg)
     if missing:
@@ -89,6 +102,7 @@ def _check_torchsurv_metrics() -> None:
 
 def main() -> None:
     _print_header()
+    _check_virtualenv()
     _check_imports()
     _check_torchsurv_metrics()
     print("environment_check=passed")

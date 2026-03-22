@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import importlib.util
 from dataclasses import dataclass
+
+from src.methods.foundation.catalog import available_foundation_model_specs
 
 
 @dataclass(frozen=True, slots=True)
@@ -35,7 +38,23 @@ _PRESETS: dict[str, PresetConfig] = {
         inner_folds=5,
         scale_limit_rows=25_000,
     ),
+    "foundation": PresetConfig(
+        name="foundation",
+        method_ids=("coxph",),
+        n_trials=4,
+        inner_folds=3,
+        scale_limit_rows=10_000,
+    ),
 }
+
+
+def _has_dependency(module_name: str | None) -> bool:
+    if module_name is None:
+        return True
+    try:
+        return importlib.util.find_spec(module_name) is not None
+    except ModuleNotFoundError:
+        return False
 
 
 def resolve_preset(
@@ -58,6 +77,7 @@ def resolve_preset(
     preset = _PRESETS[preset_name]
     method_ids = list(preset.method_ids)
     portfolio_notes: list[str] = []
+    foundation_requested = bool(enable_foundation_models or preset_name == "foundation")
 
     if preset.scale_limit_rows is not None and n_rows > preset.scale_limit_rows:
         method_ids = [method_id for method_id in method_ids if not method_id.startswith("deepsurv")]
@@ -97,12 +117,30 @@ def resolve_preset(
         foundation_supported = False
         portfolio_notes.append("Skipped foundation models because the event count is too low for stable survival-head fitting.")
 
-    if enable_foundation_models and foundation_supported and n_rows <= 10_000 and n_features <= 500:
-        method_ids.append("tabpfn_survival")
-    elif enable_foundation_models and foundation_supported:
-        portfolio_notes.append(
-            "Skipped foundation models because dataset size exceeds the current TabPFN survival adapter heuristic."
-        )
+    eligible_foundation_methods: list[str] = []
+    if foundation_requested and foundation_supported:
+        for spec in available_foundation_model_specs():
+            if not _has_dependency(spec.dependency_module):
+                portfolio_notes.append(
+                    f"Skipped {spec.method_id} because the optional '{spec.dependency_module}' dependency is not installed."
+                )
+                continue
+            if spec.max_rows_hint is not None and n_rows > spec.max_rows_hint:
+                portfolio_notes.append(
+                    f"Skipped {spec.method_id} because dataset rows ({n_rows}) exceed its current heuristic ({spec.max_rows_hint})."
+                )
+                continue
+            if spec.max_features_hint is not None and n_features > spec.max_features_hint:
+                portfolio_notes.append(
+                    f"Skipped {spec.method_id} because feature count ({n_features}) exceeds its current heuristic ({spec.max_features_hint})."
+                )
+                continue
+            eligible_foundation_methods.append(spec.method_id)
+
+    if foundation_requested:
+        method_ids.extend(eligible_foundation_methods)
+        if not eligible_foundation_methods:
+            portfolio_notes.append("No currently implemented foundation-model adapters were eligible for this dataset.")
 
     if included_models is not None:
         include_set = set(included_models)

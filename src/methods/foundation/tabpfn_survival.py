@@ -10,12 +10,18 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self,
         n_estimators: int = 8,
         fit_mode: str = "fit_preprocessors",
+        model_version: str = "auto",
+        checkpoint_path: str | None = None,
+        fine_tune: bool = False,
         device: str = "auto",
         seed: int | None = None,
     ) -> None:
         super().__init__(
             n_estimators=n_estimators,
             fit_mode=fit_mode,
+            model_version=model_version,
+            checkpoint_path=checkpoint_path,
+            fine_tune=fine_tune,
             device=device,
             seed=seed,
         )
@@ -34,16 +40,42 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
     ) -> "TabPFNSurvivalMethod":
         from sksurv.linear_model import CoxPHSurvivalAnalysis
         from tabpfn import TabPFNRegressor
+        from tabpfn.constants import ModelVersion
 
         X_train_f = np.asarray(X_train, dtype=np.float32)
         target_time = np.log1p(np.asarray(time_train, dtype=np.float32))
 
-        self.backbone = TabPFNRegressor(
-            n_estimators=int(self.params["n_estimators"]),
-            fit_mode=str(self.params["fit_mode"]),
-            device=str(self.params["device"]),
-            random_state=self.params.get("seed"),
-        )
+        if bool(self.params["fine_tune"]):
+            raise NotImplementedError(
+                "TabPFN backbone fine-tuning is not exposed by the installed tabpfn package. "
+                "Use model_version/checkpoint_path to choose official or custom pretrained weights."
+            )
+
+        base_kwargs = {
+            "n_estimators": int(self.params["n_estimators"]),
+            "fit_mode": str(self.params["fit_mode"]),
+            "device": str(self.params["device"]),
+            "random_state": self.params.get("seed"),
+        }
+        checkpoint_path = self.params.get("checkpoint_path")
+        if checkpoint_path:
+            self.backbone = TabPFNRegressor(model_path=str(checkpoint_path), **base_kwargs)
+        else:
+            model_version = str(self.params["model_version"]).lower()
+            if model_version in {"auto", "default"}:
+                self.backbone = TabPFNRegressor(**base_kwargs)
+            else:
+                version_map = {
+                    "v2": ModelVersion.V2,
+                    "v2.5": ModelVersion.V2_5,
+                    "v2_5": ModelVersion.V2_5,
+                }
+                if model_version not in version_map:
+                    raise ValueError("model_version must be one of {'auto', 'v2', 'v2.5'}.")
+                self.backbone = TabPFNRegressor.create_default_for_version(
+                    version=version_map[model_version],
+                    **base_kwargs,
+                )
         self.backbone.fit(X_train_f, target_time)
         train_embeddings = self._extract_embeddings(X_train_f)
         self.embedding_dim_ = int(train_embeddings.shape[1])

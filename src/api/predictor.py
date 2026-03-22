@@ -22,6 +22,7 @@ from src.evaluation.metrics import (
     horizons_from_train_event_times,
 )
 from src.logging.tracker import write_json
+from src.methods.foundation.catalog import foundation_model_catalog
 from src.run_benchmark import (
     _method_registry,
     _prepare_inner_cv_cache,
@@ -236,6 +237,25 @@ class SurvivalPredictor:
     def model_names(self) -> list[str]:
         return list(self.fitted_models_.keys())
 
+    def foundation_model_catalog(self) -> pd.DataFrame:
+        method_registry = _method_registry()
+        rows: list[dict[str, Any]] = []
+        for spec in foundation_model_catalog():
+            rows.append(
+                {
+                    "method_id": spec.method_id,
+                    "backbone": spec.backbone,
+                    "provider": spec.provider,
+                    "status": spec.status,
+                    "implemented": spec.method_id in method_registry,
+                    "task_support": list(spec.task_support),
+                    "supports_finetune": spec.supports_finetune,
+                    "supports_pretrained_weights": spec.supports_pretrained_weights,
+                    "notes": spec.notes,
+                }
+            )
+        return pd.DataFrame(rows)
+
     def predict_risk(self, data: pd.DataFrame | str | Path, *, model: str | None = None) -> np.ndarray:
         dataset, resolved_model, _ = self._prepare_prediction_inputs(data, model=model)
         return resolved_model.predict_risk(dataset.to_numpy())
@@ -349,6 +369,7 @@ class SurvivalPredictor:
             "portfolio_notes": list(self.preset_config_.portfolio_notes),
             "trained_models": self.model_names(),
             "foundation_models_enabled": self.enable_foundation_models,
+            "foundation_model_catalog": self.foundation_model_catalog().to_dict(orient="records"),
         }
         if self.dataset_ is not None and self.dataset_.metadata.diagnostics is not None:
             summary["dataset_diagnostics"] = self.dataset_.metadata.diagnostics.to_dict()

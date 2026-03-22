@@ -37,3 +37,28 @@ def test_resolve_preset_skips_foundation_models_for_unsupported_feature_shapes()
     assert "tabpfn_survival" not in preset.method_ids
     assert any("high-cardinality categorical features" in note for note in preset.portfolio_notes)
     assert any("datetime-aware feature handling" in note for note in preset.portfolio_notes)
+
+
+def test_foundation_preset_requests_foundation_models_without_extra_flag() -> None:
+    preset = resolve_preset(
+        "foundation",
+        n_rows=500,
+        n_features=30,
+        event_count=150,
+        event_fraction=0.3,
+    )
+
+    assert preset.method_ids == ("coxph", "tabpfn_survival", "mitra_survival")
+
+
+def test_foundation_preset_reports_when_no_current_adapter_is_eligible() -> None:
+    preset = resolve_preset(
+        "foundation",
+        n_rows=50_000,
+        n_features=40,
+        event_count=2_000,
+        event_fraction=0.04,
+    )
+
+    assert preset.method_ids == ("coxph",)
+    assert any("No currently implemented foundation-model adapters were eligible" in note for note in preset.portfolio_notes)

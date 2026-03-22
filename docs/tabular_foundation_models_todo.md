@@ -9,6 +9,8 @@ AutoGluon model portfolios.
 - Experimental `tabpfn` support is now available as `tabpfn_survival`.
 - The current implementation uses TabPFN embeddings with a Cox survival head.
 - This is a first integration point, not the final architecture.
+- SurvArena now exposes a dedicated `foundation` preset plus a foundation-model
+  catalog so users can explicitly inspect and request this portfolio family.
 
 ## Phase 1: Abstractions
 

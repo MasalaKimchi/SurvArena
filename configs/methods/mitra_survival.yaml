@@ -1,0 +1,17 @@
+method_id: mitra_survival
+family: foundation
+library: autogluon.tabular + scikit-survival
+notes: Experimental Mitra survival adapter using AutoGluon Mitra regression predictions with a CoxPH survival head.
+search_space:
+  fine_tune:
+    type: categorical
+    choices: [false, true]
+  presets:
+    type: categorical
+    choices: [medium, high]
+default_params:
+  fine_tune: false
+  presets: medium
+  time_limit: null
+  path: null
+  seed: 0

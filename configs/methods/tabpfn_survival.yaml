@@ -9,8 +9,14 @@ search_space:
   fit_mode:
     type: categorical
     choices: [fit_preprocessors, fit_with_cache]
+  model_version:
+    type: categorical
+    choices: [auto, v2, v2.5]
 default_params:
   n_estimators: 8
   fit_mode: fit_preprocessors
+  model_version: auto
+  checkpoint_path: null
+  fine_tune: false
   device: auto
   seed: 0

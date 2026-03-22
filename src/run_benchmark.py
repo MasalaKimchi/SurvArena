@@ -582,6 +582,7 @@ def _method_registry() -> dict[str, Any]:
     from src.methods.classical.coxph import CoxPHMethod
     from src.methods.deep.deepsurv import DeepSurvMethod
     from src.methods.deep.deepsurv_moco import DeepSurvMomentumMethod
+    from src.methods.foundation.mitra_survival import MitraSurvivalMethod
     from src.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
     from src.methods.tree.rsf import RSFMethod
 
@@ -591,6 +592,7 @@ def _method_registry() -> dict[str, Any]:
         "rsf": RSFMethod,
         "deepsurv": DeepSurvMethod,
         "deepsurv_moco": DeepSurvMomentumMethod,
+        "mitra_survival": MitraSurvivalMethod,
         "tabpfn_survival": TabPFNSurvivalMethod,
     }
 

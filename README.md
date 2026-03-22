@@ -62,6 +62,7 @@ The predictor surface now also aims to be notebook-friendly by default:
 - leaderboard columns with explicit validation metric names
 - Kaplan-Meier comparison plotting after fitting
 - optional experimental tabular foundation-model inclusion via `enable_foundation_models=True`
+- a dedicated `foundation` preset for users who want the foundation-model portfolio first
 
 ## What It Covers (Milestone 1)
 

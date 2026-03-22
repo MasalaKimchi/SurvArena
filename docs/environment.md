@@ -3,6 +3,7 @@
 ## Recommended Python
 
 - Python 3.11 (preferred)
+- Python 3.12 (supported)
 - Python 3.10 (supported)
 
 ## One-command setup
@@ -16,6 +17,8 @@ This script:
 - creates `.venv`
 - installs `requirements.txt`
 - runs `scripts/check_environment.py`
+- keeps SurvArena isolated from the global Python environment
+- defaults to `python` rather than `python3` so it avoids accidentally picking an unsupported interpreter such as Python 3.13
 
 ## Manual setup
 
@@ -27,9 +30,16 @@ python -m pip install -r requirements.txt
 python scripts/check_environment.py
 ```
 
+SurvArena should be run from the repo-local `.venv` whenever possible. The
+foundation-model stack now includes `tabpfn` and `autogluon.tabular`, and those
+packages can force transitive version changes that are better kept out of a
+shared global interpreter.
+
 ## What is validated
 
+- whether Python is running inside a virtual environment
 - importability of core dependencies (`numpy`, `pandas`, `yaml`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`)
+- importability of foundation-model dependencies (`tabpfn`, `autogluon.tabular`)
 - `torchsurv` metric classes and IPCW API
 - synthetic metric run for:
   - Uno C-index
