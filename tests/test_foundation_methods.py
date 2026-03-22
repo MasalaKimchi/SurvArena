@@ -6,48 +6,24 @@ import types
 import numpy as np
 
 from src.automl.presets import resolve_preset
+from src.methods.foundation.mitra_survival import MitraSurvivalMethod
 from src.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
 
 
-class _FakeCoxPHSurvivalAnalysis:
-    def __init__(self, alpha: float = 0.0001) -> None:
-        self.alpha = alpha
-        self.fitted_X = None
-
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "_FakeCoxPHSurvivalAnalysis":
-        self.fitted_X = np.asarray(X)
-        return self
-
-    def predict(self, X: np.ndarray) -> np.ndarray:
-        return np.asarray(X).sum(axis=1)
-
-    def predict_survival_function(self, X: np.ndarray) -> list[object]:
-        risks = self.predict(X)
-
-        class _Fn:
-            def __init__(self, risk: float) -> None:
-                self.risk = max(float(risk), 0.1)
-
-            def __call__(self, times: np.ndarray) -> np.ndarray:
-                return np.exp(-self.risk * np.asarray(times, dtype=float))
-
-        return [_Fn(risk) for risk in risks]
-
-
 def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
-    class FakeRegressor:
+    class FakeBackbone:
         init_kwargs: dict[str, object] | None = None
         created_version: object | None = None
 
         def __init__(self, **kwargs) -> None:
-            FakeRegressor.init_kwargs = kwargs
+            FakeBackbone.init_kwargs = kwargs
 
         @classmethod
         def create_default_for_version(cls, version: object, **kwargs):
             cls.created_version = version
             return cls(**kwargs)
 
-        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeRegressor":
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeBackbone":
             return self
 
         def get_embeddings(self, X: np.ndarray, data_source: str = "test") -> np.ndarray:
@@ -55,26 +31,93 @@ def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
             return np.stack([X, X + 1.0], axis=0)
 
     fake_tabpfn = types.ModuleType("tabpfn")
-    fake_tabpfn.TabPFNRegressor = FakeRegressor
+    fake_tabpfn.TabPFNClassifier = FakeBackbone
+    fake_tabpfn.TabPFNRegressor = FakeBackbone
     fake_constants = types.ModuleType("tabpfn.constants")
     fake_constants.ModelVersion = types.SimpleNamespace(V2="v2", V2_5="v2.5")
-    fake_linear_model = types.ModuleType("sksurv.linear_model")
-    fake_linear_model.CoxPHSurvivalAnalysis = _FakeCoxPHSurvivalAnalysis
 
     monkeypatch.setitem(sys.modules, "tabpfn", fake_tabpfn)
     monkeypatch.setitem(sys.modules, "tabpfn.constants", fake_constants)
-    monkeypatch.setitem(sys.modules, "sksurv.linear_model", fake_linear_model)
 
-    method = TabPFNSurvivalMethod(model_version="v2.5", n_estimators=4)
+    method = TabPFNSurvivalMethod(
+        model_version="v2.5",
+        n_estimators=4,
+        hidden_layers="4",
+        max_epochs=2,
+        patience=1,
+        batch_size=2,
+    )
     method.fit(
-        X_train=np.asarray([[0.1, 0.2], [0.4, 0.5]], dtype=float),
-        time_train=np.asarray([1.0, 2.0], dtype=float),
-        event_train=np.asarray([1, 1], dtype=int),
+        X_train=np.asarray([[0.1, 0.2], [0.4, 0.5], [0.2, 0.3]], dtype=float),
+        time_train=np.asarray([1.0, 2.0, 3.0], dtype=float),
+        event_train=np.asarray([1, 1, 0], dtype=int),
     )
 
-    assert FakeRegressor.created_version == "v2.5"
-    assert FakeRegressor.init_kwargs is not None
-    assert FakeRegressor.init_kwargs["n_estimators"] == 4
+    assert FakeBackbone.created_version == "v2.5"
+    assert FakeBackbone.init_kwargs is not None
+    assert FakeBackbone.init_kwargs["n_estimators"] == 4
+    assert method.head_input_dim_ == 2
+
+
+def test_mitra_survival_uses_neural_cox_head(monkeypatch) -> None:
+    class FakeTabularPredictor:
+        init_kwargs: dict[str, object] | None = None
+        fit_kwargs: dict[str, object] | None = None
+
+        def __init__(self, **kwargs) -> None:
+            FakeTabularPredictor.init_kwargs = kwargs
+
+        def fit(self, **kwargs) -> "FakeTabularPredictor":
+            FakeTabularPredictor.fit_kwargs = kwargs
+            return self
+
+        def predict(self, frame) -> np.ndarray:
+            values = np.asarray(frame.to_numpy(dtype=np.float32), dtype=np.float32)
+            return values.sum(axis=1) * 0.25 + 0.5
+
+    fake_autogluon = types.ModuleType("autogluon")
+    fake_tabular = types.ModuleType("autogluon.tabular")
+    fake_tabular.TabularPredictor = FakeTabularPredictor
+
+    monkeypatch.setitem(sys.modules, "autogluon", fake_autogluon)
+    monkeypatch.setitem(sys.modules, "autogluon.tabular", fake_tabular)
+
+    method = MitraSurvivalMethod(
+        backbone_training="finetune",
+        fine_tune_steps=123,
+        hidden_layers="4",
+        max_epochs=2,
+        patience=1,
+        batch_size=2,
+        device="cpu",
+    )
+    method.fit(
+        X_train=np.asarray([[0.1, 0.2], [0.4, 0.5], [0.2, 0.3]], dtype=float),
+        time_train=np.asarray([1.0, 2.0, 3.0], dtype=float),
+        event_train=np.asarray([1, 1, 0], dtype=int),
+        X_val=np.asarray([[0.6, 0.7], [0.3, 0.1]], dtype=float),
+        time_val=np.asarray([1.5, 2.5], dtype=float),
+        event_val=np.asarray([1, 0], dtype=int),
+    )
+
+    assert FakeTabularPredictor.init_kwargs is not None
+    assert FakeTabularPredictor.init_kwargs["problem_type"] == "regression"
+    assert FakeTabularPredictor.fit_kwargs is not None
+    assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune"] is True
+    assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune_steps"] == 123
+    assert method.head is method.survival_head
+    assert method.head_input_dim_ == 1
+
+    risk = method.predict_risk(np.asarray([[0.5, 0.2], [0.1, 0.9]], dtype=float))
+    survival = method.predict_survival(
+        np.asarray([[0.5, 0.2], [0.1, 0.9]], dtype=float),
+        np.asarray([1.0, 2.0], dtype=float),
+    )
+
+    assert risk.shape == (2,)
+    assert survival.shape == (2, 2)
+    assert np.all(survival > 0.0)
+    assert np.all(survival <= 1.0)
 
 
 def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> None:

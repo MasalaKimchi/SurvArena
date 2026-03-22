@@ -1,34 +1,13 @@
 from __future__ import annotations
 
-from copy import deepcopy
 from typing import Any
 
 import numpy as np
 import torch
 from torch import nn
-from torchsurv.loss.cox import neg_partial_log_likelihood
 
 from src.methods.base import BaseSurvivalMethod
-
-
-def _parse_hidden_layers(value: Any) -> list[int]:
-    if isinstance(value, str):
-        parts = [part.strip() for part in value.split("-") if part.strip()]
-        return [int(part) for part in parts]
-    if isinstance(value, (list, tuple)):
-        return [int(part) for part in value]
-    raise ValueError(f"Unsupported hidden_layers value: {value!r}")
-
-
-def _activation_cls(name: str) -> type[nn.Module]:
-    mapping: dict[str, type[nn.Module]] = {
-        "relu": nn.ReLU,
-        "selu": nn.SELU,
-        "gelu": nn.GELU,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unsupported activation '{name}'. Choices: {sorted(mapping)}")
-    return mapping[name]
+from src.methods.foundation.neural_cox import forward_in_chunks, train_neural_cox_head
 
 
 class TabPFNSurvivalMethod(BaseSurvivalMethod):
@@ -80,21 +59,6 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self.head_input_dim_: int | None = None
         self.baseline_event_times_: np.ndarray | None = None
         self.baseline_survival_: np.ndarray | None = None
-
-    def _resolve_device(self) -> torch.device:
-        raw_device = str(self.params["device"])
-        if raw_device == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.device(raw_device)
-
-    @staticmethod
-    def _set_torch_seed(seed: int) -> None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if hasattr(torch.backends, "cudnn"):
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
 
     def _build_backbone(self) -> Any:
         from tabpfn import TabPFNClassifier, TabPFNRegressor
@@ -162,59 +126,10 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             embeddings = embeddings.mean(axis=0)
         return np.asarray(embeddings, dtype=np.float32)
 
-    def _build_head(self, in_features: int) -> nn.Module:
-        hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
-        activation = _activation_cls(str(self.params["activation"]))
-        dropout = float(self.params["dropout"])
-
-        layers: list[nn.Module] = []
-        prev = in_features
-        for width in hidden_layers:
-            width_i = int(width)
-            layers.append(nn.Linear(prev, width_i))
-            layers.append(activation())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
-            prev = width_i
-        layers.append(nn.Linear(prev, 1, bias=False))
-        return nn.Sequential(*layers)
-
-    @staticmethod
-    def _cox_loss(log_risk: torch.Tensor, event: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
-        return neg_partial_log_likelihood(log_risk, event, time)
-
     def _forward_in_chunks(self, X: torch.Tensor, batch_size: int) -> torch.Tensor:
         if self.head is None:
             raise RuntimeError("Survival head is unavailable before fit().")
-        outputs: list[torch.Tensor] = []
-        for start in range(0, X.shape[0], batch_size):
-            end = min(start + batch_size, X.shape[0])
-            outputs.append(self.head(X[start:end]).squeeze(-1))
-        return torch.cat(outputs, dim=0)
-
-    def _fit_baseline_survival(
-        self,
-        time_train: np.ndarray,
-        event_train: np.ndarray,
-        train_log_risk: np.ndarray,
-    ) -> None:
-        event_mask = event_train.astype(bool)
-        event_times = np.unique(time_train[event_mask])
-        if event_times.size == 0:
-            self.baseline_event_times_ = np.asarray([1.0], dtype=np.float64)
-            self.baseline_survival_ = np.asarray([1.0], dtype=np.float64)
-            return
-
-        exp_risk = np.exp(train_log_risk.astype(np.float64))
-        hazards: list[float] = []
-        for event_time in event_times:
-            d_j = float(np.sum((time_train == event_time) & event_mask))
-            r_j = float(np.sum(exp_risk[time_train >= event_time]))
-            hazards.append(d_j / max(r_j, 1e-12))
-
-        cumulative_hazard = np.cumsum(np.asarray(hazards, dtype=np.float64))
-        self.baseline_event_times_ = event_times.astype(np.float64)
-        self.baseline_survival_ = np.exp(-cumulative_hazard).astype(np.float64)
+        return forward_in_chunks(self.head, X, batch_size)
 
     def fit(
         self,
@@ -225,14 +140,9 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
     ) -> "TabPFNSurvivalMethod":
-        self.device_ = self._resolve_device()
-        self._set_torch_seed(int(self.params["seed"] or 0))
-
         X_train_np = np.asarray(X_train, dtype=np.float32)
         time_train_np = np.asarray(time_train, dtype=np.float64)
         event_train_np = np.asarray(event_train, dtype=np.int32)
-        if int(event_train_np.sum()) <= 0:
-            raise ValueError("TabPFN survival head requires at least one observed event in the training data.")
 
         self._fit_backbone(X_train_np, time_train_np, event_train_np)
 
@@ -240,66 +150,35 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self.embedding_dim_ = int(train_embeddings_np.shape[-1]) if train_embeddings_np.ndim == 2 else None
         self.head_input_dim_ = int(train_embeddings_np.shape[1])
 
-        train_embeddings = torch.as_tensor(train_embeddings_np, dtype=torch.float32, device=self.device_)
-        train_time_t = torch.as_tensor(time_train_np.astype(np.float32), dtype=torch.float32, device=self.device_)
-        train_event_t = torch.as_tensor(event_train_np.astype(bool), dtype=torch.bool, device=self.device_)
-
         val_embeddings = None
-        val_time_t = None
-        val_event_t = None
         if X_val is not None and time_val is not None and event_val is not None:
             val_embeddings_np = self._extract_embeddings(np.asarray(X_val, dtype=np.float32), data_source="test")
-            val_embeddings = torch.as_tensor(val_embeddings_np, dtype=torch.float32, device=self.device_)
-            val_time_t = torch.as_tensor(np.asarray(time_val, dtype=np.float32), dtype=torch.float32, device=self.device_)
-            val_event_t = torch.as_tensor(np.asarray(event_val).astype(bool), dtype=torch.bool, device=self.device_)
+            val_embeddings = np.asarray(val_embeddings_np, dtype=np.float32)
 
-        self.head = self._build_head(self.head_input_dim_).to(self.device_)
-        opt_name = str(self.params["optimizer"]).lower()
-        optimizer_cls = torch.optim.AdamW if opt_name == "adamw" else torch.optim.Adam
-        optimizer = optimizer_cls(
-            self.head.parameters(),
+        artifacts = train_neural_cox_head(
+            train_features=train_embeddings_np,
+            time_train=time_train_np,
+            event_train=event_train_np,
+            hidden_layers=self.params["hidden_layers"],
+            activation=str(self.params["activation"]),
+            dropout=float(self.params["dropout"]),
+            optimizer=str(self.params["optimizer"]),
             lr=float(self.params["lr"]),
             weight_decay=float(self.params["weight_decay"]),
+            batch_size=int(self.params["batch_size"]),
+            max_epochs=int(self.params["max_epochs"]),
+            patience=int(self.params["patience"]),
+            device=str(self.params["device"]),
+            seed=self.params.get("seed"),
+            val_features=val_embeddings,
+            time_val=time_val,
+            event_val=event_val,
         )
-
-        batch_size = int(self.params["batch_size"])
-        max_epochs = int(self.params["max_epochs"])
-        patience = int(self.params["patience"])
-
-        best_state = deepcopy(self.head.state_dict())
-        best_loss = float("inf")
-        stale_epochs = 0
-
-        for _ in range(max_epochs):
-            self.head.train()
-            optimizer.zero_grad(set_to_none=True)
-            train_log_risk = self._forward_in_chunks(train_embeddings, batch_size=batch_size)
-            train_loss = self._cox_loss(train_log_risk, train_event_t, train_time_t)
-            train_loss.backward()
-            optimizer.step()
-
-            with torch.no_grad():
-                if val_embeddings is not None and val_time_t is not None and val_event_t is not None:
-                    self.head.eval()
-                    val_log_risk = self._forward_in_chunks(val_embeddings, batch_size=batch_size)
-                    monitor = float(self._cox_loss(val_log_risk, val_event_t, val_time_t).item())
-                else:
-                    monitor = float(train_loss.item())
-
-            if monitor + 1e-8 < best_loss:
-                best_loss = monitor
-                best_state = deepcopy(self.head.state_dict())
-                stale_epochs = 0
-            else:
-                stale_epochs += 1
-                if stale_epochs >= patience:
-                    break
-
-        self.head.load_state_dict(best_state)
-        self.head.eval()
-        with torch.no_grad():
-            train_log_risk = self._forward_in_chunks(train_embeddings, batch_size=batch_size).detach().cpu().numpy()
-        self._fit_baseline_survival(time_train_np, event_train_np, train_log_risk)
+        self.head = artifacts.head
+        self.device_ = artifacts.device
+        self.head_input_dim_ = artifacts.input_dim
+        self.baseline_event_times_ = artifacts.baseline_event_times
+        self.baseline_survival_ = artifacts.baseline_survival
         return self
 
     def predict_risk(self, X: np.ndarray) -> np.ndarray:
