@@ -1,7 +1,7 @@
 method_id: tabpfn_survival
 family: foundation
 library: tabpfn + scikit-survival
-notes: Experimental tabular foundation-model adapter using TabPFN embeddings with a CoxPH survival head.
+notes: Experimental tabular foundation-model adapter using frozen TabPFN embeddings with a trainable MLP survival head optimized by Cox loss.
 search_space:
   n_estimators:
     type: categorical
@@ -12,11 +12,62 @@ search_space:
   model_version:
     type: categorical
     choices: [auto, v2, v2.5]
+  backbone_task:
+    type: categorical
+    choices: [classification_event, regression_time]
+  aggregate_estimators:
+    type: categorical
+    choices: [mean, concat]
+  hidden_layers:
+    type: categorical
+    choices: ["64", "128", "128-64", "256-128"]
+  activation:
+    type: categorical
+    choices: [relu, selu, gelu]
+  dropout:
+    type: float
+    low: 0.0
+    high: 0.5
+  optimizer:
+    type: categorical
+    choices: [adamw, adam]
+  lr:
+    type: float
+    low: 0.0001
+    high: 0.005
+    log: true
+  weight_decay:
+    type: float
+    low: 0.0000001
+    high: 0.01
+    log: true
+  batch_size:
+    type: categorical
+    choices: [64, 128, 256]
+  max_epochs:
+    type: int
+    low: 50
+    high: 250
+  patience:
+    type: int
+    low: 10
+    high: 40
 default_params:
   n_estimators: 8
   fit_mode: fit_preprocessors
   model_version: auto
   checkpoint_path: null
+  backbone_task: classification_event
   fine_tune: false
+  aggregate_estimators: mean
+  hidden_layers: "128-64"
+  activation: relu
+  dropout: 0.1
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 128
+  max_epochs: 150
+  patience: 20
   device: auto
   seed: 0
