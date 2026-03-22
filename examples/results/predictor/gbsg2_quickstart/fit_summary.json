@@ -1,0 +1,110 @@
+{
+  "config": {
+    "label_time": "time",
+    "label_event": "event",
+    "eval_metric": "harrell_c",
+    "presets": "fast",
+    "num_trials": null,
+    "random_state": 42,
+    "verbose": false,
+    "enable_foundation_models": false
+  },
+  "best_method_id": "coxph",
+  "best_params": {
+    "alpha": 0.5061576888752303
+  },
+  "portfolio_notes": [],
+  "dataset_diagnostics": {
+    "n_rows": 548,
+    "n_features": 8,
+    "n_events": 309,
+    "event_rate": 0.5638686131386861,
+    "censoring_rate": 0.4361313868613139,
+    "missing_fraction": 0.0,
+    "feature_type_counts": {
+      "numerical": 5,
+      "categorical": 3
+    },
+    "high_cardinality_features": [],
+    "id_like_features": [],
+    "warnings": []
+  },
+  "test_metrics": {
+    "test_uno_c": 0.5199804902076721,
+    "test_harrell_c": 0.5366265177726746,
+    "test_ibs": 0.15931089222431183,
+    "test_td_auc_25": 0.5577249526977539,
+    "test_td_auc_50": 0.5754663944244385,
+    "test_td_auc_75": 0.4542444944381714
+  },
+  "trained_models": [
+    "coxph",
+    "rsf"
+  ],
+  "per_model_test_metrics": {
+    "coxph": {
+      "test_uno_c": 0.5199804902076721,
+      "test_harrell_c": 0.5366265177726746,
+      "test_ibs": 0.15931089222431183,
+      "test_td_auc_25": 0.5577249526977539,
+      "test_td_auc_50": 0.5754663944244385,
+      "test_td_auc_75": 0.4542444944381714
+    },
+    "rsf": {
+      "test_uno_c": 0.5413810610771179,
+      "test_harrell_c": 0.5363855361938477,
+      "test_ibs": 0.1603124886751175,
+      "test_td_auc_25": 0.5866291522979736,
+      "test_td_auc_50": 0.580353856086731,
+      "test_td_auc_75": 0.5398333668708801
+    }
+  },
+  "results": [
+    {
+      "method_id": "coxph",
+      "selection_score": 0.5126882195472717,
+      "validation_metrics": {
+        "validation_uno_c": 0.5233628551165262,
+        "validation_harrell_c": 0.5126882195472717,
+        "validation_ibs": 0.1584150791168213,
+        "validation_td_auc_25": 0.4941932062307994,
+        "validation_td_auc_50": 0.5548473199208578,
+        "validation_td_auc_75": 0.5654425621032715,
+        "validation_primary_metric": 0.5126882195472717
+      },
+      "fit_time_sec": 1.2839155000001483,
+      "n_trials_completed": 2,
+      "params": {
+        "alpha": 0.5061576888752303
+      },
+      "status": "success",
+      "error": null,
+      "error_type": null
+    },
+    {
+      "method_id": "rsf",
+      "selection_score": 0.5037085811297098,
+      "validation_metrics": {
+        "validation_uno_c": 0.5045056442419688,
+        "validation_harrell_c": 0.5037085811297098,
+        "validation_ibs": 0.1627283344666163,
+        "validation_td_auc_25": 0.4792589445908864,
+        "validation_td_auc_50": 0.5282773971557617,
+        "validation_td_auc_75": 0.5045007665952047,
+        "validation_primary_metric": 0.5037085811297098
+      },
+      "fit_time_sec": 4.141095707998829,
+      "n_trials_completed": 2,
+      "params": {
+        "n_estimators": 437,
+        "max_depth": null,
+        "min_samples_split": 19,
+        "min_samples_leaf": 4,
+        "max_features": null
+      },
+      "status": "success",
+      "error": null,
+      "error_type": null
+    }
+  ]
+}

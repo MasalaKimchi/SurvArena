@@ -15,6 +15,9 @@ search_space:
   backbone_task:
     type: categorical
     choices: [classification_event, regression_time]
+  backbone_training:
+    type: categorical
+    choices: [frozen, finetune]
   aggregate_estimators:
     type: categorical
     choices: [mean, concat]
@@ -52,13 +55,19 @@ search_space:
     type: int
     low: 10
     high: 40
+  n_estimators_finetune:
+    type: categorical
+    choices: [1, 2, 4]
+  n_estimators_final_inference:
+    type: categorical
+    choices: [4, 8]
 default_params:
   n_estimators: 8
   fit_mode: fit_preprocessors
   model_version: auto
   checkpoint_path: null
   backbone_task: classification_event
-  fine_tune: false
+  backbone_training: frozen
   aggregate_estimators: mean
   hidden_layers: "128-64"
   activation: relu
@@ -69,5 +78,10 @@ default_params:
   batch_size: 128
   max_epochs: 150
   patience: 20
+  grad_clip_value: 1.0
+  n_estimators_finetune: 2
+  n_estimators_final_inference: 8
+  finetune_ctx_plus_query_samples: 10000
+  finetune_ctx_query_split_ratio: 0.2
   device: auto
   seed: 0

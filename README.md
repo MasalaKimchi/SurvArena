@@ -82,7 +82,7 @@ The predictor surface now also aims to be notebook-friendly by default:
 
 ## Examples
 
-- **Quickstart notebook:** [`examples/survival_predictor_quickstart.ipynb`](examples/survival_predictor_quickstart.ipynb)
+- **Quickstart notebook:** [`examples/survival_predictor_quickstart.ipynb`](examples/survival_predictor_quickstart.ipynb) - detailed beginner-friendly walkthrough of the AutoML-style `SurvivalPredictor` workflow on the built-in `gbsg2` dataset
 - **Examples overview:** [`examples/README.md`](examples/README.md)
 
 ## Quick Start

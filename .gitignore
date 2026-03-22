@@ -7,3 +7,6 @@ __pycache__/
 results/*
 !results/summaries/
 !results/summaries/**
+
+# Example predictor pickles exceed GitHub's 100MB file limit; regenerate locally.
+examples/results/**/*.pkl

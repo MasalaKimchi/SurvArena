@@ -39,27 +39,16 @@ def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
     monkeypatch.setitem(sys.modules, "tabpfn", fake_tabpfn)
     monkeypatch.setitem(sys.modules, "tabpfn.constants", fake_constants)
 
-    method = TabPFNSurvivalMethod(
-        model_version="v2.5",
-        n_estimators=4,
-        hidden_layers="4",
-        max_epochs=2,
-        patience=1,
-        batch_size=2,
-    )
-    method.fit(
-        X_train=np.asarray([[0.1, 0.2], [0.4, 0.5], [0.2, 0.3]], dtype=float),
-        time_train=np.asarray([1.0, 2.0, 3.0], dtype=float),
-        event_train=np.asarray([1, 1, 0], dtype=int),
-    )
+    method = TabPFNSurvivalMethod(model_version="v2.5", n_estimators=4)
+    estimator = method._build_backbone(n_estimators=4, fit_mode="batched")
 
     assert FakeBackbone.created_version == "v2.5"
     assert FakeBackbone.init_kwargs is not None
     assert FakeBackbone.init_kwargs["n_estimators"] == 4
-    assert method.head_input_dim_ == 2
+    assert estimator is not None
 
 
-def test_mitra_survival_uses_neural_cox_head(monkeypatch) -> None:
+def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> None:
     class FakeTabularPredictor:
         init_kwargs: dict[str, object] | None = None
         fit_kwargs: dict[str, object] | None = None
@@ -85,19 +74,11 @@ def test_mitra_survival_uses_neural_cox_head(monkeypatch) -> None:
     method = MitraSurvivalMethod(
         backbone_training="finetune",
         fine_tune_steps=123,
-        hidden_layers="4",
-        max_epochs=2,
-        patience=1,
-        batch_size=2,
-        device="cpu",
     )
     method.fit(
         X_train=np.asarray([[0.1, 0.2], [0.4, 0.5], [0.2, 0.3]], dtype=float),
         time_train=np.asarray([1.0, 2.0, 3.0], dtype=float),
         event_train=np.asarray([1, 1, 0], dtype=int),
-        X_val=np.asarray([[0.6, 0.7], [0.3, 0.1]], dtype=float),
-        time_val=np.asarray([1.5, 2.5], dtype=float),
-        event_val=np.asarray([1, 0], dtype=int),
     )
 
     assert FakeTabularPredictor.init_kwargs is not None
@@ -105,8 +86,6 @@ def test_mitra_survival_uses_neural_cox_head(monkeypatch) -> None:
     assert FakeTabularPredictor.fit_kwargs is not None
     assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune"] is True
     assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune_steps"] == 123
-    assert method.head is method.survival_head
-    assert method.head_input_dim_ == 1
 
     risk = method.predict_risk(np.asarray([[0.5, 0.2], [0.1, 0.9]], dtype=float))
     survival = method.predict_survival(

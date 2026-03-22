@@ -1,0 +1,12 @@
+{
+  "serialization_version": 1,
+  "class_name": "SurvivalPredictor",
+  "module": "src.api.predictor",
+  "path": "/Users/justin/Documents/SurvArena/examples/results/predictor/gbsg2_quickstart/predictor.pkl",
+  "best_method_id": "coxph",
+  "trained_models": [
+    "coxph",
+    "rsf"
+  ],
+  "eval_metric": "harrell_c"
+}
