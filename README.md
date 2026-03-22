@@ -66,7 +66,7 @@ The predictor surface now also aims to be notebook-friendly by default:
 
 ## What It Covers (Milestone 1)
 
-- **Datasets:** SUPPORT, METABRIC, GBSG2, FLCHAIN, WHAS500, PBC (+ KKBox target track)
+- **Datasets:** SUPPORT, METABRIC, AIDS, GBSG2, FLCHAIN, WHAS500, PBC (+ KKBox target track)
 - **Methods:** CoxPH, CoxNet, Random Survival Forest (RSF), DeepSurv
 - **Protocol:** repeated nested CV with shared seeds and comparable tuning budget
 - **Metrics:** Harrell's C-index (primary default), Uno's C-index, IBS, time-dependent AUC

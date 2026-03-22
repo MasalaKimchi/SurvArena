@@ -12,6 +12,7 @@ benchmark planning and track selection.
 | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
 | `support` | Standard | pycox | 8,873 | 14 | 6,036 | 2,837 | 68.03% | 31.97% | Mixed ICU/hospital clinical cohort with moderate censoring and heterogeneous feature types. |
 | `metabric` | Standard | pycox | 1,904 | 9 | 1,103 | 801 | 57.93% | 42.07% | Breast cancer prognosis benchmark commonly used in survival modeling literature. |
+| `aids` | Standard | scikit-survival | 1,151 | 11 | 1,055 | 96 | 91.66% | 8.34% | AIDS Clinical Trial cohort with light censoring and mixed clinical/treatment covariates. |
 | `gbsg2` | Standard | scikit-survival | 686 | 8 | 387 | 299 | 56.41% | 43.59% | German Breast Cancer Study Group cohort; compact clinical benchmark. |
 | `flchain` | Standard | scikit-survival | 7,874 | 9 | 2,169 | 5,705 | 27.55% | 72.45% | Serum free light chain study with heavy censoring and long follow-up tails. |
 | `whas500` | Standard | scikit-survival | 500 | 14 | 215 | 285 | 43.00% | 57.00% | Worcester Heart Attack Study subset; small cardiovascular risk benchmark. |

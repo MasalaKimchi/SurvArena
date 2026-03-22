@@ -23,6 +23,7 @@ def _load_from_sksurv(dataset_id: str) -> tuple[pd.DataFrame, np.ndarray, np.nda
     from sksurv import datasets as sk_datasets
 
     mapping: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray]]] = {
+        "aids": sk_datasets.load_aids,
         "gbsg2": sk_datasets.load_gbsg2,
         "flchain": sk_datasets.load_flchain,
         "whas500": sk_datasets.load_whas500,
@@ -90,6 +91,7 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,
         "metabric": _load_metabric_pycox,
+        "aids": lambda: _load_from_sksurv("aids"),
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),
         "whas500": lambda: _load_from_sksurv("whas500"),

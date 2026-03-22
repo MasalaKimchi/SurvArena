@@ -19,6 +19,7 @@ time_horizons_quantiles: [0.25, 0.5, 0.75]
 datasets:
   - support
   - metabric
+  - aids
   - gbsg2
   - flchain
   - whas500
