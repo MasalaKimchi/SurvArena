@@ -1,0 +1,31 @@
+benchmark_id: practical_v1_no_pbc
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 5
+outer_repeats: 1
+inner_folds: 3
+seeds: [11]
+primary_metric: harrell_c
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+tuning:
+  n_trials: 0
+  timeout_seconds: null
+  max_epochs: 200
+  patience: 20
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+datasets:
+  - support
+  - metabric
+  - aids
+  - gbsg2
+  - flchain
+  - whas500
+methods:
+  - coxph
+  - coxnet
+  - rsf
+  - deepsurv
+notes: Practical all-dataset sweep excluding foundation methods and unavailable PBC loader.

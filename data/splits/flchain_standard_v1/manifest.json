@@ -2,9 +2,9 @@
   "manifest_payload": {
     "version": 1,
     "split_strategy": "repeated_nested_cv",
-    "n_samples": 686,
-    "event_fingerprint": "95c02cb0d4138c94ce79aed9b64f01626545231f27be6632449089c63ec7117f",
-    "event_rate": 0.4358600583090379,
+    "n_samples": 7874,
+    "event_fingerprint": "3dcfe7d6e22b423a10bef796d4a4289dbe0ce2b4c229a03d2759d974370ba4cc",
+    "event_rate": 0.27546355092710184,
     "seeds": [
       11
     ],
