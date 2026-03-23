@@ -62,3 +62,23 @@ def test_foundation_preset_reports_when_no_current_adapter_is_eligible() -> None
 
     assert preset.method_ids == ("coxph",)
     assert any("No currently implemented foundation-model adapters were eligible" in note for note in preset.portfolio_notes)
+
+
+def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> None:
+    preset = resolve_preset(
+        "all",
+        n_rows=500,
+        n_features=30,
+        event_count=150,
+        event_fraction=0.3,
+    )
+
+    assert preset.method_ids == (
+        "coxph",
+        "coxnet",
+        "rsf",
+        "deepsurv",
+        "deepsurv_moco",
+        "tabpfn_survival",
+        "mitra_survival",
+    )

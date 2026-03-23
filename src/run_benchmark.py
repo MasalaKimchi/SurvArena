@@ -565,18 +565,34 @@ def main() -> None:
     from src.data.loaders import load_dataset
     from src.data.splitters import load_or_create_splits
     from src.logging.export import (
+        create_experiment_dir,
         export_fold_results,
         export_leaderboard,
         export_overall_summary,
         export_run_ledger,
         export_seed_summary,
     )
-    from src.logging.tracker import payload_sha256
+    from src.logging.tracker import payload_sha256, write_json
 
     all_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
     method_cfg_cache = {method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods}
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
+    experiment_dir = create_experiment_dir(repo_root)
+    write_json(
+        experiment_dir / "experiment_manifest.json",
+        {
+            "benchmark_id": benchmark_id,
+            "datasets": datasets,
+            "methods": methods,
+            "seeds": seeds,
+            "n_trials": n_trials,
+            "timeout_seconds": timeout_seconds,
+            "primary_metric": primary_metric,
+            "benchmark_config_hash": benchmark_cfg_hash,
+            "output_dir": str(experiment_dir),
+        },
+    )
 
     for dataset_id in datasets:
         dataset = load_dataset(dataset_id, repo_root)
@@ -623,12 +639,18 @@ def main() -> None:
                     f"{primary_metric}={record.get(primary_metric)}"
                 )
 
-    frame = export_fold_results(repo_root, all_records)
-    seed_summary = export_seed_summary(repo_root, frame)
-    export_overall_summary(repo_root, frame)
-    export_leaderboard(repo_root, seed_summary, primary_metric=primary_metric)
-    export_run_ledger(repo_root, run_records, benchmark_id=benchmark_id)
-    print("Benchmark run complete.")
+    frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
+    seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
+    export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
+    export_leaderboard(
+        repo_root,
+        seed_summary,
+        primary_metric=primary_metric,
+        output_dir=experiment_dir,
+        file_prefix=benchmark_id,
+    )
+    export_run_ledger(repo_root, run_records, benchmark_id=benchmark_id, output_dir=experiment_dir)
+    print(f"Benchmark run complete. Outputs saved to: {experiment_dir}")
 
 
 @lru_cache(maxsize=1)

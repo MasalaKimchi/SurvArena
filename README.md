@@ -27,6 +27,7 @@ Available predictor presets:
 - `fast`: `coxph`, `rsf`
 - `medium`: `coxph`, `coxnet`, `rsf`, `deepsurv`
 - `best`: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`
+- `all` (default): `best` portfolio plus eligible foundation adapters
 - `foundation`: starts with `coxph` and adds eligible foundation-model adapters
 
 Experimental foundation-model support is available through:
@@ -36,6 +37,17 @@ Experimental foundation-model support is available through:
 
 Those adapters are optional, depend on extra packages already listed in `requirements.txt`, and are
 added only when dataset-shape and dependency checks pass.
+
+### TabPFN access setup (required)
+
+TabPFN v2.5 checkpoints are gated on Hugging Face. Before using `tabpfn_survival`, complete:
+
+1. Accept model terms at [https://huggingface.co/Prior-Labs/tabpfn_2_5](https://huggingface.co/Prior-Labs/tabpfn_2_5).
+2. Authenticate with one of:
+   - `hf auth login`
+   - `HF_TOKEN` / `HUGGINGFACE_HUB_TOKEN` environment variable
+
+If authentication is missing, SurvArena will fail the `tabpfn_survival` fit with a Hugging Face gated-model error.
 
 ### Benchmark workflow
 
@@ -151,10 +163,17 @@ The benchmark engine writes:
 
 - persisted splits to `data/splits/`
 - split manifests to `data/splits/<task_id>/manifest.json`
-- compact per-run ledgers to `results/runs/`
-- aggregate summaries and tables to `results/summaries/` and `results/tables/`
+- experiment outputs to `results/summary/exp_<YYYYMMDD_HHMMSS>/`
+  - `<benchmark_id>_fold_results.csv`
+  - `<benchmark_id>_seed_summary.csv`
+  - `<benchmark_id>_overall_summary.json`
+  - `<benchmark_id>_leaderboard.csv`
+  - `<benchmark_id>_leaderboard.json`
+  - `<benchmark_id>_run_records.jsonl.gz`
+  - `<benchmark_id>_run_records_index.json`
+  - `experiment_manifest.json`
 
-Only `results/summaries/` is intended for git tracking; run ledgers and table exports are local artifacts.
+The timestamped experiment directory keeps runs easy to compare and prevents accidental overwrite.
 
 ## Documentation
 

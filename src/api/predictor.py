@@ -64,7 +64,7 @@ class SurvivalPredictor:
         label_time: str,
         label_event: str,
         eval_metric: str = "harrell_c",
-        presets: str = "medium",
+        presets: str = "all",
         num_trials: int | None = None,
         included_models: list[str] | None = None,
         excluded_models: list[str] | None = None,

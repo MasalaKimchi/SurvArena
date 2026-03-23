@@ -1,12 +1,49 @@
+## Virtual environments
 .venv/
-survArena/
+venv/
+env/
+
+## Python bytecode and caches
 __pycache__/
 *.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+## Test and coverage artifacts
+.coverage
+.coverage.*
+htmlcov/
+
+## Build and packaging artifacts
+build/
+dist/
+*.egg-info/
+pip-wheel-metadata/
+
+## Jupyter and notebook temp files
+.ipynb_checkpoints/
+
+## Local environment files
+.env
+.env.*
+
+## Editor / OS clutter
+.vscode/
+.idea/
+.DS_Store
 
 # Keep only compact benchmark summaries in git.
 results/*
 !results/summaries/
 !results/summaries/**
+# New timestamped benchmark experiment outputs are local-only.
+results/summary/
 
 # Example predictor pickles exceed GitHub's 100MB file limit; regenerate locally.
 examples/results/**/*.pkl

@@ -115,3 +115,35 @@ def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> Non
 
     assert "tabpfn_survival" in preset.method_ids
     assert "mitra_survival" in preset.method_ids
+
+
+def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:
+    import torch
+
+    class FakeExecutor:
+        def __init__(self) -> None:
+            self.feature_schema_list = [[object()]]
+            self.ensemble_configs = [[object()]]
+
+        def use_torch_inference_mode(self, use_inference: bool = False) -> None:
+            return None
+
+        def iter_outputs(self, X, *, autocast: bool):  # noqa: ANN001
+            for _ in X:
+                yield torch.ones((4, 1, 10), dtype=torch.float32), []
+
+    class FakeEstimator:
+        def __init__(self) -> None:
+            self.executor_ = FakeExecutor()
+            self.use_autocast_ = False
+
+    method = TabPFNSurvivalMethod(aggregate_estimators="mean")
+    method.finetuned_estimator_ = FakeEstimator()
+    method.device_ = torch.device("cpu")
+
+    embeddings = method._extract_batch_embeddings(
+        [torch.zeros((4, 3), dtype=torch.float32), torch.zeros((4, 3), dtype=torch.float32)]
+    )
+
+    assert embeddings.shape == (4, 10)
+    assert torch.allclose(embeddings, torch.ones((4, 10), dtype=torch.float32))

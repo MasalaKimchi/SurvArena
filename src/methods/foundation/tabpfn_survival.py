@@ -328,15 +328,48 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         if self.finetuned_estimator_ is None:
             raise RuntimeError("Backbone estimator must be initialized before embedding extraction.")
 
+        executor = self.finetuned_estimator_.executor_
         self.finetuned_estimator_.executor_.use_torch_inference_mode(use_inference=False)
+        # TabPFN versions differ in how they store per-estimator schemas/configs.
+        # Ensure schema/config lists can index all query estimator slots.
+        target_estimators = len(X_query_batch)
+        if hasattr(executor, "feature_schema_list"):
+            feature_schema_list = getattr(executor, "feature_schema_list")
+            if isinstance(feature_schema_list, list):
+                for i, schema_item in enumerate(feature_schema_list):
+                    if isinstance(schema_item, list) and len(schema_item) == 1 and target_estimators > 1:
+                        feature_schema_list[i] = schema_item * target_estimators
+        if hasattr(executor, "ensemble_configs"):
+            ensemble_configs = getattr(executor, "ensemble_configs")
+            if isinstance(ensemble_configs, list):
+                for i, cfg_item in enumerate(ensemble_configs):
+                    if isinstance(cfg_item, list) and len(cfg_item) == 1 and target_estimators > 1:
+                        ensemble_configs[i] = cfg_item * target_estimators
         embeddings: list[torch.Tensor] = []
-        for output, _config in self.finetuned_estimator_.executor_.iter_outputs(
-            X_query_batch,
-            autocast=self.finetuned_estimator_.use_autocast_,
-            only_return_standard_out=False,
-        ):
-            output_dict = output
-            embed = output_dict["test_embeddings"].squeeze(1)
+        iterator = None
+        try:
+            iterator = executor.iter_outputs(
+                X_query_batch,
+                autocast=self.finetuned_estimator_.use_autocast_,
+                only_return_standard_out=False,
+            )
+        except TypeError as exc:
+            if "only_return_standard_out" not in str(exc):
+                raise
+            iterator = executor.iter_outputs(
+                X_query_batch,
+                autocast=self.finetuned_estimator_.use_autocast_,
+            )
+
+        for output, _config in iterator:
+            if isinstance(output, dict):
+                embed = output["test_embeddings"]
+            else:
+                embed = output
+            if not isinstance(embed, torch.Tensor):
+                embed = torch.as_tensor(embed, dtype=torch.float32, device=self.device_)
+            if embed.ndim >= 3 and embed.shape[1] == 1:
+                embed = embed.squeeze(1)
             embeddings.append(embed)
 
         stacked = torch.stack(embeddings, dim=0)
@@ -352,8 +385,22 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         if embeddings.ndim == 2:
             embeddings = embeddings[:, None, :]
         if str(self.params["aggregate_estimators"]) == "concat":
-            return embeddings.transpose(1, 0, 2).reshape(embeddings.shape[1], -1)
-        return embeddings.mean(axis=0)
+            features = embeddings.transpose(1, 0, 2).reshape(embeddings.shape[1], -1)
+        else:
+            features = embeddings.mean(axis=0)
+        if self.head_input_dim_ is not None:
+            features = self._align_embedding_dim(features, int(self.head_input_dim_))
+        return features
+
+    @staticmethod
+    def _align_embedding_dim(embeddings: np.ndarray, target_dim: int) -> np.ndarray:
+        if embeddings.shape[1] == target_dim:
+            return embeddings
+        if embeddings.shape[1] > target_dim:
+            return embeddings[:, :target_dim]
+        pad_width = target_dim - embeddings.shape[1]
+        padding = np.zeros((embeddings.shape[0], pad_width), dtype=embeddings.dtype)
+        return np.concatenate([embeddings, padding], axis=1)
 
     @staticmethod
     def _cox_loss(log_risk: torch.Tensor, event: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
@@ -445,20 +492,16 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             backbone_model_type=self._backbone_model_type(),
         )
 
-    def _evaluate_validation_loss(
-        self,
-        X_train: Any,
-        surrogate_y_train: np.ndarray,
-        X_val: Any,
-        time_val: np.ndarray,
-        event_val: np.ndarray,
-    ) -> float:
-        from tabpfn.finetune_utils import clone_model_for_evaluation
+    def _build_evaluation_backbone(self) -> Any:
+        try:
+            from tabpfn.finetune_utils import clone_model_for_evaluation
+        except ModuleNotFoundError:
+            return self._build_backbone(
+                n_estimators=int(self.params["n_estimators_final_inference"]),
+                fit_mode=str(self.params["fit_mode"]),
+            )
 
-        if self.head is None:
-            raise RuntimeError("Survival head must be initialized before validation.")
-
-        eval_backbone = clone_model_for_evaluation(
+        return clone_model_for_evaluation(
             self.finetuned_estimator_,
             {
                 "n_estimators": int(self.params["n_estimators_final_inference"]),
@@ -469,6 +512,19 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             },
             self._backbone_cls,
         )
+
+    def _evaluate_validation_loss(
+        self,
+        X_train: Any,
+        surrogate_y_train: np.ndarray,
+        X_val: Any,
+        time_val: np.ndarray,
+        event_val: np.ndarray,
+    ) -> float:
+        if self.head is None:
+            raise RuntimeError("Survival head must be initialized before validation.")
+
+        eval_backbone = self._build_evaluation_backbone()
         eval_backbone.fit(X_train, surrogate_y_train)
         embeddings_np = eval_backbone.get_embeddings(np.asarray(X_val, dtype=np.float32), data_source="test")
         embeddings_np = np.asarray(embeddings_np, dtype=np.float32)
@@ -478,6 +534,8 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             embeddings_np = embeddings_np.transpose(1, 0, 2).reshape(embeddings_np.shape[1], -1)
         else:
             embeddings_np = embeddings_np.mean(axis=0)
+        if self.head_input_dim_ is not None:
+            embeddings_np = self._align_embedding_dim(embeddings_np, int(self.head_input_dim_))
 
         self.head.eval()
         embeddings = torch.as_tensor(embeddings_np, dtype=torch.float32, device=self.device_)
@@ -619,20 +677,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             self.head.load_state_dict(best_head_state)
         if self.head is None:
             raise RuntimeError("TabPFN survival head was not initialized.")
-
-        from tabpfn.finetune_utils import clone_model_for_evaluation
-
-        self.backbone = clone_model_for_evaluation(
-            self.finetuned_estimator_,
-            {
-                "n_estimators": int(self.params["n_estimators_final_inference"]),
-                "device": str(self.params["device"]),
-                "random_state": self.params.get("seed"),
-                "fit_mode": str(self.params["fit_mode"]),
-                "ignore_pretraining_limits": True,
-            },
-            self._backbone_cls,
-        )
+        self.backbone = self._build_evaluation_backbone()
         self.backbone.fit(X_train_np, surrogate_y_train)
 
         train_embeddings = self._extract_inference_embeddings(X_train_np)

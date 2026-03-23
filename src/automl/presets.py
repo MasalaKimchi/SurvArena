@@ -38,6 +38,13 @@ _PRESETS: dict[str, PresetConfig] = {
         inner_folds=5,
         scale_limit_rows=25_000,
     ),
+    "all": PresetConfig(
+        name="all",
+        method_ids=("coxph", "coxnet", "rsf", "deepsurv", "deepsurv_moco"),
+        n_trials=8,
+        inner_folds=3,
+        scale_limit_rows=25_000,
+    ),
     "foundation": PresetConfig(
         name="foundation",
         method_ids=("coxph",),
@@ -77,7 +84,7 @@ def resolve_preset(
     preset = _PRESETS[preset_name]
     method_ids = list(preset.method_ids)
     portfolio_notes: list[str] = []
-    foundation_requested = bool(enable_foundation_models or preset_name == "foundation")
+    foundation_requested = bool(enable_foundation_models or preset_name in {"foundation", "all"})
 
     if preset.scale_limit_rows is not None and n_rows > preset.scale_limit_rows:
         method_ids = [method_id for method_id in method_ids if not method_id.startswith("deepsurv")]

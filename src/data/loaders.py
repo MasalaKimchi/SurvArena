@@ -39,11 +39,10 @@ def _load_from_sksurv(dataset_id: str) -> tuple[pd.DataFrame, np.ndarray, np.nda
 
     event_field = bool_fields[0]
     time_field = numeric_fields[0]
-    event_raw = y[event_field].astype(bool)
-    if "cens" in event_field.lower():
-        event = (~event_raw).astype(np.int32)
-    else:
-        event = event_raw.astype(np.int32)
+    # scikit-survival's load_* helpers already return structured targets where
+    # True means "event occurred", even when the raw field name is confusing
+    # (for example, AIDS uses `censor` and GBSG2 uses `cens`).
+    event = y[event_field].astype(np.int32)
     time = y[time_field].astype(np.float64)
     return X, time, event
 
@@ -69,7 +68,12 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
 
 
 def _load_pbc_lifelines() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    from lifelines.datasets import load_pbc
+    try:
+        from lifelines.datasets import load_pbc
+    except ImportError as exc:
+        raise NotImplementedError(
+            "This lifelines version does not provide `load_pbc`; configure a supported PBC source first."
+        ) from exc
 
     frame = load_pbc()
     event = (frame["status"] == 2).astype(np.int32).to_numpy()
