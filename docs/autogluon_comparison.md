@@ -12,6 +12,7 @@ experience:
 - accept a user `DataFrame`, CSV, or Parquet file
 - require only `time` and `event` labels
 - automatically preprocess tabular features
+- accept explicit tuning data or create an automatic validation holdout
 - run a portfolio of models via `fast`, `medium`, and `best` presets
 - compare models through a leaderboard
 - expose `predict_risk(...)` and `predict_survival(...)`
@@ -31,15 +32,14 @@ lacks several important pieces:
 
 - no bagging / stacking / weighted ensembling
 - no multi-level model reuse or meta-learning
-- no automatic holdout-vs-CV strategy selection based on dataset size
-- no refit-full workflow after model selection
+- no bagged out-of-fold training flow comparable to AutoGluon's `num_bag_folds`
+- no time-budget scheduler across the whole model portfolio
 
 ### 2. Better model management
 
-- no `predictor.save()` / `predictor.load()` API
 - no per-model artifact folders with reusable preprocessors and fitted weights
-- no model registry for inspecting all trained candidates after fitting
-- no option to request predictions from a specific trained model by name
+- no model-pruning or cleanup policy for retained fitted candidates
+- no richer model inspection metadata such as fold histories or OOF artifacts
 
 ### 3. More complete user-facing reporting
 

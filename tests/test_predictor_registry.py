@@ -45,7 +45,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, inner_folds=2)
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -85,7 +85,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
     monkeypatch.setattr(SurvivalPredictor, "_compute_metric_bundle_safe", fake_metric_bundle)
@@ -96,7 +96,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
         presets="medium",
         save_path=tmp_path,
     )
-    predictor.fit(frame, test_data=frame, dataset_name="toy")
+    predictor.fit(frame, tuning_data=frame, test_data=frame, dataset_name="toy")
 
     assert predictor.best_method_id_ == "mock_b"
     assert predictor.model_names() == ["mock_a", "mock_b"]
@@ -107,6 +107,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     summary = predictor.fit_summary()
     assert summary["trained_models"] == ["mock_a", "mock_b"]
+    assert summary["validation_strategy"] == "tuning_data"
     assert set(summary["per_model_test_metrics"]) == {"mock_a", "mock_b"}
 
     saved_path = tmp_path / "toy" / "predictor.pkl"
@@ -127,7 +128,7 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=1, inner_folds=2)
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=1, holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -163,12 +164,12 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
     monkeypatch.setattr(
         SurvivalPredictor,
-        "_cross_validated_metric_summary",
+        "_fold_cache_metric_summary",
         lambda self, **kwargs: (_ for _ in ()).throw(AssertionError("unexpected extra CV refit")),
     )
 
@@ -178,11 +179,67 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
         presets="medium",
         save_path=tmp_path,
     )
-    predictor.fit(frame, dataset_name="toy")
+    predictor.fit(frame, tuning_data=frame, dataset_name="toy")
 
     leaderboard = predictor.leaderboard()
     assert float(leaderboard.loc[0, "validation_harrell_c"]) == 0.8
     assert float(leaderboard.loc[0, "validation_td_auc_75"]) == 0.77
+
+
+def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    fold_sizes: list[tuple[int, int]] = []
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.5)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_tune_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
+        fold_sizes.append((int(fold_cache[0]["X_train"].shape[0]), int(fold_cache[0]["X_val"].shape[0])))
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy", holdout_frac=0.5)
+
+    summary = predictor.fit_summary()
+    assert summary["validation_strategy"] == "auto_holdout"
+    assert summary["validation_holdout_frac"] == 0.5
+    assert summary["selection_train_rows"] == 3
+    assert summary["validation_rows"] == 3
+    assert fold_sizes == [(3, 3)]
 
 
 def test_public_package_exports_survival_predictor() -> None:

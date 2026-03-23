@@ -16,6 +16,7 @@ needed for research and reproducibility.
 The current predictor stack can:
 
 - read training and test data from a pandas `DataFrame`, CSV, or Parquet file
+- accept explicit tuning/validation data or create an automatic stratified holdout when tuning data is not provided
 - validate `time` and `event` labels and infer feature metadata for numerical, categorical, datetime, and text columns
 - surface dataset diagnostics such as low-event warnings, ID-like features, and high-cardinality columns
 - fit a preset-driven model portfolio and rank candidates with a unified leaderboard
@@ -96,6 +97,7 @@ predictor = SurvivalPredictor(
 
 predictor.fit(
     train_data="my_train.csv",
+    tuning_data="my_validation.csv",
     test_data="my_test.csv",
     dataset_name="my_dataset",
 )
@@ -108,6 +110,8 @@ predictor.plot_kaplan_meier_comparison("my_test.csv")
 predictor.save()
 ```
 
+If `tuning_data` is omitted, `SurvivalPredictor.fit(...)` automatically creates a stratified validation holdout using the preset default or an explicit `holdout_frac=...` override.
+
 ### CLI predictor API
 
 Repo-local invocation:
@@ -115,6 +119,7 @@ Repo-local invocation:
 ```bash
 python -m survarena.cli fit \
   --train my_train.csv \
+  --tuning my_validation.csv \
   --test my_test.csv \
   --time-col time \
   --event-col event \
@@ -127,6 +132,7 @@ After `python -m pip install -e .`, the equivalent console command is:
 ```bash
 survarena fit \
   --train my_train.csv \
+  --tuning my_validation.csv \
   --test my_test.csv \
   --time-col time \
   --event-col event \
@@ -158,6 +164,7 @@ By default, `SurvivalPredictor.fit(...)` writes artifacts to `results/predictor/
 The fit summary includes:
 
 - best method and best params
+- validation strategy details, including whether explicit tuning data or an automatic holdout was used
 - resolved portfolio and portfolio notes
 - dataset diagnostics
 - per-model test metrics when test data is provided

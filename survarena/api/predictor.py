@@ -11,8 +11,8 @@ import numpy as np
 import pandas as pd
 
 from survarena.automl.presets import PresetConfig, resolve_preset
+from survarena.automl.validation import build_validation_plan, prepare_validation_fold_cache
 from survarena.benchmark.tuning import (
-    prepare_inner_cv_cache as _prepare_inner_cv_cache,
     resolve_runtime_method_params as _resolve_runtime_method_params,
     tune_hyperparameters,
 )
@@ -110,16 +110,52 @@ class SurvivalPredictor:
         self.model_preprocessors_: dict[str, TabularPreprocessor] = {}
         self.model_survival_times_: dict[str, np.ndarray] = {}
         self.model_test_metrics_: dict[str, dict[str, float]] = {}
+        self._ensure_runtime_state_defaults()
+
+    def _ensure_runtime_state_defaults(self) -> None:
+        if not hasattr(self, "validation_strategy_"):
+            self.validation_strategy_: str | None = None
+        if not hasattr(self, "validation_holdout_frac_"):
+            self.validation_holdout_frac_: float | None = None
+        if not hasattr(self, "validation_rows_"):
+            self.validation_rows_: int | None = None
+        if not hasattr(self, "selection_train_rows_"):
+            self.selection_train_rows_: int | None = None
+
+    def _reset_fit_state(self) -> None:
+        self.dataset_ = None
+        self.test_dataset_ = None
+        self.preset_config_ = None
+        self.leaderboard_ = None
+        self.model_results_ = []
+        self.best_method_id_ = None
+        self.best_params_ = None
+        self.best_model_ = None
+        self.best_preprocessor_ = None
+        self.survival_times_ = None
+        self.test_metrics_ = None
+        self.artifact_dir_ = None
+        self.fitted_models_ = {}
+        self.model_preprocessors_ = {}
+        self.model_survival_times_ = {}
+        self.model_test_metrics_ = {}
+        self.validation_strategy_ = None
+        self.validation_holdout_frac_ = None
+        self.validation_rows_ = None
+        self.selection_train_rows_ = None
 
     def fit(
         self,
         train_data: pd.DataFrame | str | Path,
         *,
+        tuning_data: pd.DataFrame | str | Path | None = None,
         test_data: pd.DataFrame | str | Path | None = None,
         dataset_name: str = "user_dataset",
         id_col: str | None = None,
         drop_columns: list[str] | None = None,
+        holdout_frac: float | None = None,
     ) -> "SurvivalPredictor":
+        self._reset_fit_state()
         dataset = load_user_dataset(
             train_data,
             time_col=self.label_time,
@@ -130,6 +166,19 @@ class SurvivalPredictor:
             drop_columns=drop_columns,
         )
         self.dataset_ = dataset
+        tuning_dataset = (
+            load_user_dataset(
+                tuning_data,
+                time_col=self.label_time,
+                event_col=self.label_event,
+                dataset_id=f"{dataset_name}_tuning",
+                dataset_name=f"{dataset_name}_tuning",
+                id_col=id_col,
+                drop_columns=drop_columns,
+            )
+            if tuning_data is not None
+            else None
+        )
         self.preset_config_ = resolve_preset(
             self.presets,
             n_rows=len(dataset.X),
@@ -147,6 +196,16 @@ class SurvivalPredictor:
             excluded_models=self.excluded_models,
             enable_foundation_models=self.enable_foundation_models,
         )
+        validation_plan = build_validation_plan(
+            dataset,
+            tuning_dataset=tuning_dataset,
+            holdout_frac=holdout_frac if holdout_frac is not None else self.preset_config_.holdout_frac,
+            seed=self.random_state,
+        )
+        self.validation_strategy_ = validation_plan.source
+        self.validation_holdout_frac_ = validation_plan.holdout_frac
+        self.selection_train_rows_ = int(len(validation_plan.train_X))
+        self.validation_rows_ = int(len(validation_plan.validation_X))
 
         repo_root = Path(__file__).resolve().parents[2]
         method_cfg_cache = {
@@ -159,13 +218,9 @@ class SurvivalPredictor:
             started_at = perf_counter()
             method_cfg = method_cfg_cache[method_id]
             try:
-                fold_cache = _prepare_inner_cv_cache(
+                fold_cache = prepare_validation_fold_cache(
                     method_id=method_id,
-                    X_train=dataset.X,
-                    time_train=dataset.time,
-                    event_train=dataset.event,
-                    inner_folds=self.preset_config_.inner_folds,
-                    seed=self.random_state,
+                    plan=validation_plan,
                 )
                 tuning_result = tune_hyperparameters(
                     method_id=method_id,
@@ -182,7 +237,7 @@ class SurvivalPredictor:
                 validation_metrics = (
                     self._summarize_metric_rows(metric_rows)
                     if metric_rows
-                    else self._cross_validated_metric_summary(
+                    else self._fold_cache_metric_summary(
                         method_id=method_id,
                         params=dict(tuning_result["best_params"]),
                         fold_cache=fold_cache,
@@ -304,6 +359,7 @@ class SurvivalPredictor:
             predictor = _PredictorUnpickler(handle).load()
         if not isinstance(predictor, cls):
             raise TypeError(f"Serialized object at '{path}' is not a {cls.__name__}.")
+        predictor._ensure_runtime_state_defaults()
         manifest_path = predictor._predictor_manifest_path(path)
         if manifest_path.exists():
             manifest = read_yaml(manifest_path)
@@ -380,6 +436,10 @@ class SurvivalPredictor:
             "best_params": dict(self.best_params_ or {}),
             "selection_metric": self.eval_metric,
             "selection_metric_column": f"validation_{self.eval_metric}",
+            "validation_strategy": self.validation_strategy_,
+            "validation_holdout_frac": self.validation_holdout_frac_,
+            "selection_train_rows": self.selection_train_rows_,
+            "validation_rows": self.validation_rows_,
             "preset": self.preset_config_.name,
             "portfolio": list(self.preset_config_.method_ids),
             "portfolio_notes": list(self.preset_config_.portfolio_notes),
@@ -428,7 +488,7 @@ class SurvivalPredictor:
         leaderboard.insert(0, "rank", np.arange(1, len(leaderboard) + 1, dtype=int))
         return leaderboard
 
-    def _cross_validated_metric_summary(
+    def _fold_cache_metric_summary(
         self,
         *,
         method_id: str,
@@ -723,6 +783,10 @@ class SurvivalPredictor:
                 "random_state": self.random_state,
                 "verbose": self.verbose,
                 "enable_foundation_models": self.enable_foundation_models,
+                "validation_strategy": self.validation_strategy_,
+                "holdout_frac": self.validation_holdout_frac_,
+                "selection_train_rows": self.selection_train_rows_,
+                "validation_rows": self.validation_rows_,
             },
             "best_method_id": self.best_method_id_,
             "best_params": self.best_params_ or {},

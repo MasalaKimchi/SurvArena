@@ -12,6 +12,7 @@ def parse_args() -> argparse.Namespace:
 
     fit_parser = subparsers.add_parser("fit", help="Fit a survival predictor on user-provided data.")
     fit_parser.add_argument("--train", required=True, help="Path to training CSV or Parquet data.")
+    fit_parser.add_argument("--tuning", default=None, help="Optional tuning/validation CSV or Parquet data.")
     fit_parser.add_argument("--test", default=None, help="Optional test CSV or Parquet data.")
     fit_parser.add_argument("--time-col", required=True, help="Name of the duration column.")
     fit_parser.add_argument("--event-col", required=True, help="Name of the event indicator column.")
@@ -19,6 +20,12 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--eval-metric", default="harrell_c", choices=["harrell_c", "uno_c"])
     fit_parser.add_argument("--num-trials", type=int, default=None)
     fit_parser.add_argument("--random-state", type=int, default=0)
+    fit_parser.add_argument(
+        "--holdout-frac",
+        type=float,
+        default=None,
+        help="Override the preset holdout fraction when --tuning is not provided.",
+    )
     fit_parser.add_argument("--save-path", default=None, help="Optional artifact directory root.")
     fit_parser.add_argument("--dataset-name", default="user_dataset")
     fit_parser.add_argument("--verbose", action="store_true", help="Show underlying tuning logs.")
@@ -44,7 +51,13 @@ def main() -> None:
             verbose=args.verbose,
             enable_foundation_models=args.enable_foundation_models,
         )
-        predictor.fit(args.train, test_data=args.test, dataset_name=args.dataset_name)
+        predictor.fit(
+            args.train,
+            tuning_data=args.tuning,
+            test_data=args.test,
+            dataset_name=args.dataset_name,
+            holdout_frac=args.holdout_frac,
+        )
         print(json.dumps(predictor.fit_summary(), indent=2, sort_keys=True))
 
 
