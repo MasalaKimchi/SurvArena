@@ -22,7 +22,7 @@ benchmark planning and track selection.
 ## Notes
 
 - Rates are computed as `events / N` and `censored / N`.
-- Counts are measured from the current dataset loaders in `src/data/loaders.py`.
+- Counts are measured from the current dataset loaders in `survarena/data/loaders.py`.
 - `kkbox` is intentionally a placeholder for a user-provided large dataset.
 - `pbc` metadata exists, but the configured lifelines loader is not currently
   resolvable in this environment.

@@ -1,25 +1,2 @@
-numpy==1.26.4
-pandas==2.2.2
-scipy==1.13.1
-scikit-learn==1.6.1
-joblib==1.4.2
-pyarrow==20.0.0
-tqdm==4.67.1
-PyYAML==6.0.2
-scikit-survival==0.24.1
-lifelines==0.30.0
-pycox==0.3.0
-torchtuples==0.2.2
-torchsurv==0.1.5
-torch==2.2.2
-torchvision==0.17.2
-tabpfn==6.2.0
-autogluon.tabular==1.5.0
-optuna==4.8.0
-mlflow==3.10.1
-wandb==0.23.0
-matplotlib==3.9.2
-seaborn==0.13.2
-psutil==5.9.8
-pynvml==12.0.0
-formulaic==0.6.2
+# Default contributor install: core package plus developer tooling.
+-e .[dev]

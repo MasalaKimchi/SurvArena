@@ -1,7 +1,7 @@
 {
   "serialization_version": 1,
   "class_name": "SurvivalPredictor",
-  "module": "src.api.predictor",
+  "module": "survarena.api.predictor",
   "path": "/Users/justin/Documents/SurvArena/examples/results/predictor/gbsg2_quickstart/predictor.pkl",
   "best_method_id": "deepsurv",
   "trained_models": [

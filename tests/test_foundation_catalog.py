@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.api.predictor import SurvivalPredictor
+from survarena.api.predictor import SurvivalPredictor
 
 
 def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> None:

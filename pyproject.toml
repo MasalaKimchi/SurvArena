@@ -10,17 +10,56 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "SurvArena Contributors" }]
-dynamic = ["dependencies"]
+dependencies = [
+    "numpy==1.26.4",
+    "pandas==2.2.2",
+    "scipy==1.13.1",
+    "scikit-learn==1.6.1",
+    "joblib==1.4.2",
+    "pyarrow==20.0.0",
+    "tqdm==4.67.1",
+    "PyYAML==6.0.2",
+    "scikit-survival==0.24.1",
+    "lifelines==0.30.0",
+    "pycox==0.3.0",
+    "torchtuples==0.2.2",
+    "torchsurv==0.1.5",
+    "torch==2.2.2",
+    "optuna==4.8.0",
+    "matplotlib==3.9.2",
+    "seaborn==0.13.2",
+    "psutil==5.9.8",
+    "formulaic==0.6.2",
+]
+
+[project.optional-dependencies]
+foundation = [
+    "torchvision==0.17.2",
+    "tabpfn==6.2.0",
+    "autogluon.tabular==1.5.0",
+]
+tracking = [
+    "mlflow==3.10.1",
+    "wandb==0.23.0",
+]
+dev = [
+    "pytest>=8.3,<9",
+    "ruff>=0.15,<0.16",
+]
 
 [project.scripts]
-survarena = "survarena:main"
+survarena = "survarena.cli:main"
 
 [tool.setuptools]
 package-dir = { "" = "." }
-py-modules = ["survarena"]
 
 [tool.setuptools.packages.find]
-include = ["src*"]
+include = ["survarena*"]
 
-[tool.setuptools.dynamic]
-dependencies = { file = ["requirements.txt"] }
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+src = ["survarena", "tests", "scripts"]

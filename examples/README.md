@@ -36,5 +36,5 @@ The notebook demonstrates the repo-local predictor flow:
 In this repository checkout, the Python import path is:
 
 ```python
-from src import SurvivalPredictor
+from survarena import SurvivalPredictor
 ```

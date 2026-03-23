@@ -35,7 +35,7 @@ Experimental foundation-model support is available through:
 - `tabpfn_survival`
 - `mitra_survival`
 
-Those adapters are optional, depend on extra packages already listed in `requirements.txt`, and are
+Those adapters are optional, live behind the `foundation` package extra, and are
 added only when dataset-shape and dependency checks pass.
 
 ### TabPFN access setup (required)
@@ -66,7 +66,15 @@ The benchmark runner currently covers:
 source .venv/bin/activate
 ```
 
-If you want the `survarena` shell command in addition to `python -m ...` entrypoints:
+That setup installs the package in editable mode plus the `dev` extra.
+
+To include the optional foundation-model stack:
+
+```bash
+INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh
+```
+
+If you only want the core library without repo tooling:
 
 ```bash
 python -m pip install -e .
@@ -76,10 +84,8 @@ python -m pip install -e .
 
 ### Python predictor API
 
-In this repo layout, import the predictor from `src`:
-
 ```python
-from src import SurvivalPredictor
+from survarena import SurvivalPredictor
 
 predictor = SurvivalPredictor(
     label_time="time",
@@ -107,7 +113,7 @@ predictor.save()
 Repo-local invocation:
 
 ```bash
-python -m src.cli fit \
+python -m survarena.cli fit \
   --train my_train.csv \
   --test my_test.csv \
   --time-col time \
@@ -131,7 +137,7 @@ survarena fit \
 ### Benchmark runner
 
 ```bash
-python -m src.run_benchmark \
+python -m survarena.run_benchmark \
   --benchmark-config configs/benchmark/standard_v1.yaml \
   --dataset support \
   --method coxph \
@@ -201,9 +207,9 @@ SurvArena still has room to grow, especially around:
 
 ## Add a New Method
 
-1. Implement `BaseSurvivalMethod` in `src/methods/`.
+1. Implement `BaseSurvivalMethod` in `survarena/methods/`.
 2. Add a method config in `configs/methods/`.
-3. Register the method in `src/run_benchmark.py`.
+3. Register the method in `survarena/methods/registry.py`.
 4. Ensure `predict_risk` and `predict_survival` return standardized outputs.
 
 ## License

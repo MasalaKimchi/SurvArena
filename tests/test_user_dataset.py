@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from src.data.user_dataset import load_user_dataset
+from survarena.data.user_dataset import load_user_dataset
 
 
 def test_load_user_dataset_populates_feature_metadata_and_diagnostics() -> None:

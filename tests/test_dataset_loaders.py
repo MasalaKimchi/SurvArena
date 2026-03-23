@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.data.loaders import load_dataset
+from survarena.data.loaders import load_dataset
 
 
 @pytest.mark.parametrize(

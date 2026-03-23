@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.automl.presets import resolve_preset
+from survarena.automl.presets import resolve_preset
 
 
 def test_resolve_preset_skips_high_capacity_models_for_low_event_data() -> None:

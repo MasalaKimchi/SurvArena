@@ -15,10 +15,16 @@
 This script:
 
 - creates `.venv`
-- installs `requirements.txt`
+- installs SurvArena in editable mode with the `dev` extra
 - runs `scripts/check_environment.py`
 - keeps SurvArena isolated from the global Python environment
 - defaults to `python` rather than `python3` so it avoids accidentally picking an unsupported interpreter such as Python 3.13
+
+To include the optional foundation-model adapters during setup:
+
+```bash
+INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh
+```
 
 ## Manual setup
 
@@ -26,20 +32,26 @@ This script:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+python -m pip install -e ".[dev]"
 python scripts/check_environment.py
 ```
 
-SurvArena should be run from the repo-local `.venv` whenever possible. The
-foundation-model stack now includes `tabpfn` and `autogluon.tabular`, and those
-packages can force transitive version changes that are better kept out of a
-shared global interpreter.
+To enable the optional foundation-model adapters:
+
+```bash
+python -m pip install -e ".[foundation]"
+python scripts/check_environment.py --include-foundation
+```
+
+SurvArena should be run from the repo-local `.venv` whenever possible. The optional
+foundation-model stack can force transitive version changes that are better kept
+out of a shared global interpreter.
 
 ## What is validated
 
 - whether Python is running inside a virtual environment
 - importability of core dependencies (`numpy`, `pandas`, `yaml`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`)
-- importability of foundation-model dependencies (`tabpfn`, `autogluon.tabular`)
+- optional importability of foundation-model dependencies (`tabpfn`, `autogluon.tabular`)
 - `torchsurv` metric classes and IPCW API
 - synthetic metric run for:
   - Uno C-index
@@ -50,8 +62,8 @@ shared global interpreter.
 ## Smoke Checks
 
 ```bash
-python -m compileall src
-python -m src.run_benchmark --dry-run
+python -m compileall survarena
+python -m survarena.run_benchmark --dry-run
 ```
 
 If dependencies are missing, `--dry-run` reports the issue and exits cleanly.
@@ -60,14 +72,16 @@ If dependencies are missing, `--dry-run` reports the issue and exits cleanly.
 
 - Split files: `data/splits/<task_id>/*.json`
 - Split manifest: `data/splits/<task_id>/manifest.json`
-- Per-run ledger: `results/runs/<benchmark_id>_run_records.jsonl.gz`
-  - each line contains `manifest`, `metrics`, and optional failure traceback
-- Ledger index: `results/runs/<benchmark_id>_run_records_index.json`
-- Aggregates:
-  - `results/tables/fold_results.csv` (canonical per-run table)
-  - `results/summaries/seed_summary.csv`
-  - `results/summaries/overall_summary.json`
-  - `results/tables/leaderboard.csv` (aggregate summary)
-  - `results/summaries/leaderboard.json` (aggregate summary)
+- Benchmark runs write timestamped experiment directories under `results/summary/exp_<YYYYMMDD_HHMMSS>/`
+- Each experiment directory contains:
+  - `<benchmark_id>_fold_results.csv`
+  - `<benchmark_id>_seed_summary.csv`
+  - `<benchmark_id>_overall_summary.json`
+  - `<benchmark_id>_leaderboard.csv`
+  - `<benchmark_id>_leaderboard.json`
+  - `<benchmark_id>_run_records.jsonl.gz`
+  - `<benchmark_id>_run_records_index.json`
+  - `experiment_manifest.json`
+- Standalone export helpers can also write canonical files under `results/tables/`, `results/summaries/`, and `results/runs/`.
 
-Git tracking policy: only `results/summaries/` should be committed.
+Git tracking policy: timestamped experiment directories under `results/summary/` are local-only. Commit only curated summary artifacts when intentionally publishing benchmark results.

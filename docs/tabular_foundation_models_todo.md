@@ -17,7 +17,7 @@ AutoGluon model portfolios.
 - Define a `TabularEmbeddingBackbone` interface for pretrained tabular encoders.
 - Define a `SurvivalHead` interface for Cox, discrete-time, and hazard-based
   prediction heads.
-- Add a `FoundationSurvivalMethod` base class under `src/methods/foundation/`.
+- Add a `FoundationSurvivalMethod` base class under `survarena/methods/foundation/`.
 - Separate backbone freezing, partial fine-tuning, and full fine-tuning modes.
 - Standardize how embeddings, risk scores, and survival curves are produced.
 

@@ -6,8 +6,8 @@ import importlib
 import numpy as np
 import pandas as pd
 
-from src.api.predictor import SurvivalPredictor
-from src.automl.presets import PresetConfig
+from survarena.api.predictor import SurvivalPredictor
+from survarena.automl.presets import PresetConfig
 
 
 class MockSurvivalMethod:
@@ -83,11 +83,11 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
             "td_auc_75": score,
         }
 
-    monkeypatch.setattr("src.api.predictor.resolve_preset", fake_resolve_preset)
-    monkeypatch.setattr("src.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("src.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
-    monkeypatch.setattr("src.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("src.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
     monkeypatch.setattr(SurvivalPredictor, "_compute_metric_bundle_safe", fake_metric_bundle)
 
     predictor = SurvivalPredictor(
@@ -161,11 +161,11 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
             ],
         }
 
-    monkeypatch.setattr("src.api.predictor.resolve_preset", fake_resolve_preset)
-    monkeypatch.setattr("src.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("src.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
-    monkeypatch.setattr("src.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("src.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor._prepare_inner_cv_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
     monkeypatch.setattr(
         SurvivalPredictor,
         "_cross_validated_metric_summary",

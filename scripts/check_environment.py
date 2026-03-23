@@ -1,7 +1,25 @@
 from __future__ import annotations
 
+import argparse
 import platform
 import sys
+
+
+CORE_REQUIRED = [
+    "numpy",
+    "pandas",
+    "yaml",
+    "torch",
+    "torchsurv",
+    "optuna",
+    "lifelines",
+    "sksurv",
+]
+
+FOUNDATION_REQUIRED = [
+    "tabpfn",
+    "autogluon.tabular",
+]
 
 
 def _print_header() -> None:
@@ -19,21 +37,9 @@ def _check_virtualenv() -> None:
     print("venv=warning (global interpreter detected; prefer a repo-local .venv to avoid dependency conflicts)")
 
 
-def _check_imports() -> None:
+def _check_imports(required: list[str], *, label: str) -> None:
     import importlib
 
-    required = [
-        "numpy",
-        "pandas",
-        "yaml",
-        "torch",
-        "torchsurv",
-        "optuna",
-        "lifelines",
-        "sksurv",
-        "tabpfn",
-        "autogluon.tabular",
-    ]
     missing: list[str] = []
     for pkg in required:
         try:
@@ -43,8 +49,8 @@ def _check_imports() -> None:
         except Exception:
             missing.append(pkg)
     if missing:
-        raise RuntimeError(f"Missing required modules: {missing}")
-    print("imports=ok")
+        raise RuntimeError(f"Missing required modules for {label}: {missing}")
+    print(f"{label}=ok")
 
 
 def _check_torchsurv_metrics() -> None:
@@ -101,9 +107,21 @@ def _check_torchsurv_metrics() -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Validate the local SurvArena environment.")
+    parser.add_argument(
+        "--include-foundation",
+        action="store_true",
+        help="Also validate optional foundation-model dependencies.",
+    )
+    args = parser.parse_args()
+
     _print_header()
     _check_virtualenv()
-    _check_imports()
+    _check_imports(CORE_REQUIRED, label="core_imports")
+    if args.include_foundation:
+        _check_imports(FOUNDATION_REQUIRED, label="foundation_imports")
+    else:
+        print("foundation_imports=skipped")
     _check_torchsurv_metrics()
     print("environment_check=passed")
 

@@ -49,8 +49,9 @@ result artifact contract for SurvArena.
 
 - Splits: `data/splits/<task_id>/`.
 - Split manifest: `data/splits/<task_id>/manifest.json`.
-- Runs: `results/runs/<benchmark_id>_run_records.jsonl.gz` (+ index JSON).
-- Aggregates: `results/summaries/` and `results/tables/`.
+- Benchmark runner outputs: `results/summary/exp_<YYYYMMDD_HHMMSS>/`.
+- Experiment directory contents: fold results CSV, seed summary CSV, overall summary JSON, leaderboard CSV/JSON, run-record ledger JSONL.GZ, run-record index JSON, and `experiment_manifest.json`.
+- Standalone export helpers may also emit canonical files under `results/runs/`, `results/summaries/`, and `results/tables/`.
 
 ### Required Per-run Table Fields
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from src.api.predictor import SurvivalPredictor
+from survarena.api.predictor import SurvivalPredictor
 
 
 def test_predictor_save_writes_pickle_and_manifest(tmp_path: Path) -> None:

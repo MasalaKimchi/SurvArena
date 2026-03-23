@@ -1,0 +1,23 @@
+{
+  "manifest_payload": {
+    "version": 1,
+    "split_strategy": "repeated_nested_cv",
+    "n_samples": 1904,
+    "event_fingerprint": "dc31bec346fb3a0be804a7f46362ad7a07ecd151a757e640802518dcac95841c",
+    "event_rate": 0.5793067226890757,
+    "seeds": [
+      11
+    ],
+    "outer_folds": 5,
+    "outer_repeats": 1,
+    "seed_policy": "one_seed_per_repeat"
+  },
+  "split_ids": [
+    "repeat_0_fold_0",
+    "repeat_0_fold_1",
+    "repeat_0_fold_2",
+    "repeat_0_fold_3",
+    "repeat_0_fold_4"
+  ],
+  "split_count": 5
+}

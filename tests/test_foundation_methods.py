@@ -5,9 +5,9 @@ import types
 
 import numpy as np
 
-from src.automl.presets import resolve_preset
-from src.methods.foundation.mitra_survival import MitraSurvivalMethod
-from src.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+from survarena.automl.presets import resolve_preset
+from survarena.methods.foundation.mitra_survival import MitraSurvivalMethod
+from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
 
 
 def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
@@ -101,7 +101,7 @@ def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> No
 
 def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> None:
     monkeypatch.setattr(
-        "src.automl.presets._has_dependency",
+        "survarena.automl.presets._has_dependency",
         lambda module_name: module_name in {"tabpfn", "autogluon.tabular"},
     )
 

@@ -3,6 +3,7 @@ set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 VENV_DIR="${VENV_DIR:-.venv}"
+INSTALL_EXTRAS="${INSTALL_EXTRAS:-dev}"
 
 echo "Creating virtual environment in ${VENV_DIR} using ${PYTHON_BIN}"
 "${PYTHON_BIN}" - <<'PY'
@@ -19,9 +20,20 @@ PY
 
 source "${VENV_DIR}/bin/activate"
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
+
+INSTALL_TARGET="."
+if [[ -n "${INSTALL_EXTRAS}" ]]; then
+    INSTALL_TARGET=".[${INSTALL_EXTRAS}]"
+fi
+
+echo "Installing SurvArena package from ${INSTALL_TARGET}"
+python -m pip install -e "${INSTALL_TARGET}"
 
 echo "Running environment check"
-python scripts/check_environment.py
+CHECK_ARGS=()
+if [[ ",${INSTALL_EXTRAS}," == *",foundation,"* ]]; then
+    CHECK_ARGS+=(--include-foundation)
+fi
+python scripts/check_environment.py "${CHECK_ARGS[@]}"
 
 echo "Environment setup complete"
