@@ -161,11 +161,6 @@ Use datasets that are established, public, and commonly reused in survival bench
 - Smaller clinical dataset
 - Useful as a low-sample benchmark
 
-### PBC
-- Primary biliary cirrhosis dataset
-- Classic survival analysis dataset
-- Includes missing values, useful for testing preprocessing rigor
-
 ## 4.2 Large Tabular Dataset
 
 ### KKBox

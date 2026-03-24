@@ -23,7 +23,6 @@ datasets:
   - gbsg2
   - flchain
   - whas500
-  - pbc
 methods:
   - coxph
   - coxnet

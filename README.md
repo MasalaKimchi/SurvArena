@@ -74,7 +74,7 @@ If authentication is missing, SurvArena will fail the `tabpfn_survival` fit with
 
 The benchmark runner currently covers:
 
-- datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`, `pbc`
+- datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`
 - a placeholder config track for `kkbox`
 - default benchmark-track methods: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`, `tabpfn_survival`, `mitra_survival`
 - additional registered methods for explicit benchmark configs: `weibull_aft`, `lognormal_aft`, `loglogistic_aft`, `aalen_additive`, `fast_survival_svm`, `gradient_boosting_survival`, `componentwise_gradient_boosting`, `extra_survival_trees`, `xgboost_cox`, `xgboost_aft`, `catboost_cox`, `catboost_survival_aft`, `logistic_hazard`, `pmf`, `mtlr`, `deephit_single`, `pchazard`, `cox_time`

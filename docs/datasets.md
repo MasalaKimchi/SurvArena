@@ -16,7 +16,6 @@ benchmark planning and track selection.
 | `gbsg2` | Standard | scikit-survival | 686 | 8 | 387 | 299 | 56.41% | 43.59% | German Breast Cancer Study Group cohort; compact clinical benchmark. |
 | `flchain` | Standard | scikit-survival | 7,874 | 9 | 2,169 | 5,705 | 27.55% | 72.45% | Serum free light chain study with heavy censoring and long follow-up tails. |
 | `whas500` | Standard | scikit-survival | 500 | 14 | 215 | 285 | 43.00% | 57.00% | Worcester Heart Attack Study subset; small cardiovascular risk benchmark. |
-| `pbc` | Standard | lifelines | N/A | N/A | N/A | N/A | N/A | N/A | Primary biliary cirrhosis dataset; loader currently unavailable in this environment. |
 | `kkbox` | Large | custom | N/A | N/A | N/A | N/A | N/A | N/A | Large-scale churn survival placeholder requiring a custom local data loader. |
 
 ## Notes
@@ -24,8 +23,6 @@ benchmark planning and track selection.
 - Rates are computed as `events / N` and `censored / N`.
 - Counts are measured from the current dataset loaders in `survarena/data/loaders.py`.
 - `kkbox` is intentionally a placeholder for a user-provided large dataset.
-- `pbc` metadata exists, but the configured lifelines loader is not currently
-  resolvable in this environment.
 
 ## Metadata Fields
 

@@ -67,22 +67,6 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
-def _load_pbc_lifelines() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    try:
-        from lifelines.datasets import load_pbc
-    except ImportError as exc:
-        raise NotImplementedError(
-            "This lifelines version does not provide `load_pbc`; configure a supported PBC source first."
-        ) from exc
-
-    frame = load_pbc()
-    event = (frame["status"] == 2).astype(np.int32).to_numpy()
-    time = frame["time"].astype(float).to_numpy()
-    drop_cols = ["status", "time", "id"] if "id" in frame.columns else ["status", "time"]
-    X = frame.drop(columns=drop_cols, errors="ignore")
-    return X, time, event
-
-
 def _load_kkbox_placeholder() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     raise NotImplementedError(
         "KKBox loader is a Large v1 placeholder. Add a custom loader that reads local data files."
@@ -99,7 +83,6 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),
         "whas500": lambda: _load_from_sksurv("whas500"),
-        "pbc": _load_pbc_lifelines,
         "kkbox": _load_kkbox_placeholder,
     }
     if dataset_id not in loaders:
