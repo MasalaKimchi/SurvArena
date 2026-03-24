@@ -20,8 +20,9 @@ The current predictor stack can:
 - switch to bagged out-of-fold model selection with `num_bag_folds` / `num_bag_sets` when you want a stronger AutoML-style fit flow
 - validate `time` and `event` labels and infer feature metadata for numerical, categorical, datetime, and text columns
 - surface dataset diagnostics such as low-event warnings, ID-like features, and high-cardinality columns
-- fit a preset-driven model portfolio and rank candidates with a unified leaderboard
-- return the best model, model-specific predictions, survival curves, fit summaries, and persisted predictor artifacts
+- fit a preset-driven or explicitly selected model portfolio and rank candidates with a unified leaderboard
+- retain only the top-ranked fitted models by default, with `retain_top_k_models` or CLI flags available when you want a wider retained portfolio
+- return the best model, optional model-specific predictions, survival curves, fit summaries, and persisted predictor artifacts
 - stay quiet by default for notebook use, with `verbose=True` available when you want tuning logs
 
 Available predictor presets:
@@ -94,6 +95,7 @@ predictor = SurvivalPredictor(
     label_event="event",
     eval_metric="harrell_c",
     presets="medium",
+    retain_top_k_models=2,
 )
 
 predictor.fit(
@@ -119,6 +121,7 @@ If `tuning_data` is omitted, `SurvivalPredictor.fit(...)` automatically creates 
 When `time_limit` is provided, SurvArena treats it as an approximate wallclock budget for the overall fit and allocates the selection budget across the remaining candidate models.
 Use `hyperparameter_tune_kwargs` to override fit-level HPO controls such as `num_trials` and per-model tuning timeout, and set `refit_full=False` if you want retained models to stay on the selection-train portion instead of refitting on all available non-test data.
 Set `num_bag_folds >= 2` to replace the single holdout with bagged OOF selection and averaged fold-model inference; `num_bag_sets` repeats that fold schedule for a stronger, slower fit.
+Use `included_models` / `excluded_models` to take explicit control of which methods run, and set `retain_top_k_models=None` when you want to keep every successful candidate instead of only the top-ranked models.
 
 ### CLI predictor API
 
@@ -131,7 +134,8 @@ python -m survarena.cli fit \
   --test my_test.csv \
   --time-col time \
   --event-col event \
-  --presets medium \
+  --models coxph,rsf,deepsurv \
+  --retain-top-k-models 2 \
   --time-limit 1800 \
   --tuning-timeout 120 \
   --num-trials 12 \
@@ -148,13 +152,49 @@ survarena fit \
   --test my_test.csv \
   --time-col time \
   --event-col event \
-  --presets medium \
+  --models coxph,rsf,deepsurv \
+  --retain-top-k-models 2 \
   --time-limit 1800 \
   --tuning-timeout 120 \
   --num-trials 12 \
   --num-bag-folds 5 \
   --dataset-name my_dataset
 ```
+
+### Compare API
+
+Python:
+
+```python
+from survarena import compare_survival_models
+
+summary = compare_survival_models(
+    "my_train.csv",
+    time_col="time",
+    event_col="event",
+    dataset_name="my_dataset",
+    models=["coxph", "rsf", "deepsurv"],
+    split_strategy="fixed_split",
+    seeds=[11],
+    n_trials=0,
+)
+```
+
+CLI:
+
+```bash
+survarena compare \
+  --data my_train.csv \
+  --time-col time \
+  --event-col event \
+  --models coxph,rsf,deepsurv \
+  --split-strategy fixed_split \
+  --seeds 11 \
+  --n-trials 0 \
+  --save-path results/summary/my_dataset_compare
+```
+
+Use `fixed_split` for the quickest benchmark-style comparison on a user dataset, or switch to `repeated_nested_cv` when you want a more rigorous, slower protocol with multiple seeds and outer folds.
 
 ### Benchmark runner
 

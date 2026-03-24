@@ -20,10 +20,15 @@ def registered_method_ids() -> tuple[str, ...]:
     return tuple(_REGISTRY_TARGETS.keys())
 
 
+@lru_cache(maxsize=None)
+def get_method_class(method_id: str) -> Any:
+    if method_id not in _REGISTRY_TARGETS:
+        raise ValueError(f"Unknown method_id '{method_id}'. Registered: {sorted(_REGISTRY_TARGETS.keys())}")
+    module_name, symbol_name = _REGISTRY_TARGETS[method_id]
+    module = import_module(module_name)
+    return getattr(module, symbol_name)
+
+
 @lru_cache(maxsize=1)
 def method_registry() -> dict[str, Any]:
-    registry: dict[str, Any] = {}
-    for method_id, (module_name, symbol_name) in _REGISTRY_TARGETS.items():
-        module = import_module(module_name)
-        registry[method_id] = getattr(module, symbol_name)
-    return registry
+    return {method_id: get_method_class(method_id) for method_id in _REGISTRY_TARGETS}

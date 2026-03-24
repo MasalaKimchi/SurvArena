@@ -71,7 +71,21 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
         bias = 1.0 if method_id == "mock_a" else 2.0
-        return {"best_params": {"bias": bias}, "best_score": bias, "n_trials_completed": 0}
+        return {
+            "best_params": {"bias": bias},
+            "best_score": bias,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": bias,
+                    "harrell_c": bias,
+                    "ibs": 0.2,
+                    "td_auc_25": bias,
+                    "td_auc_50": bias,
+                    "td_auc_75": bias,
+                }
+            ],
+        }
 
     def fake_metric_bundle(self: SurvivalPredictor, **kwargs) -> dict[str, float]:
         score = float(np.mean(kwargs["risk_scores"]))
@@ -88,13 +102,17 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
+    )
     monkeypatch.setattr(SurvivalPredictor, "_compute_metric_bundle_safe", fake_metric_bundle)
 
     predictor = SurvivalPredictor(
         label_time="time",
         label_event="event",
         presets="medium",
+        retain_top_k_models=2,
         save_path=tmp_path,
     )
     predictor.fit(frame, tuning_data=frame, test_data=frame, dataset_name="toy")
@@ -116,6 +134,77 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     loaded = SurvivalPredictor.load(saved_path)
     np.testing.assert_allclose(loaded.predict_risk(frame, model="mock_b"), best_risk)
+
+
+def test_predictor_retains_only_the_best_model_by_default(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_inner_cv_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+        bias = 1.0 if method_id == "mock_a" else 2.0
+        return {
+            "best_params": {"bias": bias},
+            "best_score": bias,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": bias,
+                    "harrell_c": bias,
+                    "ibs": 0.2,
+                    "td_auc_25": bias,
+                    "td_auc_50": bias,
+                    "td_auc_75": bias,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
+    )
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, tuning_data=frame, dataset_name="toy")
+
+    assert predictor.best_method_id_ == "mock_b"
+    assert predictor.model_names() == ["mock_b"]
+
+    leaderboard = predictor.leaderboard().set_index("method_id")
+    assert bool(leaderboard.loc["mock_b", "retained_for_inference"]) is True
+    assert bool(leaderboard.loc["mock_a", "retained_for_inference"]) is False
 
 
 def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -> None:
@@ -167,7 +256,7 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
     monkeypatch.setattr(
         SurvivalPredictor,
         "_fold_cache_metric_summary",
@@ -225,7 +314,7 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -282,7 +371,7 @@ def test_predictor_uses_bagged_oof_selection_when_num_bag_folds_enabled(tmp_path
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -359,7 +448,7 @@ def test_predictor_bagged_models_average_fold_members_for_inference(tmp_path: Pa
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": AveragingMockMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": AveragingMockMethod}[method_id])
     monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
 
     predictor = SurvivalPredictor(
@@ -414,7 +503,7 @@ def test_predictor_bagged_model_round_trips(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -527,7 +616,10 @@ def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": RecordingMockMethod})
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": RecordingMockMethod}[method_id],
+    )
     monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
 
     predictor = SurvivalPredictor(
@@ -615,7 +707,10 @@ def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_trai
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": RecordingMockMethod})
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": RecordingMockMethod}[method_id],
+    )
     monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
 
     predictor = SurvivalPredictor(
@@ -683,7 +778,7 @@ def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Pa
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -759,7 +854,10 @@ def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
+    )
     monkeypatch.setattr(SurvivalPredictor, "_next_method_time_limit", fake_next_method_time_limit)
 
     predictor = SurvivalPredictor(
@@ -836,7 +934,10 @@ def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Pat
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class",
+        lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
+    )
     monkeypatch.setattr(SurvivalPredictor, "_next_method_time_limit", fake_next_method_time_limit)
     monkeypatch.setattr(SurvivalPredictor, "_remaining_fit_time", lambda self, fit_started_at, time_limit: 0.0)
 
@@ -860,3 +961,4 @@ def test_public_package_exports_survival_predictor() -> None:
     survarena = importlib.import_module("survarena")
 
     assert survarena.SurvivalPredictor is SurvivalPredictor
+    assert callable(survarena.compare_survival_models)

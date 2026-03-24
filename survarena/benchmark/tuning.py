@@ -102,13 +102,13 @@ def _inner_cv_evaluate(
     import numpy as np
 
     from survarena.evaluation.metrics import compute_primary_metric_score
-    from survarena.methods.registry import method_registry
+    from survarena.methods.registry import get_method_class
 
-    registry = method_registry()
+    method_cls = get_method_class(method_id)
     scores: list[float] = []
     metric_rows: list[dict[str, float]] = []
     for fold_data in fold_cache:
-        model = registry[method_id](**params)
+        model = method_cls(**params)
         model.fit(
             fold_data["X_train"],
             fold_data["time_train"],

@@ -7,7 +7,7 @@ from typing import Any
 
 from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, tune_hyperparameters
 from survarena.config import read_yaml
-from survarena.methods.registry import method_registry
+from survarena.methods.registry import get_method_class, registered_method_ids
 
 
 def evaluate_split(
@@ -36,7 +36,6 @@ def evaluate_split(
     from survarena.utils.seeds import set_global_seed
     from survarena.utils.time import timer
 
-    registry = method_registry()
     run_id = f"{dataset_id}_{method_id}_{split.split_id}_seed{split.seed}"
     started_at = perf_counter()
     split_indices_hash = payload_sha256(
@@ -85,7 +84,7 @@ def evaluate_split(
         X_train_proc = pre.fit_transform(X_train)
         X_test_proc = pre.transform(X_test)
 
-        model = registry[method_id](**resolve_runtime_method_params(best_params, seed=split.seed))
+        model = get_method_class(method_id)(**resolve_runtime_method_params(best_params, seed=split.seed))
         with timer() as fit_timer:
             model.fit(X_train_proc.to_numpy(), t_train, e_train)
         fit_time_sec = fit_timer.elapsed
@@ -308,7 +307,7 @@ def run_benchmark(
         print(f"primary_metric={primary_metric}")
         return
 
-    registry = method_registry()
+    registered_methods = set(registered_method_ids())
     all_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
     method_cfg_cache = {method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods}
@@ -347,8 +346,8 @@ def run_benchmark(
         horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
 
         for method_id in methods:
-            if method_id not in registry:
-                raise ValueError(f"Unknown method_id '{method_id}'. Registered: {sorted(registry.keys())}")
+            if method_id not in registered_methods:
+                raise ValueError(f"Unknown method_id '{method_id}'. Registered: {sorted(registered_methods)}")
             method_cfg = method_cfg_cache[method_id]
             for split in filtered_splits:
                 record = evaluate_split(

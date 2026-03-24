@@ -37,7 +37,7 @@ from survarena.evaluation.metrics import (
 )
 from survarena.logging.tracker import write_json
 from survarena.methods.foundation.catalog import foundation_model_catalog
-from survarena.methods.registry import method_registry as _method_registry, registered_method_ids
+from survarena.methods.registry import get_method_class, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
 
 
@@ -60,6 +60,10 @@ def _configure_plotting_cache() -> None:
     (cache_root / "xdg").mkdir(parents=True, exist_ok=True)
     os.environ["MPLCONFIGDIR"] = str(cache_root / "mplconfig")
     os.environ["XDG_CACHE_HOME"] = str(cache_root / "xdg")
+
+
+def _get_method_class(method_id: str) -> Any:
+    return get_method_class(method_id)
 
 
 @dataclass(slots=True)
@@ -88,6 +92,7 @@ class SurvivalPredictor:
         num_trials: int | None = None,
         included_models: list[str] | None = None,
         excluded_models: list[str] | None = None,
+        retain_top_k_models: int | None = 1,
         random_state: int = 0,
         save_path: str | Path | None = None,
         verbose: bool = False,
@@ -100,6 +105,7 @@ class SurvivalPredictor:
         self.num_trials = num_trials
         self.included_models = included_models
         self.excluded_models = excluded_models
+        self.retain_top_k_models = self._validate_retain_top_k_models(retain_top_k_models)
         self.random_state = int(random_state)
         self.save_path = Path(save_path) if save_path is not None else None
         self.verbose = bool(verbose)
@@ -124,6 +130,8 @@ class SurvivalPredictor:
         self._ensure_runtime_state_defaults()
 
     def _ensure_runtime_state_defaults(self) -> None:
+        if not hasattr(self, "retain_top_k_models"):
+            self.retain_top_k_models: int | None = 1
         if not hasattr(self, "validation_strategy_"):
             self.validation_strategy_: str | None = None
         if not hasattr(self, "validation_holdout_frac_"):
@@ -567,6 +575,7 @@ class SurvivalPredictor:
             "portfolio": list(self.preset_config_.method_ids),
             "portfolio_notes": list(self.preset_config_.portfolio_notes),
             "trained_models": self.model_names(),
+            "retain_top_k_models": self.retain_top_k_models,
             "foundation_models_enabled": self.enable_foundation_models,
             "foundation_model_catalog": self.foundation_model_catalog().to_dict(orient="records"),
         }
@@ -620,11 +629,11 @@ class SurvivalPredictor:
         params: dict[str, Any],
         fold_cache: list[dict[str, Any]],
     ) -> dict[str, float]:
-        method_registry = _method_registry()
+        method_cls = _get_method_class(method_id)
         bundle_rows: list[dict[str, float]] = []
         with quiet_training_output(enabled=not self.verbose):
             for fold_data in fold_cache:
-                model = method_registry[method_id](**_resolve_runtime_method_params(params, seed=self.random_state))
+                model = method_cls(**_resolve_runtime_method_params(params, seed=self.random_state))
                 model.fit(
                     fold_data["X_train"],
                     fold_data["time_train"],
@@ -788,17 +797,21 @@ class SurvivalPredictor:
         time_limit: float | None,
         best_method_id: str,
     ) -> None:
-        method_registry = _method_registry()
         self.fitted_models_ = {}
         self.model_preprocessors_ = {}
         self.model_survival_times_ = {}
         self.model_test_metrics_ = {}
+        retention_limit = len(results) if self.retain_top_k_models is None else min(len(results), self.retain_top_k_models)
+        retained_count = 0
         for result in results:
+            if retained_count >= retention_limit:
+                break
             if result.method_id != best_method_id and self._remaining_fit_time(fit_started_at, time_limit) <= 0.0:
-                continue
+                break
+            method_cls = _get_method_class(result.method_id)
             if self.num_bag_folds_ >= 2:
                 model = self._fit_bagged_model(
-                    method_cls=method_registry[result.method_id],
+                    method_cls=method_cls,
                     method_id=result.method_id,
                     params=result.params,
                     dataset=dataset,
@@ -806,7 +819,7 @@ class SurvivalPredictor:
                 preprocessor = None
             else:
                 model, preprocessor = self._fit_single_model(
-                    method_cls=method_registry[result.method_id],
+                    method_cls=method_cls,
                     method_id=result.method_id,
                     params=result.params,
                     dataset=dataset,
@@ -815,6 +828,7 @@ class SurvivalPredictor:
             self.model_preprocessors_[result.method_id] = preprocessor
             self.model_survival_times_[result.method_id] = self._default_survival_times(dataset.time, dataset.event)
             result.retained_for_inference = True
+            retained_count += 1
 
     def _fit_single_model(
         self,
@@ -887,6 +901,14 @@ class SurvivalPredictor:
             raise ValueError("num_bag_sets must be >= 1.")
         if resolved > 1 and num_bag_folds <= 0:
             raise ValueError("num_bag_sets > 1 requires num_bag_folds >= 2.")
+        return resolved
+
+    def _validate_retain_top_k_models(self, retain_top_k_models: int | None) -> int | None:
+        if retain_top_k_models is None:
+            return None
+        resolved = int(retain_top_k_models)
+        if resolved < 1:
+            raise ValueError("retain_top_k_models must be >= 1 or None.")
         return resolved
 
     def _resolve_hyperparameter_tune_kwargs(
@@ -1006,6 +1028,7 @@ class SurvivalPredictor:
             "best_method_id": self.best_method_id_,
             "trained_models": self.model_names(),
             "eval_metric": self.eval_metric,
+            "retain_top_k_models": self.retain_top_k_models,
         }
 
     def _default_survival_times(self, time: np.ndarray, event: np.ndarray) -> np.ndarray:
@@ -1096,6 +1119,7 @@ class SurvivalPredictor:
                 "eval_metric": self.eval_metric,
                 "presets": self.presets,
                 "num_trials": self.num_trials,
+                "retain_top_k_models": self.retain_top_k_models,
                 "random_state": self.random_state,
                 "verbose": self.verbose,
                 "enable_foundation_models": self.enable_foundation_models,
