@@ -9,6 +9,7 @@ import pandas as pd
 
 from survarena.data.preprocess import TabularPreprocessor
 from survarena.data.schema import SurvivalDataset
+from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,9 +47,9 @@ def default_holdout_frac(n_rows: int) -> float:
 def prepare_resampled_fold_cache(*, method_id: str, folds: list[ResampledFold]) -> list[dict[str, Any]]:
     fold_cache: list[dict[str, Any]] = []
     for fold in folds:
-        preprocessor = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
-        X_train = preprocessor.fit_transform(fold.train_X).to_numpy()
-        X_validation = preprocessor.transform(fold.validation_X).to_numpy()
+        preprocessor = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+        X_train = finalize_preprocessed_features(method_id, preprocessor.fit_transform(fold.train_X))
+        X_validation = finalize_preprocessed_features(method_id, preprocessor.transform(fold.validation_X))
         fold_cache.append(
             {
                 "X_train": X_train,

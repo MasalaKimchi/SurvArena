@@ -36,6 +36,8 @@ class RunManifest:
                 "scikit-survival",
                 "lifelines",
                 "pycox",
+                "xgboost",
+                "catboost",
                 "optuna",
             ]
         )

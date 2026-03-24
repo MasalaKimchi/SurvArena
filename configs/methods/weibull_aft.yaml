@@ -1,0 +1,25 @@
+method_id: weibull_aft
+family: classical
+library: lifelines
+search_space:
+  penalizer:
+    type: float
+    low: 0.00001
+    high: 1.0
+    log: true
+  l1_ratio:
+    type: float
+    low: 0.0
+    high: 1.0
+  fit_intercept:
+    type: categorical
+    choices: [true, false]
+  model_ancillary:
+    type: categorical
+    choices: [false, true]
+default_params:
+  penalizer: 0.01
+  l1_ratio: 0.0
+  fit_intercept: true
+  model_ancillary: false
+  seed: 0

@@ -1,0 +1,22 @@
+method_id: aalen_additive
+family: classical
+library: lifelines
+search_space:
+  coef_penalizer:
+    type: float
+    low: 0.00001
+    high: 1.0
+    log: true
+  smoothing_penalizer:
+    type: float
+    low: 0.000001
+    high: 0.1
+    log: true
+  fit_intercept:
+    type: categorical
+    choices: [true, false]
+default_params:
+  coef_penalizer: 0.001
+  smoothing_penalizer: 0.0
+  fit_intercept: true
+  seed: 0

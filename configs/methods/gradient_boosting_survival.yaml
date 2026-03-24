@@ -1,0 +1,45 @@
+method_id: gradient_boosting_survival
+family: boosting
+library: scikit-survival
+search_space:
+  learning_rate:
+    type: float
+    low: 0.01
+    high: 0.3
+    log: true
+  n_estimators:
+    type: int
+    low: 100
+    high: 600
+  subsample:
+    type: float
+    low: 0.5
+    high: 1.0
+  min_samples_split:
+    type: int
+    low: 2
+    high: 30
+  min_samples_leaf:
+    type: int
+    low: 1
+    high: 20
+  max_depth:
+    type: int
+    low: 1
+    high: 5
+  max_features:
+    type: categorical
+    choices: [sqrt, log2, null]
+  dropout_rate:
+    type: float
+    low: 0.0
+    high: 0.2
+default_params:
+  learning_rate: 0.05
+  n_estimators: 300
+  subsample: 1.0
+  min_samples_split: 2
+  min_samples_leaf: 1
+  max_depth: 3
+  max_features: null
+  dropout_rate: 0.0

@@ -1,0 +1,73 @@
+method_id: deephit_single
+family: deep
+library: pycox
+search_space:
+  hidden_layers:
+    type: categorical
+    choices: ["64", "128", "128-64", "256-128"]
+  activation:
+    type: categorical
+    choices: [relu, selu, gelu]
+  dropout:
+    type: float
+    low: 0.0
+    high: 0.5
+  batch_norm:
+    type: categorical
+    choices: [true, false]
+  optimizer:
+    type: categorical
+    choices: [adamw, adam]
+  lr:
+    type: float
+    low: 0.0001
+    high: 0.005
+    log: true
+  weight_decay:
+    type: float
+    low: 0.0000001
+    high: 0.01
+    log: true
+  batch_size:
+    type: categorical
+    choices: [64, 128, 256]
+  max_epochs:
+    type: int
+    low: 50
+    high: 150
+  patience:
+    type: int
+    low: 5
+    high: 20
+  num_durations:
+    type: categorical
+    choices: [16, 32, 64]
+  duration_scheme:
+    type: categorical
+    choices: [quantiles, equidistant]
+  alpha:
+    type: float
+    low: 0.1
+    high: 0.9
+  sigma:
+    type: float
+    low: 0.01
+    high: 0.5
+    log: true
+default_params:
+  hidden_layers: "128-64"
+  activation: relu
+  dropout: 0.1
+  batch_norm: true
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 128
+  max_epochs: 100
+  patience: 10
+  num_durations: 32
+  duration_scheme: quantiles
+  alpha: 0.2
+  sigma: 0.1
+  seed: 0
+  device: auto
