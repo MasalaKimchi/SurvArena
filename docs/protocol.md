@@ -1,61 +1,71 @@
-# SurvArena Protocol (Milestone 1)
+# Protocol
 
-This document defines the evaluation protocol, reproducibility rules, and
-result artifact contract for SurvArena.
+SurvArena compares full pipelines, not single lucky runs. The contract is:
+shared splits, shared budgets, training-side preprocessing only, and disk-first
+artifacts.
 
-## Standard v1
+## Standard Benchmark
 
-- Task: right-censored tabular survival prediction.
-- Split design: repeated nested cross-validation.
-  - Outer loop: 5 folds x 3 repeats (configurable).
-  - Each outer repeat uses one benchmark seed; repeats must not silently recycle the same seed.
-  - Inner loop: 3 folds for hyperparameter tuning.
-- Seed policy: shared benchmark seed list across all methods.
-- Hyperparameter selection: highest mean inner-validation primary metric from benchmark config (default Harrell's C-index).
-- Search budget: bounded by `n_trials` and optional wall-clock `timeout_seconds` from benchmark config.
+`configs/benchmark/standard_v1.yaml` defines the default research track:
+
+- task: right-censored tabular survival prediction
+- split strategy: repeated nested CV
+- outer loop: 5 folds x 3 repeats
+- inner loop: 3 folds
+- seeds: `[11, 22, 33, 44, 55]`
+- primary metric: `harrell_c`
+- secondary metrics: `harrell_c`, `ibs`, `td_auc`
+- default methods: `coxph`, `coxnet`, `rsf`, `deepsurv`
+
+`configs/benchmark/large_v1.yaml` is the fixed-split large-track placeholder for `kkbox`.
+
+## User Dataset Comparison
+
+`compare_survival_models(...)` and `survarena compare` use the same reporting
+style on user data.
+
+Supported split strategies:
+
+- `fixed_split` for a quick one-seed comparison
+- `repeated_nested_cv` for stricter benchmark-style evaluation
+
+## Evaluation Rules
+
+- every method sees the same split definitions
+- preprocessing is fit on training-side data only
+- hyperparameter search uses the configured inner validation budget
+- the selected config is refit before outer-test evaluation
+- seeds are passed through to stochastic methods
 
 ## Metrics
 
-- Primary: Harrell's C-index (default, configurable via benchmark config).
-- Secondary: Uno's C-index, integrated Brier score, time-dependent AUC.
-- Efficiency: fit time, inference time, peak process memory.
-- Metric backend: `torchsurv`.
+- discrimination: Harrell C-index, Uno C-index
+- overall survival quality: integrated Brier score, time-dependent AUC
+- efficiency: fit time, inference time, peak memory
 
-## Evaluation Flow
+Metric computation is backed by `torchsurv`.
 
-1. Load benchmark, dataset, and method configs.
-2. Load persisted split JSON files plus split manifest if present; regenerate splits when the manifest no longer matches the active dataset fingerprint or split config.
-3. For each dataset x method x outer split:
-   - Fit preprocessing on outer-train only.
-   - Run inner CV hyperparameter search.
-   - Refit on full outer-train with best params.
-   - Evaluate on outer-test and log metrics.
-4. Write per-run records into a compact benchmark ledger
-   (`<benchmark_id>_run_records.jsonl.gz`) with embedded manifest, metrics, and
-   failure tracebacks.
-5. Export fold tables and aggregate summaries.
+## Reproducibility
 
-## Fairness and Leakage Controls
+- split definitions are persisted under `data/splits/<task_id>/`
+- split manifests guard against stale splits after dataset or config changes
+- benchmark and method config hashes are recorded in run payloads
+- experiment manifests capture run-level metadata
 
-- Identical split definitions for every method.
-- Comparable tuning budgets across methods.
-- Identical repeat/fold policy for reporting.
-- No test leakage: preprocessing and tuning use training-side data only.
-- Runtime seeds must be injected consistently into every stochastic method implementation.
+## Output Contract
 
-## Artifact Contract
+Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 
-### Required Output Locations
+- `<benchmark_id>_fold_results.csv`
+- `<benchmark_id>_seed_summary.csv`
+- `<benchmark_id>_overall_summary.json`
+- `<benchmark_id>_leaderboard.csv`
+- `<benchmark_id>_leaderboard.json`
+- `<benchmark_id>_run_records.jsonl.gz`
+- `<benchmark_id>_run_records_index.json`
+- `experiment_manifest.json`
 
-- Splits: `data/splits/<task_id>/`.
-- Split manifest: `data/splits/<task_id>/manifest.json`.
-- Benchmark runner outputs: `results/summary/exp_<YYYYMMDD_HHMMSS>/`.
-- Experiment directory contents: fold results CSV, seed summary CSV, overall summary JSON, leaderboard CSV/JSON, run-record ledger JSONL.GZ, run-record index JSON, and `experiment_manifest.json`.
-- Standalone export helpers may also emit canonical files under `results/runs/`, `results/summaries/`, and `results/tables/`.
-
-### Required Per-run Table Fields
-
-These fields must appear in the canonical per-run export `results/tables/fold_results.csv`.
+Key per-run fields in fold results:
 
 - `benchmark_id`
 - `dataset_id`
@@ -63,26 +73,10 @@ These fields must appear in the canonical per-run export `results/tables/fold_re
 - `split_id`
 - `seed`
 - `validation_score`
-- `uno_c`
 - `harrell_c`
+- `uno_c`
 - `ibs`
-- `tuning_time_sec`
-- `runtime_sec`
 - `fit_time_sec`
 - `infer_time_sec`
 - `peak_memory_mb`
 - `status`
-
-### Leaderboard Summary
-
-- `results/tables/leaderboard.csv` and `results/summaries/leaderboard.json` are aggregate summaries over seed-level results.
-- Summary leaderboards should not be treated as the canonical per-run artifact contract.
-
-## Reproducibility Guarantees
-
-- Shared global seed list from benchmark config.
-- Persisted split definitions reused on reruns only when their split manifest matches the active split config and dataset fingerprint.
-- Config-driven dataset and method selection.
-- Per-run environment and git metadata recorded in manifest payloads.
-- Deterministic config and split fingerprints (`benchmark_config_hash`,
-  `method_config_hash`, `split_indices_hash`) recorded per run.

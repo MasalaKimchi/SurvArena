@@ -1,39 +1,31 @@
-# Environment Setup and Verification
+# Environment
 
-## Recommended Python
+## Supported Python
 
-- Python 3.11 (preferred)
-- Python 3.12 (supported)
-- Python 3.10 (supported)
+- 3.11 preferred
+- 3.10 and 3.12 supported
 
-## One-command setup
+## Quick Setup
 
 ```bash
 ./scripts/setup_env.sh
+source .venv/bin/activate
 ```
 
-This script:
+The setup script:
 
 - creates `.venv`
-- installs SurvArena in editable mode with the `dev` extra
+- installs SurvArena in editable mode
 - runs `scripts/check_environment.py`
-- keeps SurvArena isolated from the global Python environment
-- defaults to `python` rather than `python3` so it avoids accidentally picking an unsupported interpreter such as Python 3.13
 
-To include the optional foundation-model adapters during setup:
+Useful overrides:
 
-```bash
-INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh
-```
+- `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
 
-To install only one optional foundation adapter:
-
-```bash
-INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh
-INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh
-```
-
-## Manual setup
+## Manual Setup
 
 ```bash
 python3.11 -m venv .venv
@@ -43,37 +35,21 @@ python -m pip install -e ".[dev]"
 python scripts/check_environment.py
 ```
 
-To enable the optional foundation-model adapters:
+Optional foundation extras:
 
 ```bash
 python -m pip install -e ".[foundation]"
 python scripts/check_environment.py --include-foundation
-```
-
-Or install just one:
-
-```bash
-python -m pip install -e ".[foundation-tabpfn]"
-python -m pip install -e ".[foundation-mitra]"
 survarena foundation-check
 ```
 
-SurvArena should be run from the repo-local `.venv` whenever possible. The optional
-foundation-model stack can force transitive version changes that are better kept
-out of a shared global interpreter.
+## What the Check Covers
 
-## What is validated
-
-- whether Python is running inside a virtual environment
-- importability of core dependencies (`numpy`, `pandas`, `yaml`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`, `xgboost`, `catboost`)
-- optional importability of foundation-model dependencies (`tabpfn`, `autogluon.tabular`)
-- per-backbone runtime readiness, including install hints and TabPFN auth warnings
-- `torchsurv` metric classes and IPCW API
-- synthetic metric run for:
-  - Uno C-index
-  - Harrell C-index
-  - Integrated Brier Score
-  - time-dependent AUC
+- virtual environment detection
+- core imports such as `numpy`, `pandas`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`, `xgboost`, and `catboost`
+- optional foundation imports such as `tabpfn` and `autogluon.tabular`
+- runtime readiness messages for wired foundation adapters
+- smoke tests for Harrell C-index, Uno C-index, integrated Brier score, and time-dependent AUC
 
 ## Smoke Checks
 
@@ -82,22 +58,24 @@ python -m compileall survarena
 python -m survarena.run_benchmark --dry-run
 ```
 
-If dependencies are missing, `--dry-run` reports the issue and exits cleanly.
+If an optional dependency is missing, `--dry-run` reports it and exits cleanly.
 
-## Expected Artifacts After Runs
+## Output Locations
 
-- Split files: `data/splits/<task_id>/*.json`
-- Split manifest: `data/splits/<task_id>/manifest.json`
-- Benchmark runs write timestamped experiment directories under `results/summary/exp_<YYYYMMDD_HHMMSS>/`
-- Each experiment directory contains:
-  - `<benchmark_id>_fold_results.csv`
-  - `<benchmark_id>_seed_summary.csv`
-  - `<benchmark_id>_overall_summary.json`
-  - `<benchmark_id>_leaderboard.csv`
-  - `<benchmark_id>_leaderboard.json`
-  - `<benchmark_id>_run_records.jsonl.gz`
-  - `<benchmark_id>_run_records_index.json`
-  - `experiment_manifest.json`
-- Standalone export helpers can also write canonical files under `results/tables/`, `results/summaries/`, and `results/runs/`.
+- splits: `data/splits/<task_id>/`
+- predictor artifacts: `results/predictor/<dataset_name>/`
+- benchmark runs: `results/summary/exp_<YYYYMMDD_HHMMSS>/`
 
-Git tracking policy: timestamped experiment directories under `results/summary/` are local-only. Commit only curated summary artifacts when intentionally publishing benchmark results.
+Benchmark experiment folders contain:
+
+- `<benchmark_id>_fold_results.csv`
+- `<benchmark_id>_seed_summary.csv`
+- `<benchmark_id>_overall_summary.json`
+- `<benchmark_id>_leaderboard.csv`
+- `<benchmark_id>_leaderboard.json`
+- `<benchmark_id>_run_records.jsonl.gz`
+- `<benchmark_id>_run_records_index.json`
+- `experiment_manifest.json`
+
+Treat timestamped benchmark output folders as local run artifacts unless you are
+intentionally publishing curated results.
