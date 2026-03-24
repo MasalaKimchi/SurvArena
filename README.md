@@ -100,6 +100,7 @@ predictor.fit(
     tuning_data="my_validation.csv",
     test_data="my_test.csv",
     dataset_name="my_dataset",
+    time_limit=1800,
 )
 
 leaderboard = predictor.leaderboard()
@@ -111,6 +112,7 @@ predictor.save()
 ```
 
 If `tuning_data` is omitted, `SurvivalPredictor.fit(...)` automatically creates a stratified validation holdout using the preset default or an explicit `holdout_frac=...` override.
+When `time_limit` is provided, SurvArena treats it as an approximate wallclock budget for the overall fit and allocates the selection budget across the remaining candidate models.
 
 ### CLI predictor API
 
@@ -124,6 +126,7 @@ python -m survarena.cli fit \
   --time-col time \
   --event-col event \
   --presets medium \
+  --time-limit 1800 \
   --dataset-name my_dataset
 ```
 
@@ -137,6 +140,7 @@ survarena fit \
   --time-col time \
   --event-col event \
   --presets medium \
+  --time-limit 1800 \
   --dataset-name my_dataset
 ```
 
@@ -165,6 +169,7 @@ The fit summary includes:
 
 - best method and best params
 - validation strategy details, including whether explicit tuning data or an automatic holdout was used
+- time-budget metadata such as the requested fit budget and observed elapsed fit time
 - resolved portfolio and portfolio notes
 - dataset diagnostics
 - per-model test metrics when test data is provided

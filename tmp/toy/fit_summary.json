@@ -1,0 +1,122 @@
+{
+  "config": {
+    "label_time": "time",
+    "label_event": "event",
+    "eval_metric": "harrell_c",
+    "presets": "medium",
+    "num_trials": null,
+    "random_state": 0,
+    "verbose": false,
+    "enable_foundation_models": false,
+    "validation_strategy": "tuning_data",
+    "holdout_frac": null,
+    "selection_train_rows": 4,
+    "validation_rows": 4,
+    "time_limit": null,
+    "selection_time_budget_sec": null,
+    "fit_elapsed_sec": 0.0428955829993356
+  },
+  "best_method_id": "mock_b",
+  "best_params": {
+    "bias": 2.0
+  },
+  "portfolio_notes": [],
+  "dataset_diagnostics": {
+    "n_rows": 4,
+    "n_features": 2,
+    "n_events": 3,
+    "event_rate": 0.75,
+    "censoring_rate": 0.25,
+    "missing_fraction": 0.0,
+    "feature_type_counts": {
+      "numerical": 1,
+      "categorical": 1
+    },
+    "high_cardinality_features": [],
+    "id_like_features": [
+      "age"
+    ],
+    "warnings": [
+      "Very few observed events were detected (<25); deep or high-capacity survival models may be unstable.",
+      "Potential identifier-like features were detected and retained as inputs; drop them to avoid memorization."
+    ]
+  },
+  "test_metrics": {
+    "test_uno_c": 2.9999999999999996,
+    "test_harrell_c": 2.9999999999999996,
+    "test_ibs": 0.7000000000000001,
+    "test_td_auc_25": 2.9999999999999996,
+    "test_td_auc_50": 2.9999999999999996,
+    "test_td_auc_75": 2.9999999999999996
+  },
+  "trained_models": [
+    "mock_b",
+    "mock_a"
+  ],
+  "per_model_test_metrics": {
+    "mock_b": {
+      "test_uno_c": 2.9999999999999996,
+      "test_harrell_c": 2.9999999999999996,
+      "test_ibs": 0.7000000000000001,
+      "test_td_auc_25": 2.9999999999999996,
+      "test_td_auc_50": 2.9999999999999996,
+      "test_td_auc_75": 2.9999999999999996
+    },
+    "mock_a": {
+      "test_uno_c": 2.0,
+      "test_harrell_c": 2.0,
+      "test_ibs": 0.8,
+      "test_td_auc_25": 2.0,
+      "test_td_auc_50": 2.0,
+      "test_td_auc_75": 2.0
+    }
+  },
+  "results": [
+    {
+      "method_id": "mock_a",
+      "selection_score": 2.0,
+      "validation_metrics": {
+        "validation_uno_c": 2.0,
+        "validation_harrell_c": 2.0,
+        "validation_ibs": 0.8,
+        "validation_td_auc_25": 2.0,
+        "validation_td_auc_50": 2.0,
+        "validation_td_auc_75": 2.0,
+        "validation_primary_metric": 2.0
+      },
+      "fit_time_sec": 0.025464291000389494,
+      "n_trials_completed": 0,
+      "params": {
+        "bias": 1.0
+      },
+      "time_limit_sec": null,
+      "retained_for_inference": true,
+      "status": "success",
+      "error": null,
+      "error_type": null
+    },
+    {
+      "method_id": "mock_b",
+      "selection_score": 3.0,
+      "validation_metrics": {
+        "validation_uno_c": 3.0,
+        "validation_harrell_c": 3.0,
+        "validation_ibs": 0.7,
+        "validation_td_auc_25": 3.0,
+        "validation_td_auc_50": 3.0,
+        "validation_td_auc_75": 3.0,
+        "validation_primary_metric": 3.0
+      },
+      "fit_time_sec": 0.0005871670000487939,
+      "n_trials_completed": 0,
+      "params": {
+        "bias": 2.0
+      },
+      "time_limit_sec": null,
+      "retained_for_inference": true,
+      "status": "success",
+      "error": null,
+      "error_type": null
+    }
+  ]
+}

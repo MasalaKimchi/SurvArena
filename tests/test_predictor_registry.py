@@ -5,6 +5,7 @@ from pathlib import Path
 import importlib
 import numpy as np
 import pandas as pd
+import pytest
 
 from survarena.api.predictor import SurvivalPredictor
 from survarena.automl.presets import PresetConfig
@@ -99,14 +100,14 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     predictor.fit(frame, tuning_data=frame, test_data=frame, dataset_name="toy")
 
     assert predictor.best_method_id_ == "mock_b"
-    assert predictor.model_names() == ["mock_a", "mock_b"]
+    assert set(predictor.model_names()) == {"mock_a", "mock_b"}
 
     best_risk = predictor.predict_risk(frame)
     alt_risk = predictor.predict_risk(frame, model="mock_a")
     assert not np.allclose(best_risk, alt_risk)
 
     summary = predictor.fit_summary()
-    assert summary["trained_models"] == ["mock_a", "mock_b"]
+    assert set(summary["trained_models"]) == {"mock_a", "mock_b"}
     assert summary["validation_strategy"] == "tuning_data"
     assert set(summary["per_model_test_metrics"]) == {"mock_a", "mock_b"}
 
@@ -240,6 +241,158 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
     assert summary["selection_train_rows"] == 3
     assert summary["validation_rows"] == 3
     assert fold_sizes == [(3, 3)]
+
+
+def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+    assigned_budgets = iter([1.5, 0.0])
+    timeout_calls: list[tuple[str, float | None]] = []
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(*, method_id: str, timeout_seconds: float | None, **kwargs) -> dict[str, object]:
+        timeout_calls.append((method_id, timeout_seconds))
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    def fake_next_method_time_limit(self: SurvivalPredictor, **kwargs) -> float | None:
+        return next(assigned_budgets)
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr(SurvivalPredictor, "_next_method_time_limit", fake_next_method_time_limit)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, tuning_data=frame, dataset_name="toy", time_limit=3.0)
+
+    summary = predictor.fit_summary()
+    assert summary["time_limit_sec"] == 3.0
+    assert summary["selection_time_budget_sec"] == pytest.approx(2.4)
+    assert summary["trained_models"] == ["mock_a"]
+    assert timeout_calls == [("mock_a", 1.5)]
+
+    leaderboard = predictor.leaderboard().set_index("method_id")
+    assert bool(leaderboard.loc["mock_a", "retained_for_inference"]) is True
+    assert leaderboard.loc["mock_b", "status"] == "skipped"
+    assert float(leaderboard.loc["mock_b", "time_limit_sec"]) == 0.0
+
+
+def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+    assigned_budgets = iter([1.0, 1.0])
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+        bias = 1.0 if method_id == "mock_a" else 2.0
+        return {
+            "best_params": {"bias": bias},
+            "best_score": bias,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": bias,
+                    "harrell_c": bias,
+                    "ibs": 0.2,
+                    "td_auc_25": bias,
+                    "td_auc_50": bias,
+                    "td_auc_75": bias,
+                }
+            ],
+        }
+
+    def fake_next_method_time_limit(self: SurvivalPredictor, **kwargs) -> float | None:
+        return next(assigned_budgets)
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod})
+    monkeypatch.setattr(SurvivalPredictor, "_next_method_time_limit", fake_next_method_time_limit)
+    monkeypatch.setattr(SurvivalPredictor, "_remaining_fit_time", lambda self, fit_started_at, time_limit: 0.0)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, tuning_data=frame, dataset_name="toy", time_limit=3.0)
+
+    assert predictor.best_method_id_ == "mock_b"
+    assert predictor.model_names() == ["mock_b"]
+
+    leaderboard = predictor.leaderboard().set_index("method_id")
+    assert bool(leaderboard.loc["mock_b", "retained_for_inference"]) is True
+    assert bool(leaderboard.loc["mock_a", "retained_for_inference"]) is False
 
 
 def test_public_package_exports_survival_predictor() -> None:

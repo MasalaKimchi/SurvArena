@@ -34,6 +34,7 @@ from survarena.utils.quiet import quiet_training_output
 
 
 _PREDICTOR_SERIALIZATION_VERSION = 1
+_SELECTION_TIME_BUDGET_RATIO = 0.8
 
 
 class _PredictorUnpickler(pickle.Unpickler):
@@ -61,6 +62,8 @@ class PredictorModelResult:
     fit_time_sec: float
     n_trials_completed: int
     params: dict[str, Any]
+    time_limit_sec: float | None = None
+    retained_for_inference: bool = False
     status: str = "success"
     error: str | None = None
     error_type: str | None = None
@@ -121,6 +124,12 @@ class SurvivalPredictor:
             self.validation_rows_: int | None = None
         if not hasattr(self, "selection_train_rows_"):
             self.selection_train_rows_: int | None = None
+        if not hasattr(self, "fit_time_limit_sec_"):
+            self.fit_time_limit_sec_: float | None = None
+        if not hasattr(self, "selection_time_budget_sec_"):
+            self.selection_time_budget_sec_: float | None = None
+        if not hasattr(self, "fit_elapsed_sec_"):
+            self.fit_elapsed_sec_: float | None = None
 
     def _reset_fit_state(self) -> None:
         self.dataset_ = None
@@ -143,6 +152,9 @@ class SurvivalPredictor:
         self.validation_holdout_frac_ = None
         self.validation_rows_ = None
         self.selection_train_rows_ = None
+        self.fit_time_limit_sec_ = None
+        self.selection_time_budget_sec_ = None
+        self.fit_elapsed_sec_ = None
 
     def fit(
         self,
@@ -154,8 +166,10 @@ class SurvivalPredictor:
         id_col: str | None = None,
         drop_columns: list[str] | None = None,
         holdout_frac: float | None = None,
+        time_limit: float | None = None,
     ) -> "SurvivalPredictor":
         self._reset_fit_state()
+        fit_started_at = perf_counter()
         dataset = load_user_dataset(
             train_data,
             time_col=self.label_time,
@@ -196,6 +210,12 @@ class SurvivalPredictor:
             excluded_models=self.excluded_models,
             enable_foundation_models=self.enable_foundation_models,
         )
+        resolved_time_limit = self._validate_time_limit(time_limit)
+        selection_time_budget = (
+            None if resolved_time_limit is None else resolved_time_limit * _SELECTION_TIME_BUDGET_RATIO
+        )
+        self.fit_time_limit_sec_ = resolved_time_limit
+        self.selection_time_budget_sec_ = selection_time_budget
         validation_plan = build_validation_plan(
             dataset,
             tuning_dataset=tuning_dataset,
@@ -214,9 +234,21 @@ class SurvivalPredictor:
         }
 
         results: list[PredictorModelResult] = []
-        for method_id in self.preset_config_.method_ids:
+        method_ids = list(self.preset_config_.method_ids)
+        for method_index, method_id in enumerate(method_ids):
             started_at = perf_counter()
             method_cfg = method_cfg_cache[method_id]
+            method_time_limit = self._next_method_time_limit(
+                fit_started_at=fit_started_at,
+                selection_time_budget=selection_time_budget,
+                remaining_methods=len(method_ids) - method_index,
+            )
+            if method_time_limit is not None and method_time_limit <= 0.0:
+                self._append_budget_exhausted_results(
+                    results=results,
+                    method_ids=method_ids[method_index:],
+                )
+                break
             try:
                 fold_cache = prepare_validation_fold_cache(
                     method_id=method_id,
@@ -229,7 +261,7 @@ class SurvivalPredictor:
                     primary_metric=self.eval_metric,
                     n_trials=self.num_trials if self.num_trials is not None else self.preset_config_.n_trials,
                     seed=self.random_state,
-                    timeout_seconds=None,
+                    timeout_seconds=method_time_limit,
                     quiet=not self.verbose,
                     metric_bundle_callback=self._collect_fold_metric_bundle,
                 )
@@ -251,6 +283,7 @@ class SurvivalPredictor:
                         fit_time_sec=float(perf_counter() - started_at),
                         n_trials_completed=int(tuning_result["n_trials_completed"]),
                         params=dict(tuning_result["best_params"]),
+                        time_limit_sec=method_time_limit,
                     )
                 )
             except Exception as exc:
@@ -262,6 +295,7 @@ class SurvivalPredictor:
                         fit_time_sec=float(perf_counter() - started_at),
                         n_trials_completed=0,
                         params={},
+                        time_limit_sec=method_time_limit,
                         status="failed",
                         error=str(exc),
                         error_type=type(exc).__name__,
@@ -274,9 +308,19 @@ class SurvivalPredictor:
             raise RuntimeError(f"All candidate models failed during fitting: {errors}")
 
         self.model_results_ = results
-        self._fit_successful_models(dataset=dataset, results=successful)
-
         best_result = max(successful, key=lambda result: result.selection_score)
+        refit_order = [best_result] + [
+            result
+            for result in sorted(successful, key=lambda result: result.selection_score, reverse=True)
+            if result.method_id != best_result.method_id
+        ]
+        self._fit_successful_models(
+            dataset=dataset,
+            results=refit_order,
+            fit_started_at=fit_started_at,
+            time_limit=resolved_time_limit,
+            best_method_id=best_result.method_id,
+        )
         self.best_method_id_ = best_result.method_id
         self.best_params_ = dict(best_result.params)
         self.best_model_ = self.fitted_models_[best_result.method_id]
@@ -296,6 +340,7 @@ class SurvivalPredictor:
             self._evaluate_fitted_models(self.test_dataset_)
             self.test_metrics_ = dict(self.model_test_metrics_.get(self.best_method_id_, {}))
 
+        self.fit_elapsed_sec_ = float(perf_counter() - fit_started_at)
         self.leaderboard_ = self._build_leaderboard(results)
         self._persist_artifacts(dataset_name, results)
         return self
@@ -306,6 +351,9 @@ class SurvivalPredictor:
         return self.leaderboard_.copy()
 
     def model_names(self) -> list[str]:
+        retained_model_ids = {result.method_id for result in self.model_results_ if result.retained_for_inference}
+        if retained_model_ids:
+            return [result.method_id for result in self.model_results_ if result.method_id in retained_model_ids]
         return list(self.fitted_models_.keys())
 
     def foundation_model_catalog(self) -> pd.DataFrame:
@@ -440,6 +488,9 @@ class SurvivalPredictor:
             "validation_holdout_frac": self.validation_holdout_frac_,
             "selection_train_rows": self.selection_train_rows_,
             "validation_rows": self.validation_rows_,
+            "time_limit_sec": self.fit_time_limit_sec_,
+            "selection_time_budget_sec": self.selection_time_budget_sec_,
+            "fit_elapsed_sec": self.fit_elapsed_sec_,
             "preset": self.preset_config_.name,
             "portfolio": list(self.preset_config_.method_ids),
             "portfolio_notes": list(self.preset_config_.portfolio_notes),
@@ -468,6 +519,8 @@ class SurvivalPredictor:
                 "selection_score": result.selection_score,
                 "fit_time_sec": result.fit_time_sec,
                 "n_trials_completed": result.n_trials_completed,
+                "time_limit_sec": result.time_limit_sec,
+                "retained_for_inference": result.retained_for_inference,
                 "status": result.status,
                 "error": result.error,
                 "error_type": result.error_type,
@@ -478,7 +531,7 @@ class SurvivalPredictor:
             rows.append(row)
 
         leaderboard = pd.DataFrame(rows)
-        leaderboard["_status_rank"] = leaderboard["status"].map({"success": 0, "failed": 1}).fillna(2)
+        leaderboard["_status_rank"] = leaderboard["status"].map({"success": 0, "failed": 1, "skipped": 2}).fillna(3)
         leaderboard = leaderboard.sort_values(
             by=["_status_rank", f"validation_{self.eval_metric}"],
             ascending=[True, False],
@@ -655,6 +708,9 @@ class SurvivalPredictor:
         *,
         dataset: SurvivalDataset,
         results: list[PredictorModelResult],
+        fit_started_at: float,
+        time_limit: float | None,
+        best_method_id: str,
     ) -> None:
         method_registry = _method_registry()
         self.fitted_models_ = {}
@@ -662,6 +718,8 @@ class SurvivalPredictor:
         self.model_survival_times_ = {}
         self.model_test_metrics_ = {}
         for result in results:
+            if result.method_id != best_method_id and self._remaining_fit_time(fit_started_at, time_limit) <= 0.0:
+                continue
             preprocessor = TabularPreprocessor(scale_numeric=(result.method_id != "rsf"))
             X_train_proc = preprocessor.fit_transform(dataset.X)
             model = method_registry[result.method_id](
@@ -672,6 +730,58 @@ class SurvivalPredictor:
             self.fitted_models_[result.method_id] = model
             self.model_preprocessors_[result.method_id] = preprocessor
             self.model_survival_times_[result.method_id] = self._default_survival_times(dataset.time, dataset.event)
+            result.retained_for_inference = True
+
+    def _validate_time_limit(self, time_limit: float | None) -> float | None:
+        if time_limit is None:
+            return None
+        resolved = float(time_limit)
+        if resolved <= 0.0:
+            raise ValueError("time_limit must be positive when provided.")
+        return resolved
+
+    def _remaining_fit_time(self, fit_started_at: float, time_limit: float | None) -> float:
+        if time_limit is None:
+            return float("inf")
+        return max(0.0, float(time_limit) - float(perf_counter() - fit_started_at))
+
+    def _next_method_time_limit(
+        self,
+        *,
+        fit_started_at: float,
+        selection_time_budget: float | None,
+        remaining_methods: int,
+    ) -> float | None:
+        if selection_time_budget is None:
+            return None
+        if remaining_methods <= 0:
+            return 0.0
+        remaining_budget = self._remaining_fit_time(fit_started_at, selection_time_budget)
+        if remaining_budget <= 0.0:
+            return 0.0
+        return remaining_budget / float(remaining_methods)
+
+    def _append_budget_exhausted_results(
+        self,
+        *,
+        results: list[PredictorModelResult],
+        method_ids: list[str],
+    ) -> None:
+        for method_id in method_ids:
+            results.append(
+                PredictorModelResult(
+                    method_id=method_id,
+                    selection_score=float("nan"),
+                    validation_metrics={},
+                    fit_time_sec=0.0,
+                    n_trials_completed=0,
+                    params={},
+                    time_limit_sec=0.0,
+                    status="skipped",
+                    error="Global fit time budget exhausted before this model could be selected.",
+                    error_type="TimeLimitExceeded",
+                )
+            )
 
     def _default_predictor_path(self) -> Path:
         if self.artifact_dir_ is None:
@@ -787,6 +897,9 @@ class SurvivalPredictor:
                 "holdout_frac": self.validation_holdout_frac_,
                 "selection_train_rows": self.selection_train_rows_,
                 "validation_rows": self.validation_rows_,
+                "time_limit": self.fit_time_limit_sec_,
+                "selection_time_budget_sec": self.selection_time_budget_sec_,
+                "fit_elapsed_sec": self.fit_elapsed_sec_,
             },
             "best_method_id": self.best_method_id_,
             "best_params": self.best_params_ or {},

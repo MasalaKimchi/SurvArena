@@ -33,7 +33,7 @@ lacks several important pieces:
 - no bagging / stacking / weighted ensembling
 - no multi-level model reuse or meta-learning
 - no bagged out-of-fold training flow comparable to AutoGluon's `num_bag_folds`
-- no time-budget scheduler across the whole model portfolio
+- no adaptive per-model time scheduler with AutoGluon-style resource controls
 
 ### 2. Better model management
 
@@ -57,7 +57,7 @@ lacks several important pieces:
 
 ### 5. Better scaling ergonomics
 
-- no explicit time-budget scheduler
+- only a lightweight sequential wallclock scheduler today, without resource-aware per-model shaping
 - no resource-aware GPU/CPU policy exposed at the predictor level
 - no caching of transformed folds or intermediate model artifacts
 - no resumable training session management

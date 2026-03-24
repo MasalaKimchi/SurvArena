@@ -21,6 +21,12 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--num-trials", type=int, default=None)
     fit_parser.add_argument("--random-state", type=int, default=0)
     fit_parser.add_argument(
+        "--time-limit",
+        type=float,
+        default=None,
+        help="Approximate wallclock budget in seconds for the full fit run.",
+    )
+    fit_parser.add_argument(
         "--holdout-frac",
         type=float,
         default=None,
@@ -57,6 +63,7 @@ def main() -> None:
             test_data=args.test,
             dataset_name=args.dataset_name,
             holdout_frac=args.holdout_frac,
+            time_limit=args.time_limit,
         )
         print(json.dumps(predictor.fit_summary(), indent=2, sort_keys=True))
 
