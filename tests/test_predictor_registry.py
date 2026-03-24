@@ -243,6 +243,467 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
     assert fold_sizes == [(3, 3)]
 
 
+def test_predictor_uses_bagged_oof_selection_when_num_bag_folds_enabled(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    fold_shapes: list[list[tuple[int, int]]] = []
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_tune_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
+        fold_shapes.append([(int(fold["X_train"].shape[0]), int(fold["X_val"].shape[0])) for fold in fold_cache])
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+                for _ in fold_cache
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy", num_bag_folds=3, num_bag_sets=2)
+
+    summary = predictor.fit_summary()
+    assert summary["validation_strategy"] == "bagged_oof"
+    assert summary["num_bag_folds"] == 3
+    assert summary["num_bag_sets"] == 2
+    assert summary["selection_train_rows"] == 4
+    assert summary["validation_rows"] == 12
+    assert len(fold_shapes) == 1
+    assert fold_shapes[0] == [(4, 2)] * 6
+
+
+def test_predictor_bagged_models_average_fold_members_for_inference(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    fitted_member_ids: list[int] = []
+
+    class AveragingMockMethod(MockSurvivalMethod):
+        def fit(
+            self,
+            X_train: np.ndarray,
+            time_train: np.ndarray,
+            event_train: np.ndarray,
+            X_val: np.ndarray | None = None,
+            time_val: np.ndarray | None = None,
+            event_val: np.ndarray | None = None,
+        ) -> "AveragingMockMethod":
+            self.member_id = len(fitted_member_ids) + 1
+            fitted_member_ids.append(self.member_id)
+            return self
+
+        def predict_risk(self, X: np.ndarray) -> np.ndarray:
+            return np.full(X.shape[0], float(self.member_id))
+
+        def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
+            return np.full((X.shape[0], len(times)), float(self.member_id))
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": AveragingMockMethod})
+    monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy", num_bag_folds=3)
+
+    summary = predictor.fit_summary()
+    risk = predictor.predict_risk(frame)
+    assert summary["validation_strategy"] == "bagged_oof"
+    assert summary["trained_models"] == ["mock_a"]
+    assert fitted_member_ids == [1, 2, 3]
+    np.testing.assert_allclose(risk, np.full(len(frame), 2.0))
+
+
+def test_predictor_bagged_model_round_trips(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {"bias": 1.0}}
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy", num_bag_folds=2)
+
+    saved_path = tmp_path / "toy" / "predictor.pkl"
+    loaded = SurvivalPredictor.load(saved_path)
+
+    np.testing.assert_allclose(loaded.predict_risk(frame), predictor.predict_risk(frame))
+
+
+def test_predictor_num_bag_sets_requires_bagged_folds(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+
+    with pytest.raises(ValueError, match="num_bag_sets > 1 requires num_bag_folds >= 2"):
+        predictor.fit(frame, dataset_name="toy", num_bag_sets=2)
+
+
+def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path, monkeypatch) -> None:
+    train_frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+    tuning_frame = pd.DataFrame(
+        {
+            "time": [5.0, 6.0],
+            "event": [0, 1],
+            "age": [59.0, 63.0],
+            "stage": ["i", "iii"],
+        }
+    )
+    fit_row_counts: list[int] = []
+
+    class RecordingMockMethod(MockSurvivalMethod):
+        def fit(
+            self,
+            X_train: np.ndarray,
+            time_train: np.ndarray,
+            event_train: np.ndarray,
+            X_val: np.ndarray | None = None,
+            time_val: np.ndarray | None = None,
+            event_val: np.ndarray | None = None,
+        ) -> "RecordingMockMethod":
+            fit_row_counts.append(int(X_train.shape[0]))
+            return self
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": RecordingMockMethod})
+    monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(train_frame, tuning_data=tuning_frame, dataset_name="toy", refit_full=True)
+
+    summary = predictor.fit_summary()
+    assert fit_row_counts == [6]
+    assert summary["refit_full"] is True
+    assert summary["final_train_rows"] == 6
+
+
+def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_training(tmp_path: Path, monkeypatch) -> None:
+    train_frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+    tuning_frame = pd.DataFrame(
+        {
+            "time": [5.0, 6.0],
+            "event": [0, 1],
+            "age": [59.0, 63.0],
+            "stage": ["i", "iii"],
+        }
+    )
+    fit_row_counts: list[int] = []
+
+    class RecordingMockMethod(MockSurvivalMethod):
+        def fit(
+            self,
+            X_train: np.ndarray,
+            time_train: np.ndarray,
+            event_train: np.ndarray,
+            X_val: np.ndarray | None = None,
+            time_val: np.ndarray | None = None,
+            event_val: np.ndarray | None = None,
+        ) -> "RecordingMockMethod":
+            fit_row_counts.append(int(X_train.shape[0]))
+            return self
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": RecordingMockMethod})
+    monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+    predictor.fit(train_frame, tuning_data=tuning_frame, dataset_name="toy", refit_full=False)
+
+    summary = predictor.fit_summary()
+    assert fit_row_counts == [4]
+    assert summary["refit_full"] is False
+    assert summary["final_train_rows"] == 4
+
+
+def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 1],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+    recorded_calls: list[tuple[int, float | None]] = []
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=2, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, np.ndarray]]:
+        return [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 1], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(*, n_trials: int, timeout_seconds: float | None, **kwargs) -> dict[str, object]:
+        recorded_calls.append((n_trials, timeout_seconds))
+        return {
+            "best_params": {"bias": 1.0},
+            "best_score": 0.8,
+            "n_trials_completed": n_trials,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.7,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.75,
+                    "td_auc_50": 0.76,
+                    "td_auc_75": 0.77,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._method_registry", lambda: {"mock_a": MockSurvivalMethod})
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        num_trials=1,
+        save_path=tmp_path,
+    )
+    predictor.fit(
+        frame,
+        tuning_data=frame,
+        dataset_name="toy",
+        hyperparameter_tune_kwargs={"num_trials": 5, "timeout": 12.0},
+    )
+
+    summary = predictor.fit_summary()
+    assert recorded_calls == [(5, 12.0)]
+    assert summary["hyperparameter_tune_kwargs"] == {"n_trials": 5, "timeout_seconds": 12.0}
+
+
 def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path: Path, monkeypatch) -> None:
     frame = pd.DataFrame(
         {

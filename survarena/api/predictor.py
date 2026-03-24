@@ -10,8 +10,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from survarena.automl.bagging import BaggedModelMember, BaggedSurvivalEnsemble
 from survarena.automl.presets import PresetConfig, resolve_preset
-from survarena.automl.validation import build_validation_plan, prepare_validation_fold_cache
+from survarena.automl.validation import (
+    bagging_row_summary,
+    build_bagging_folds,
+    build_refit_dataset,
+    build_validation_plan,
+    prepare_resampled_fold_cache,
+    prepare_validation_fold_cache,
+)
 from survarena.benchmark.tuning import (
     resolve_runtime_method_params as _resolve_runtime_method_params,
     tune_hyperparameters,
@@ -110,7 +118,7 @@ class SurvivalPredictor:
         self.test_metrics_: dict[str, float] | None = None
         self.artifact_dir_: Path | None = None
         self.fitted_models_: dict[str, Any] = {}
-        self.model_preprocessors_: dict[str, TabularPreprocessor] = {}
+        self.model_preprocessors_: dict[str, TabularPreprocessor | None] = {}
         self.model_survival_times_: dict[str, np.ndarray] = {}
         self.model_test_metrics_: dict[str, dict[str, float]] = {}
         self._ensure_runtime_state_defaults()
@@ -130,6 +138,18 @@ class SurvivalPredictor:
             self.selection_time_budget_sec_: float | None = None
         if not hasattr(self, "fit_elapsed_sec_"):
             self.fit_elapsed_sec_: float | None = None
+        if not hasattr(self, "refit_full_"):
+            self.refit_full_: bool = True
+        if not hasattr(self, "final_train_rows_"):
+            self.final_train_rows_: int | None = None
+        if not hasattr(self, "hyperparameter_tune_kwargs_"):
+            self.hyperparameter_tune_kwargs_: dict[str, Any] | None = None
+        if not hasattr(self, "refit_dataset_"):
+            self.refit_dataset_: SurvivalDataset | None = None
+        if not hasattr(self, "num_bag_folds_"):
+            self.num_bag_folds_: int = 0
+        if not hasattr(self, "num_bag_sets_"):
+            self.num_bag_sets_: int = 1
 
     def _reset_fit_state(self) -> None:
         self.dataset_ = None
@@ -155,6 +175,12 @@ class SurvivalPredictor:
         self.fit_time_limit_sec_ = None
         self.selection_time_budget_sec_ = None
         self.fit_elapsed_sec_ = None
+        self.refit_full_ = True
+        self.final_train_rows_ = None
+        self.hyperparameter_tune_kwargs_ = None
+        self.refit_dataset_ = None
+        self.num_bag_folds_ = 0
+        self.num_bag_sets_ = 1
 
     def fit(
         self,
@@ -167,6 +193,10 @@ class SurvivalPredictor:
         drop_columns: list[str] | None = None,
         holdout_frac: float | None = None,
         time_limit: float | None = None,
+        hyperparameter_tune_kwargs: dict[str, Any] | None = None,
+        refit_full: bool = True,
+        num_bag_folds: int = 0,
+        num_bag_sets: int = 1,
     ) -> "SurvivalPredictor":
         self._reset_fit_state()
         fit_started_at = perf_counter()
@@ -211,27 +241,60 @@ class SurvivalPredictor:
             enable_foundation_models=self.enable_foundation_models,
         )
         resolved_time_limit = self._validate_time_limit(time_limit)
+        resolved_tuning_controls = self._resolve_hyperparameter_tune_kwargs(hyperparameter_tune_kwargs)
         selection_time_budget = (
             None if resolved_time_limit is None else resolved_time_limit * _SELECTION_TIME_BUDGET_RATIO
         )
         self.fit_time_limit_sec_ = resolved_time_limit
         self.selection_time_budget_sec_ = selection_time_budget
-        validation_plan = build_validation_plan(
+        self.hyperparameter_tune_kwargs_ = resolved_tuning_controls
+        self.refit_full_ = bool(refit_full)
+        self.num_bag_folds_ = self._validate_num_bag_folds(num_bag_folds)
+        self.num_bag_sets_ = self._validate_num_bag_sets(num_bag_sets, num_bag_folds=self.num_bag_folds_)
+
+        validation_plan: Any = None
+        selection_folds: list[Any] | None
+        if self.num_bag_folds_ >= 2:
+            selection_folds = build_bagging_folds(
+                dataset,
+                num_bag_folds=self.num_bag_folds_,
+                num_bag_sets=self.num_bag_sets_,
+                seed=self.random_state,
+            )
+            self.validation_strategy_ = "bagged_oof"
+            self.validation_holdout_frac_ = None
+            self.selection_train_rows_, self.validation_rows_ = bagging_row_summary(selection_folds)
+        else:
+            selection_folds = None
+            validation_plan = build_validation_plan(
+                dataset,
+                tuning_dataset=tuning_dataset,
+                holdout_frac=holdout_frac if holdout_frac is not None else self.preset_config_.holdout_frac,
+                seed=self.random_state,
+            )
+            self.validation_strategy_ = validation_plan.source
+            self.validation_holdout_frac_ = validation_plan.holdout_frac
+            self.selection_train_rows_ = int(len(validation_plan.train_X))
+            self.validation_rows_ = int(len(validation_plan.validation_X))
+        refit_dataset = build_refit_dataset(
             dataset,
+            validation_plan=validation_plan,
             tuning_dataset=tuning_dataset,
-            holdout_frac=holdout_frac if holdout_frac is not None else self.preset_config_.holdout_frac,
-            seed=self.random_state,
+            refit_full=self.refit_full_,
         )
-        self.validation_strategy_ = validation_plan.source
-        self.validation_holdout_frac_ = validation_plan.holdout_frac
-        self.selection_train_rows_ = int(len(validation_plan.train_X))
-        self.validation_rows_ = int(len(validation_plan.validation_X))
+        self.refit_dataset_ = refit_dataset
+        self.final_train_rows_ = int(len(refit_dataset.X))
 
         repo_root = Path(__file__).resolve().parents[2]
         method_cfg_cache = {
             method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml")
             for method_id in self.preset_config_.method_ids
         }
+        resolved_num_trials = self._resolve_n_trials(
+            fit_tune_kwargs=resolved_tuning_controls,
+            default_num_trials=self.preset_config_.n_trials,
+        )
+        fit_level_tuning_timeout = self._resolve_tuning_timeout_seconds(resolved_tuning_controls)
 
         results: list[PredictorModelResult] = []
         method_ids = list(self.preset_config_.method_ids)
@@ -243,6 +306,7 @@ class SurvivalPredictor:
                 selection_time_budget=selection_time_budget,
                 remaining_methods=len(method_ids) - method_index,
             )
+            method_time_limit = self._merge_time_limits(method_time_limit, fit_level_tuning_timeout)
             if method_time_limit is not None and method_time_limit <= 0.0:
                 self._append_budget_exhausted_results(
                     results=results,
@@ -250,16 +314,19 @@ class SurvivalPredictor:
                 )
                 break
             try:
-                fold_cache = prepare_validation_fold_cache(
-                    method_id=method_id,
-                    plan=validation_plan,
-                )
+                if selection_folds is not None:
+                    fold_cache = prepare_resampled_fold_cache(method_id=method_id, folds=selection_folds)
+                else:
+                    fold_cache = prepare_validation_fold_cache(
+                        method_id=method_id,
+                        plan=validation_plan,
+                    )
                 tuning_result = tune_hyperparameters(
                     method_id=method_id,
                     method_cfg=method_cfg,
                     fold_cache=fold_cache,
                     primary_metric=self.eval_metric,
-                    n_trials=self.num_trials if self.num_trials is not None else self.preset_config_.n_trials,
+                    n_trials=resolved_num_trials,
                     seed=self.random_state,
                     timeout_seconds=method_time_limit,
                     quiet=not self.verbose,
@@ -315,7 +382,7 @@ class SurvivalPredictor:
             if result.method_id != best_result.method_id
         ]
         self._fit_successful_models(
-            dataset=dataset,
+            dataset=refit_dataset,
             results=refit_order,
             fit_started_at=fit_started_at,
             time_limit=resolved_time_limit,
@@ -376,8 +443,8 @@ class SurvivalPredictor:
         return pd.DataFrame(rows)
 
     def predict_risk(self, data: pd.DataFrame | str | Path, *, model: str | None = None) -> np.ndarray:
-        dataset, resolved_model, _ = self._prepare_prediction_inputs(data, model=model)
-        return resolved_model.predict_risk(dataset.to_numpy())
+        frame, model_id, _ = self._prepare_prediction_inputs(data, model=model)
+        return self._predict_model_risk(model_id, frame)
 
     def predict_survival(
         self,
@@ -386,11 +453,11 @@ class SurvivalPredictor:
         *,
         model: str | None = None,
     ) -> pd.DataFrame:
-        dataset, resolved_model, default_times = self._prepare_prediction_inputs(data, model=model)
+        frame, model_id, default_times = self._prepare_prediction_inputs(data, model=model)
         survival_times = np.asarray(times, dtype=float) if times is not None else default_times
-        survival = resolved_model.predict_survival(dataset.to_numpy(), survival_times)
+        survival = self._predict_model_survival(model_id, frame, survival_times)
         columns = [f"t_{time:.6g}" for time in survival_times]
-        return pd.DataFrame(survival, columns=columns, index=dataset.index)
+        return pd.DataFrame(survival, columns=columns, index=frame.index)
 
     def save(self, path: str | Path | None = None) -> Path:
         output_path = Path(path) if path is not None else self._default_predictor_path()
@@ -432,10 +499,10 @@ class SurvivalPredictor:
         if n_groups < 2:
             raise ValueError("n_groups must be at least 2.")
         dataset = self._resolve_labeled_dataset(data)
-        X_eval = self._require_preprocessor().transform(dataset.X)
-        risk_scores = self.best_model_.predict_risk(X_eval.to_numpy())
+        best_model_id = self._resolve_model_id("best")
+        risk_scores = self._predict_model_risk(best_model_id, dataset.X)
         survival_times = self._require_survival_times()
-        survival = self.best_model_.predict_survival(X_eval.to_numpy(), survival_times)
+        survival = self._predict_model_survival(best_model_id, dataset.X, survival_times)
 
         self._prepare_matplotlib_env()
 
@@ -486,8 +553,13 @@ class SurvivalPredictor:
             "selection_metric_column": f"validation_{self.eval_metric}",
             "validation_strategy": self.validation_strategy_,
             "validation_holdout_frac": self.validation_holdout_frac_,
+            "num_bag_folds": self.num_bag_folds_,
+            "num_bag_sets": self.num_bag_sets_,
             "selection_train_rows": self.selection_train_rows_,
             "validation_rows": self.validation_rows_,
+            "refit_full": self.refit_full_,
+            "final_train_rows": self.final_train_rows_,
+            "hyperparameter_tune_kwargs": dict(self.hyperparameter_tune_kwargs_ or {}),
             "time_limit_sec": self.fit_time_limit_sec_,
             "selection_time_budget_sec": self.selection_time_budget_sec_,
             "fit_elapsed_sec": self.fit_elapsed_sec_,
@@ -611,43 +683,45 @@ class SurvivalPredictor:
         data: pd.DataFrame | str | Path,
         *,
         model: str | None,
-    ) -> tuple[pd.DataFrame, Any, np.ndarray]:
+    ) -> tuple[pd.DataFrame, str, np.ndarray]:
         model_id = self._resolve_model_id(model)
         frame = self._read_features(data)
-        transformed = self.model_preprocessors_[model_id].transform(frame)
-        return transformed, self.fitted_models_[model_id], self.model_survival_times_[model_id]
+        return frame, model_id, self.model_survival_times_[model_id]
+
+    def _predict_model_risk(self, model_id: str, frame: pd.DataFrame) -> np.ndarray:
+        model = self.fitted_models_[model_id]
+        if isinstance(model, BaggedSurvivalEnsemble):
+            return model.predict_risk(frame)
+        preprocessor = self.model_preprocessors_[model_id]
+        if preprocessor is None:
+            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
+        return np.asarray(model.predict_risk(preprocessor.transform(frame).to_numpy()), dtype=float)
+
+    def _predict_model_survival(self, model_id: str, frame: pd.DataFrame, survival_times: np.ndarray) -> np.ndarray:
+        model = self.fitted_models_[model_id]
+        if isinstance(model, BaggedSurvivalEnsemble):
+            return model.predict_survival(frame, survival_times)
+        preprocessor = self.model_preprocessors_[model_id]
+        if preprocessor is None:
+            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
+        transformed = preprocessor.transform(frame).to_numpy()
+        return np.asarray(model.predict_survival(transformed, survival_times), dtype=float)
 
     def _read_features(self, data: pd.DataFrame | str | Path) -> pd.DataFrame:
         frame = read_tabular_data(data)
         removable = [col for col in (self.label_time, self.label_event) if col in frame.columns]
         return frame.drop(columns=removable, errors="ignore").reset_index(drop=True)
 
-    def _evaluate_dataset(self, dataset: SurvivalDataset) -> dict[str, float]:
-        X_eval = self._require_preprocessor().transform(dataset.X)
-        risk = self.best_model_.predict_risk(X_eval.to_numpy())
-        survival_times = self._require_survival_times()
-        survival = self.best_model_.predict_survival(X_eval.to_numpy(), survival_times)
-        metrics = self._compute_metric_bundle_safe(
-            train_time=self.dataset_.time,
-            train_event=self.dataset_.event,
-            test_time=dataset.time,
-            test_event=dataset.event,
-            risk_scores=risk,
-            survival_probs=survival,
-            survival_times=survival_times,
-        )
-        return {f"test_{name}": float(value) for name, value in metrics.items()}
-
     def _evaluate_fitted_models(self, dataset: SurvivalDataset) -> None:
+        train_reference = self._train_reference_dataset()
         self.model_test_metrics_ = {}
         for method_id in self.model_names():
-            X_eval = self.model_preprocessors_[method_id].transform(dataset.X)
-            risk = self.fitted_models_[method_id].predict_risk(X_eval.to_numpy())
+            risk = self._predict_model_risk(method_id, dataset.X)
             survival_times = self.model_survival_times_[method_id]
-            survival = self.fitted_models_[method_id].predict_survival(X_eval.to_numpy(), survival_times)
+            survival = self._predict_model_survival(method_id, dataset.X, survival_times)
             metrics = self._compute_metric_bundle_safe(
-                train_time=self.dataset_.time,
-                train_event=self.dataset_.event,
+                train_time=train_reference.time,
+                train_event=train_reference.event,
                 test_time=dataset.time,
                 test_event=dataset.event,
                 risk_scores=risk,
@@ -684,11 +758,6 @@ class SurvivalPredictor:
     def _prepare_matplotlib_env(self) -> None:
         _configure_plotting_cache()
 
-    def _require_preprocessor(self) -> TabularPreprocessor:
-        if self.best_preprocessor_ is None:
-            raise RuntimeError("Preprocessor is unavailable before fit().")
-        return self.best_preprocessor_
-
     def _require_survival_times(self) -> np.ndarray:
         if self.survival_times_ is None:
             raise RuntimeError("Survival time grid is unavailable before fit().")
@@ -702,6 +771,13 @@ class SurvivalPredictor:
         if model not in self.fitted_models_:
             raise ValueError(f"Unknown model '{model}'. Available models: {sorted(self.fitted_models_)}")
         return model
+
+    def _train_reference_dataset(self) -> SurvivalDataset:
+        if self.refit_dataset_ is not None:
+            return self.refit_dataset_
+        if self.dataset_ is not None:
+            return self.dataset_
+        raise RuntimeError("No training dataset is available.")
 
     def _fit_successful_models(
         self,
@@ -720,17 +796,74 @@ class SurvivalPredictor:
         for result in results:
             if result.method_id != best_method_id and self._remaining_fit_time(fit_started_at, time_limit) <= 0.0:
                 continue
-            preprocessor = TabularPreprocessor(scale_numeric=(result.method_id != "rsf"))
-            X_train_proc = preprocessor.fit_transform(dataset.X)
-            model = method_registry[result.method_id](
-                **_resolve_runtime_method_params(result.params, seed=self.random_state)
-            )
-            with quiet_training_output(enabled=not self.verbose):
-                model.fit(X_train_proc.to_numpy(), dataset.time, dataset.event)
+            if self.num_bag_folds_ >= 2:
+                model = self._fit_bagged_model(
+                    method_cls=method_registry[result.method_id],
+                    method_id=result.method_id,
+                    params=result.params,
+                    dataset=dataset,
+                )
+                preprocessor = None
+            else:
+                model, preprocessor = self._fit_single_model(
+                    method_cls=method_registry[result.method_id],
+                    method_id=result.method_id,
+                    params=result.params,
+                    dataset=dataset,
+                )
             self.fitted_models_[result.method_id] = model
             self.model_preprocessors_[result.method_id] = preprocessor
             self.model_survival_times_[result.method_id] = self._default_survival_times(dataset.time, dataset.event)
             result.retained_for_inference = True
+
+    def _fit_single_model(
+        self,
+        *,
+        method_cls: Any,
+        method_id: str,
+        params: dict[str, Any],
+        dataset: SurvivalDataset,
+    ) -> tuple[Any, TabularPreprocessor]:
+        preprocessor = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
+        X_train_proc = preprocessor.fit_transform(dataset.X).to_numpy()
+        model = method_cls(**_resolve_runtime_method_params(params, seed=self.random_state))
+        with quiet_training_output(enabled=not self.verbose):
+            model.fit(X_train_proc, dataset.time, dataset.event)
+        return model, preprocessor
+
+    def _fit_bagged_model(
+        self,
+        *,
+        method_cls: Any,
+        method_id: str,
+        params: dict[str, Any],
+        dataset: SurvivalDataset,
+    ) -> BaggedSurvivalEnsemble:
+        bagging_folds = build_bagging_folds(
+            dataset,
+            num_bag_folds=self.num_bag_folds_,
+            num_bag_sets=self.num_bag_sets_,
+            seed=self.random_state,
+        )
+        members: list[BaggedModelMember] = []
+        for member_index, fold in enumerate(bagging_folds):
+            preprocessor = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
+            X_train_proc = preprocessor.fit_transform(fold.train_X).to_numpy()
+            X_validation_proc = preprocessor.transform(fold.validation_X).to_numpy()
+            model = method_cls(
+                **_resolve_runtime_method_params(params, seed=self.random_state + member_index)
+            )
+            with quiet_training_output(enabled=not self.verbose):
+                model.fit(
+                    X_train_proc,
+                    fold.train_time,
+                    fold.train_event,
+                    X_validation_proc,
+                    fold.validation_time,
+                    fold.validation_event,
+                )
+            members.append(BaggedModelMember(model=model, preprocessor=preprocessor))
+        return BaggedSurvivalEnsemble(members)
 
     def _validate_time_limit(self, time_limit: float | None) -> float | None:
         if time_limit is None:
@@ -739,6 +872,73 @@ class SurvivalPredictor:
         if resolved <= 0.0:
             raise ValueError("time_limit must be positive when provided.")
         return resolved
+
+    def _validate_num_bag_folds(self, num_bag_folds: int) -> int:
+        resolved = int(num_bag_folds)
+        if resolved < 0:
+            raise ValueError("num_bag_folds must be >= 0.")
+        if resolved == 1:
+            raise ValueError("num_bag_folds must be 0 or >= 2.")
+        return resolved
+
+    def _validate_num_bag_sets(self, num_bag_sets: int, *, num_bag_folds: int) -> int:
+        resolved = int(num_bag_sets)
+        if resolved < 1:
+            raise ValueError("num_bag_sets must be >= 1.")
+        if resolved > 1 and num_bag_folds <= 0:
+            raise ValueError("num_bag_sets > 1 requires num_bag_folds >= 2.")
+        return resolved
+
+    def _resolve_hyperparameter_tune_kwargs(
+        self,
+        hyperparameter_tune_kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any] | None:
+        if hyperparameter_tune_kwargs is None:
+            return None
+        if not isinstance(hyperparameter_tune_kwargs, dict):
+            raise TypeError("hyperparameter_tune_kwargs must be a dictionary when provided.")
+
+        supported_keys = {"n_trials", "num_trials", "timeout", "timeout_seconds"}
+        unexpected_keys = sorted(set(hyperparameter_tune_kwargs) - supported_keys)
+        if unexpected_keys:
+            raise ValueError(
+                "Unsupported hyperparameter_tune_kwargs keys: "
+                f"{unexpected_keys}. Supported keys: {sorted(supported_keys)}"
+            )
+        if "n_trials" in hyperparameter_tune_kwargs and "num_trials" in hyperparameter_tune_kwargs:
+            raise ValueError("Specify only one of 'n_trials' or 'num_trials' in hyperparameter_tune_kwargs.")
+        if "timeout" in hyperparameter_tune_kwargs and "timeout_seconds" in hyperparameter_tune_kwargs:
+            raise ValueError("Specify only one of 'timeout' or 'timeout_seconds' in hyperparameter_tune_kwargs.")
+
+        normalized: dict[str, Any] = {}
+        n_trials = hyperparameter_tune_kwargs.get("n_trials", hyperparameter_tune_kwargs.get("num_trials"))
+        if n_trials is not None:
+            resolved_n_trials = int(n_trials)
+            if resolved_n_trials < 0:
+                raise ValueError("hyperparameter_tune_kwargs n_trials must be >= 0.")
+            normalized["n_trials"] = resolved_n_trials
+
+        timeout_seconds = hyperparameter_tune_kwargs.get("timeout_seconds", hyperparameter_tune_kwargs.get("timeout"))
+        if timeout_seconds is not None:
+            resolved_timeout = float(timeout_seconds)
+            if resolved_timeout <= 0.0:
+                raise ValueError("hyperparameter_tune_kwargs timeout must be positive.")
+            normalized["timeout_seconds"] = resolved_timeout
+
+        return normalized
+
+    def _resolve_n_trials(self, *, fit_tune_kwargs: dict[str, Any] | None, default_num_trials: int) -> int:
+        if fit_tune_kwargs is not None and "n_trials" in fit_tune_kwargs:
+            return int(fit_tune_kwargs["n_trials"])
+        if self.num_trials is not None:
+            return int(self.num_trials)
+        return int(default_num_trials)
+
+    def _resolve_tuning_timeout_seconds(self, fit_tune_kwargs: dict[str, Any] | None) -> float | None:
+        if fit_tune_kwargs is None:
+            return None
+        timeout_seconds = fit_tune_kwargs.get("timeout_seconds")
+        return None if timeout_seconds is None else float(timeout_seconds)
 
     def _remaining_fit_time(self, fit_started_at: float, time_limit: float | None) -> float:
         if time_limit is None:
@@ -760,6 +960,12 @@ class SurvivalPredictor:
         if remaining_budget <= 0.0:
             return 0.0
         return remaining_budget / float(remaining_methods)
+
+    def _merge_time_limits(self, first: float | None, second: float | None) -> float | None:
+        limits = [float(limit) for limit in (first, second) if limit is not None]
+        if not limits:
+            return None
+        return min(limits)
 
     def _append_budget_exhausted_results(
         self,
@@ -895,8 +1101,13 @@ class SurvivalPredictor:
                 "enable_foundation_models": self.enable_foundation_models,
                 "validation_strategy": self.validation_strategy_,
                 "holdout_frac": self.validation_holdout_frac_,
+                "num_bag_folds": self.num_bag_folds_,
+                "num_bag_sets": self.num_bag_sets_,
                 "selection_train_rows": self.selection_train_rows_,
                 "validation_rows": self.validation_rows_,
+                "refit_full": self.refit_full_,
+                "final_train_rows": self.final_train_rows_,
+                "hyperparameter_tune_kwargs": self.hyperparameter_tune_kwargs_,
                 "time_limit": self.fit_time_limit_sec_,
                 "selection_time_budget_sec": self.selection_time_budget_sec_,
                 "fit_elapsed_sec": self.fit_elapsed_sec_,

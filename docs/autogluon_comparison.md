@@ -13,6 +13,7 @@ experience:
 - require only `time` and `event` labels
 - automatically preprocess tabular features
 - accept explicit tuning data or create an automatic validation holdout
+- switch to bagged OOF model selection with `num_bag_folds` and `num_bag_sets`
 - run a portfolio of models via `fast`, `medium`, and `best` presets
 - compare models through a leaderboard
 - expose `predict_risk(...)` and `predict_survival(...)`
@@ -30,10 +31,10 @@ lacks several important pieces:
 
 ### 1. Richer training orchestration
 
-- no bagging / stacking / weighted ensembling
+- bagged OOF selection now exists, but there is still no stacking or weighted ensembling
 - no multi-level model reuse or meta-learning
-- no bagged out-of-fold training flow comparable to AutoGluon's `num_bag_folds`
 - no adaptive per-model time scheduler with AutoGluon-style resource controls
+- no bag-holdout path like AutoGluon's `use_bag_holdout`
 
 ### 2. Better model management
 
@@ -67,7 +68,7 @@ lacks several important pieces:
 - presets are static rather than dynamically portfolio-aware
 - no search-space adaptation based on dataset shape, sparsity, or censoring rate
 - no portfolio warm-starting from prior results
-- no automatic ensemble construction over top candidates
+- no automatic weighted ensemble construction over top candidates
 
 ### 7. Foundation-model integration is still early
 
@@ -78,8 +79,9 @@ lacks several important pieces:
 
 ## Bottom Line
 
-SurvArena now supports **simple comparison in an AutoGluon-style shape**, but it
-is not yet AutoGluon-level in maturity, orchestration, or model-management depth.
+SurvArena now supports **holdout-style and bagged-OOF comparison in an
+AutoGluon-style shape**, but it is not yet AutoGluon-level in maturity,
+orchestration, or model-management depth.
 
 The current state is best described as:
 

@@ -1,3 +1,0 @@
-rank,method_id,selection_metric,selection_score,fit_time_sec,n_trials_completed,time_limit_sec,retained_for_inference,status,error,error_type,params,validation_uno_c,validation_harrell_c,validation_ibs,validation_td_auc_25,validation_td_auc_50,validation_td_auc_75,validation_primary_metric,test_uno_c,test_harrell_c,test_ibs,test_td_auc_25,test_td_auc_50,test_td_auc_75
-1,mock_b,harrell_c,3.0,0.0005871670000487939,0,,True,success,,,{'bias': 2.0},3.0,3.0,0.7,3.0,3.0,3.0,3.0,2.9999999999999996,2.9999999999999996,0.7000000000000001,2.9999999999999996,2.9999999999999996,2.9999999999999996
-2,mock_a,harrell_c,2.0,0.025464291000389494,0,,True,success,,,{'bias': 1.0},2.0,2.0,0.8,2.0,2.0,2.0,2.0,2.0,2.0,0.8,2.0,2.0,2.0

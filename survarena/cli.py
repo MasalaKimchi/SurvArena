@@ -19,6 +19,12 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--presets", default="all", choices=["fast", "medium", "best", "all", "foundation"])
     fit_parser.add_argument("--eval-metric", default="harrell_c", choices=["harrell_c", "uno_c"])
     fit_parser.add_argument("--num-trials", type=int, default=None)
+    fit_parser.add_argument(
+        "--tuning-timeout",
+        type=float,
+        default=None,
+        help="Optional per-model HPO timeout in seconds.",
+    )
     fit_parser.add_argument("--random-state", type=int, default=0)
     fit_parser.add_argument(
         "--time-limit",
@@ -32,8 +38,26 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Override the preset holdout fraction when --tuning is not provided.",
     )
+    fit_parser.add_argument(
+        "--num-bag-folds",
+        type=int,
+        default=0,
+        help="Enable bagged OOF selection with the given number of folds. Use 0 to disable bagging.",
+    )
+    fit_parser.add_argument(
+        "--num-bag-sets",
+        type=int,
+        default=1,
+        help="Repeat the bagging fold schedule this many times when --num-bag-folds is enabled.",
+    )
     fit_parser.add_argument("--save-path", default=None, help="Optional artifact directory root.")
     fit_parser.add_argument("--dataset-name", default="user_dataset")
+    fit_parser.add_argument(
+        "--refit-full",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Whether to refit retained models on all available non-test data after selection.",
+    )
     fit_parser.add_argument("--verbose", action="store_true", help="Show underlying tuning logs.")
     fit_parser.add_argument(
         "--enable-foundation-models",
@@ -57,6 +81,13 @@ def main() -> None:
             verbose=args.verbose,
             enable_foundation_models=args.enable_foundation_models,
         )
+        hyperparameter_tune_kwargs = None
+        if args.num_trials is not None or args.tuning_timeout is not None:
+            hyperparameter_tune_kwargs = {}
+            if args.num_trials is not None:
+                hyperparameter_tune_kwargs["num_trials"] = args.num_trials
+            if args.tuning_timeout is not None:
+                hyperparameter_tune_kwargs["timeout"] = args.tuning_timeout
         predictor.fit(
             args.train,
             tuning_data=args.tuning,
@@ -64,6 +95,10 @@ def main() -> None:
             dataset_name=args.dataset_name,
             holdout_frac=args.holdout_frac,
             time_limit=args.time_limit,
+            hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
+            refit_full=args.refit_full,
+            num_bag_folds=args.num_bag_folds,
+            num_bag_sets=args.num_bag_sets,
         )
         print(json.dumps(predictor.fit_summary(), indent=2, sort_keys=True))
 

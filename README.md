@@ -17,6 +17,7 @@ The current predictor stack can:
 
 - read training and test data from a pandas `DataFrame`, CSV, or Parquet file
 - accept explicit tuning/validation data or create an automatic stratified holdout when tuning data is not provided
+- switch to bagged out-of-fold model selection with `num_bag_folds` / `num_bag_sets` when you want a stronger AutoML-style fit flow
 - validate `time` and `event` labels and infer feature metadata for numerical, categorical, datetime, and text columns
 - surface dataset diagnostics such as low-event warnings, ID-like features, and high-cardinality columns
 - fit a preset-driven model portfolio and rank candidates with a unified leaderboard
@@ -101,6 +102,9 @@ predictor.fit(
     test_data="my_test.csv",
     dataset_name="my_dataset",
     time_limit=1800,
+    hyperparameter_tune_kwargs={"num_trials": 12, "timeout": 120},
+    refit_full=True,
+    num_bag_folds=5,
 )
 
 leaderboard = predictor.leaderboard()
@@ -113,6 +117,8 @@ predictor.save()
 
 If `tuning_data` is omitted, `SurvivalPredictor.fit(...)` automatically creates a stratified validation holdout using the preset default or an explicit `holdout_frac=...` override.
 When `time_limit` is provided, SurvArena treats it as an approximate wallclock budget for the overall fit and allocates the selection budget across the remaining candidate models.
+Use `hyperparameter_tune_kwargs` to override fit-level HPO controls such as `num_trials` and per-model tuning timeout, and set `refit_full=False` if you want retained models to stay on the selection-train portion instead of refitting on all available non-test data.
+Set `num_bag_folds >= 2` to replace the single holdout with bagged OOF selection and averaged fold-model inference; `num_bag_sets` repeats that fold schedule for a stronger, slower fit.
 
 ### CLI predictor API
 
@@ -127,6 +133,9 @@ python -m survarena.cli fit \
   --event-col event \
   --presets medium \
   --time-limit 1800 \
+  --tuning-timeout 120 \
+  --num-trials 12 \
+  --num-bag-folds 5 \
   --dataset-name my_dataset
 ```
 
@@ -141,6 +150,9 @@ survarena fit \
   --event-col event \
   --presets medium \
   --time-limit 1800 \
+  --tuning-timeout 120 \
+  --num-trials 12 \
+  --num-bag-folds 5 \
   --dataset-name my_dataset
 ```
 
@@ -169,6 +181,8 @@ The fit summary includes:
 
 - best method and best params
 - validation strategy details, including whether explicit tuning data or an automatic holdout was used
+- bagging details, including the requested number of bag folds and bag sets when OOF selection is enabled
+- refit strategy details, including whether validation rows were folded back into final training
 - time-budget metadata such as the requested fit budget and observed elapsed fit time
 - resolved portfolio and portfolio notes
 - dataset diagnostics
