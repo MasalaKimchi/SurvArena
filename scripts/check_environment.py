@@ -4,6 +4,8 @@ import argparse
 import platform
 import sys
 
+from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
+
 
 CORE_REQUIRED = [
     "numpy",
@@ -14,6 +16,8 @@ CORE_REQUIRED = [
     "optuna",
     "lifelines",
     "sksurv",
+    "xgboost",
+    "catboost",
 ]
 
 FOUNDATION_REQUIRED = [
@@ -51,6 +55,28 @@ def _check_imports(required: list[str], *, label: str) -> None:
     if missing:
         raise RuntimeError(f"Missing required modules for {label}: {missing}")
     print(f"{label}=ok")
+
+
+def _check_foundation_runtime(method_ids: list[str] | None = None) -> None:
+    statuses = (
+        [foundation_runtime_status_for_method(method_id) for method_id in method_ids]
+        if method_ids is not None
+        else list(foundation_runtime_catalog())
+    )
+    for status in statuses:
+        print(f"foundation[{status.method_id}].dependency_installed={status.dependency_installed}")
+        print(f"foundation[{status.method_id}].runtime_ready={status.runtime_ready}")
+        if status.install_extra is not None:
+            print(f"foundation[{status.method_id}].install_extra={status.install_extra}")
+        if status.install_command is not None:
+            print(f"foundation[{status.method_id}].install_command={status.install_command}")
+        if status.auth_configured is not None:
+            print(f"foundation[{status.method_id}].auth_configured={status.auth_configured}")
+        if status.blocked_reason is not None:
+            print(f"foundation[{status.method_id}].blocked_reason={status.blocked_reason}")
+        if status.warning_reason is not None:
+            print(f"foundation[{status.method_id}].warning_reason={status.warning_reason}")
+    print("foundation_runtime=ok")
 
 
 def _check_torchsurv_metrics() -> None:
@@ -113,6 +139,11 @@ def main() -> None:
         action="store_true",
         help="Also validate optional foundation-model dependencies.",
     )
+    parser.add_argument(
+        "--foundation-methods",
+        default=None,
+        help="Optional comma-separated subset of foundation method ids to inspect.",
+    )
     args = parser.parse_args()
 
     _print_header()
@@ -120,6 +151,10 @@ def main() -> None:
     _check_imports(CORE_REQUIRED, label="core_imports")
     if args.include_foundation:
         _check_imports(FOUNDATION_REQUIRED, label="foundation_imports")
+        selected_methods = None
+        if args.foundation_methods:
+            selected_methods = [item.strip() for item in args.foundation_methods.split(",") if item.strip()]
+        _check_foundation_runtime(selected_methods)
     else:
         print("foundation_imports=skipped")
     _check_torchsurv_metrics()

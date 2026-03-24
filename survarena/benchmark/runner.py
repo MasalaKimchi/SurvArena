@@ -33,6 +33,11 @@ def evaluate_split(
     from survarena.evaluation.metrics import compute_survival_metrics, horizons_from_train_event_times
     from survarena.logging.manifest import RunManifest
     from survarena.logging.tracker import payload_sha256, peak_memory_mb as peak_process_memory_mb
+    from survarena.methods.preprocessing import (
+        finalize_preprocessed_features,
+        method_preprocessing_summary,
+        method_preprocessor_kwargs,
+    )
     from survarena.utils.seeds import set_global_seed
     from survarena.utils.time import timer
 
@@ -80,13 +85,13 @@ def evaluate_split(
         validation_score = float(tuning_result["best_score"])
         n_trials_completed = int(tuning_result["n_trials_completed"])
 
-        pre = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
-        X_train_proc = pre.fit_transform(X_train)
-        X_test_proc = pre.transform(X_test)
+        pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+        X_train_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
+        X_test_proc = finalize_preprocessed_features(method_id, pre.transform(X_test))
 
         model = get_method_class(method_id)(**resolve_runtime_method_params(best_params, seed=split.seed))
         with timer() as fit_timer:
-            model.fit(X_train_proc.to_numpy(), t_train, e_train)
+            model.fit(X_train_proc, t_train, e_train)
         fit_time_sec = fit_timer.elapsed
 
         eval_times = np.linspace(
@@ -95,8 +100,8 @@ def evaluate_split(
             50,
         )
         with timer() as infer_timer:
-            risk_scores = model.predict_risk(X_test_proc.to_numpy())
-            surv_probs = model.predict_survival(X_test_proc.to_numpy(), eval_times)
+            risk_scores = model.predict_risk(X_test_proc)
+            surv_probs = model.predict_survival(X_test_proc, eval_times)
         infer_time_sec = infer_timer.elapsed
 
         horizons = horizons_from_train_event_times(t_train, e_train, horizons_quantiles)
@@ -122,12 +127,7 @@ def evaluate_split(
             split_id=split.split_id,
             seed=split.seed,
             hyperparameters=best_params,
-            preprocessing_config={
-                "numeric_imputer": "median",
-                "categorical_imputer": "most_frequent",
-                "numeric_scaling": method_id != "rsf",
-                "categorical_encoding": "one_hot",
-            },
+            preprocessing_config=method_preprocessing_summary(method_id),
             runtime_seconds=runtime_sec,
             peak_memory_mb=peak_memory_mb,
             status="success",

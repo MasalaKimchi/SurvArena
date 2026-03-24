@@ -10,6 +10,9 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
 
     assert "tabpfn_survival" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
+    assert "dependency_installed" in catalog.columns
+    assert "runtime_ready" in catalog.columns
+    assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
     assert implemented["tabicl_survival"] is False

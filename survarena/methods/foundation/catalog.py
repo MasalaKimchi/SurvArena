@@ -14,8 +14,10 @@ class FoundationModelSpec:
     status: str
     notes: str
     dependency_module: str | None = None
+    install_extra: str | None = None
     max_rows_hint: int | None = None
     max_features_hint: int | None = None
+    requires_hf_auth: bool = False
 
 
 _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
@@ -29,8 +31,10 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         status="implemented",
         notes="Supports explicit TabPFN v2/v2.5 selection plus custom checkpoint paths.",
         dependency_module="tabpfn",
+        install_extra="foundation-tabpfn",
         max_rows_hint=10_000,
         max_features_hint=500,
+        requires_hf_auth=True,
     ),
     FoundationModelSpec(
         method_id="mitra_survival",
@@ -42,6 +46,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         status="implemented",
         notes="Uses AutoGluon Mitra regression with a trainable neural Cox head over backbone predictions.",
         dependency_module="autogluon.tabular",
+        install_extra="foundation-mitra",
         max_rows_hint=30_000,
         max_features_hint=2_000,
     ),

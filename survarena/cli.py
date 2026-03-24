@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+from dataclasses import asdict
 import json
 
 from survarena.api import SurvivalPredictor, compare_survival_models
+from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
 
 
 def _parse_csv_list(value: str) -> list[str]:
@@ -146,6 +148,17 @@ def parse_args() -> argparse.Namespace:
         help="Include experimental tabular foundation-model adapters when supported.",
     )
     compare_parser.add_argument("--dry-run", action="store_true", help="Show resolved compare settings without fitting.")
+
+    foundation_check_parser = subparsers.add_parser(
+        "foundation-check",
+        help="Inspect whether optional foundation-model adapters are installed and ready to run.",
+    )
+    foundation_check_parser.add_argument(
+        "--models",
+        type=_parse_csv_list,
+        default=None,
+        help="Optional comma-separated foundation method ids to inspect.",
+    )
     return parser.parse_args()
 
 
@@ -212,6 +225,14 @@ def main() -> None:
             dry_run=args.dry_run,
         )
         print(json.dumps(summary, indent=2, sort_keys=True))
+        return
+
+    if args.command == "foundation-check":
+        if args.models is None:
+            statuses = list(foundation_runtime_catalog())
+        else:
+            statuses = [foundation_runtime_status_for_method(method_id) for method_id in args.models]
+        print(json.dumps([asdict(status) for status in statuses], indent=2, sort_keys=True))
         return
 
     raise ValueError(f"Unsupported command '{args.command}'.")

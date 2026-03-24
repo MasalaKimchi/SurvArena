@@ -3,17 +3,41 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
-import torch
 from sklearn.model_selection import train_test_split
-from torch import nn
-from torch.nn.utils import clip_grad_norm_
-from torch.utils.data import DataLoader, Dataset
-from torchsurv.loss.cox import neg_partial_log_likelihood
 
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
+
+if TYPE_CHECKING:
+    import torch
+    from torch import nn
+
+
+def _import_torch():
+    import torch
+
+    return torch
+
+
+def _import_nn():
+    from torch import nn
+
+    return nn
+
+
+def _import_cox_loss():
+    from torchsurv.loss.cox import neg_partial_log_likelihood
+
+    return neg_partial_log_likelihood
+
+
+def _clip_grad_norm(parameters: Any, max_norm: float) -> None:
+    from torch.nn.utils import clip_grad_norm_
+
+    clip_grad_norm_(parameters, max_norm)
 
 
 def _parse_hidden_layers(value: Any) -> list[int]:
@@ -25,7 +49,8 @@ def _parse_hidden_layers(value: Any) -> list[int]:
     raise ValueError(f"Unsupported hidden_layers value: {value!r}")
 
 
-def _activation_cls(name: str) -> type[nn.Module]:
+def _activation_cls(name: str) -> type[Any]:
+    nn = _import_nn()
     mapping: dict[str, type[nn.Module]] = {
         "relu": nn.ReLU,
         "selu": nn.SELU,
@@ -87,7 +112,7 @@ def _shuffle_and_chunk_survival_data(
     return X_chunks, y_chunks, time_chunks, event_chunks
 
 
-class _SurvivalDatasetCollection(Dataset):
+class _SurvivalDatasetCollection:
     def __init__(
         self,
         split_fn: Any,
@@ -105,6 +130,7 @@ class _SurvivalDatasetCollection(Dataset):
         return len(self.dataset_configs)
 
     def __getitem__(self, index: int) -> _SurvivalBatch:
+        torch = _import_torch()
         from tabpfn.preprocessing import fit_preprocessing
         from tabpfn.preprocessing.datamodel import FeatureModality, FeatureSchema
 
@@ -169,6 +195,7 @@ class _SurvivalDatasetCollection(Dataset):
 
 
 def _survival_meta_collator(batch: list[_SurvivalBatch], padding_val: float = 0.0) -> _SurvivalBatch:
+    torch = _import_torch()
     from tabpfn.utils import pad_tensors
 
     assert len(batch) == 1, "Only batch_size=1 is currently supported for TabPFN survival fine-tuning."
@@ -244,8 +271,8 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         )
         self.finetuned_estimator_: Any = None
         self.backbone = None
-        self.head: nn.Module | None = None
-        self.device_: torch.device | None = None
+        self.head: Any | None = None
+        self.device_: Any | None = None
         self.head_input_dim_: int | None = None
         self.baseline_event_times_: np.ndarray | None = None
         self.baseline_survival_: np.ndarray | None = None
@@ -253,6 +280,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self._train_surrogate_target_: np.ndarray | None = None
 
     def _resolve_device(self) -> torch.device:
+        torch = _import_torch()
         raw_device = str(self.params["device"])
         if raw_device == "auto":
             return torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -260,6 +288,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
+        torch = _import_torch()
         torch.manual_seed(seed)
         if torch.cuda.is_available():
             torch.cuda.manual_seed_all(seed)
@@ -308,6 +337,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         return backbone_cls.create_default_for_version(version=version_map[model_version], **base_kwargs)
 
     def _build_head(self, in_features: int) -> nn.Module:
+        nn = _import_nn()
         hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
         activation = _activation_cls(str(self.params["activation"]))
         dropout = float(self.params["dropout"])
@@ -325,6 +355,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         return nn.Sequential(*layers)
 
     def _extract_batch_embeddings(self, X_query_batch: list[torch.Tensor]) -> torch.Tensor:
+        torch = _import_torch()
         if self.finetuned_estimator_ is None:
             raise RuntimeError("Backbone estimator must be initialized before embedding extraction.")
 
@@ -404,7 +435,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
 
     @staticmethod
     def _cox_loss(log_risk: torch.Tensor, event: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
-        return neg_partial_log_likelihood(log_risk, event, time)
+        return _import_cox_loss()(log_risk, event, time)
 
     def _fit_baseline_survival(
         self,
@@ -521,6 +552,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         time_val: np.ndarray,
         event_val: np.ndarray,
     ) -> float:
+        torch = _import_torch()
         if self.head is None:
             raise RuntimeError("Survival head must be initialized before validation.")
 
@@ -556,139 +588,149 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
     ) -> "TabPFNSurvivalMethod":
-        self.device_ = self._resolve_device()
-        self._set_torch_seed(int(self.params["seed"] or 0))
+        ensure_foundation_runtime_ready("tabpfn_survival", checkpoint_path=self.params.get("checkpoint_path"))
+        try:
+            torch = _import_torch()
+            self.device_ = self._resolve_device()
+            self._set_torch_seed(int(self.params["seed"] or 0))
 
-        X_train_np = np.asarray(X_train, dtype=np.float32)
-        time_train_np = np.asarray(time_train, dtype=np.float64)
-        event_train_np = np.asarray(event_train, dtype=np.int32)
-        if int(event_train_np.sum()) <= 0:
-            raise ValueError("TabPFN survival training requires at least one observed event in the training data.")
+            X_train_np = np.asarray(X_train, dtype=np.float32)
+            time_train_np = np.asarray(time_train, dtype=np.float64)
+            event_train_np = np.asarray(event_train, dtype=np.int32)
+            if int(event_train_np.sum()) <= 0:
+                raise ValueError("TabPFN survival training requires at least one observed event in the training data.")
 
-        surrogate_y_train = self._build_surrogate_target(time_train_np, event_train_np)
-        self._train_surrogate_target_ = np.asarray(surrogate_y_train)
-        self.finetuned_estimator_ = self._build_backbone(
-            n_estimators=int(self.params["n_estimators_finetune"]),
-            fit_mode="batched",
-        )
-        self.finetuned_estimator_._initialize_model_variables()
-        self.finetuned_estimator_.model_.to(self.device_)
-
-        best_backbone = None
-        best_head_state = None
-        best_monitor = float("inf")
-        stale_epochs = 0
-        optimizer = None
-
-        for epoch in range(int(self.params["max_epochs"])):
-            training_datasets = self._build_training_dataset(
-                X_train_np,
-                surrogate_y_train,
-                time_train_np,
-                event_train_np,
-                epoch=epoch,
+            surrogate_y_train = self._build_surrogate_target(time_train_np, event_train_np)
+            self._train_surrogate_target_ = np.asarray(surrogate_y_train)
+            self.finetuned_estimator_ = self._build_backbone(
+                n_estimators=int(self.params["n_estimators_finetune"]),
+                fit_mode="batched",
             )
-            finetuning_dataloader = DataLoader(
-                training_datasets,
-                batch_size=1,
-                collate_fn=_survival_meta_collator,
-                shuffle=True,
-                generator=torch.Generator().manual_seed(int(self.params["seed"] or 0) + epoch),
-            )
+            self.finetuned_estimator_._initialize_model_variables()
+            self.finetuned_estimator_.model_.to(self.device_)
 
-            epoch_loss_sum = 0.0
-            epoch_batches = 0
-            for batch in finetuning_dataloader:
-                if self._backbone_model_type() == "classifier":
-                    context_labels = torch.unique(torch.cat([labels.reshape(-1) for labels in batch.y_context]))
-                    query_labels = torch.unique(batch.event_query_raw.reshape(-1).long())
-                    if not bool(torch.isin(query_labels, context_labels, assume_unique=True).all()):
-                        continue
+            best_backbone = None
+            best_head_state = None
+            best_monitor = float("inf")
+            stale_epochs = 0
+            optimizer = None
 
-                self.finetuned_estimator_.fit_from_preprocessed(
-                    batch.X_context,
-                    batch.y_context,
-                    batch.cat_indices,
-                    batch.configs,
-                )
-                embeddings = self._extract_batch_embeddings(batch.X_query)
-                if self.head is None:
-                    self.head_input_dim_ = int(embeddings.shape[1])
-                    self.head = self._build_head(self.head_input_dim_).to(self.device_)
-                    params = list(self.head.parameters())
-                    if str(self.params["backbone_training"]).lower() == "finetune":
-                        params.extend(list(self.finetuned_estimator_.model_.parameters()))
-                    opt_name = str(self.params["optimizer"]).lower()
-                    optimizer_cls = torch.optim.AdamW if opt_name == "adamw" else torch.optim.Adam
-                    optimizer = optimizer_cls(
-                        params,
-                        lr=float(self.params["lr"]),
-                        weight_decay=float(self.params["weight_decay"]),
-                    )
-                if optimizer is None or self.head is None:
-                    raise RuntimeError("Optimizer and head must be initialized before training.")
-
-                optimizer.zero_grad(set_to_none=True)
-                log_risk = self.head(embeddings).squeeze(-1)
-                event_query = batch.event_query_raw.reshape(-1).to(self.device_)
-                time_query = batch.time_query_raw.reshape(-1).to(self.device_)
-                if int(event_query.sum().item()) <= 0:
-                    continue
-                loss = self._cox_loss(log_risk, event_query, time_query)
-                loss.backward()
-                if self.params["grad_clip_value"] is not None:
-                    clip_grad_norm_(self.head.parameters(), float(self.params["grad_clip_value"]))
-                    if str(self.params["backbone_training"]).lower() == "finetune":
-                        clip_grad_norm_(
-                            self.finetuned_estimator_.model_.parameters(),
-                            float(self.params["grad_clip_value"]),
-                        )
-                optimizer.step()
-
-                epoch_loss_sum += float(loss.detach().item())
-                epoch_batches += 1
-
-            if self.head is None:
-                raise RuntimeError("No valid survival batches were available for TabPFN survival training.")
-
-            monitor = epoch_loss_sum / max(epoch_batches, 1)
-            if X_val is not None and time_val is not None and event_val is not None:
-                monitor = self._evaluate_validation_loss(
+            for epoch in range(int(self.params["max_epochs"])):
+                training_datasets = self._build_training_dataset(
                     X_train_np,
                     surrogate_y_train,
-                    np.asarray(X_val, dtype=np.float32),
-                    np.asarray(time_val, dtype=np.float64),
-                    np.asarray(event_val, dtype=np.int32),
+                    time_train_np,
+                    event_train_np,
+                    epoch=epoch,
+                )
+                finetuning_dataloader = torch.utils.data.DataLoader(
+                    training_datasets,
+                    batch_size=1,
+                    collate_fn=_survival_meta_collator,
+                    shuffle=True,
+                    generator=torch.Generator().manual_seed(int(self.params["seed"] or 0) + epoch),
                 )
 
-            if monitor + 1e-8 < best_monitor:
-                best_monitor = monitor
-                best_backbone = deepcopy(self.finetuned_estimator_)
-                best_head_state = deepcopy(self.head.state_dict())
-                stale_epochs = 0
-            else:
-                stale_epochs += 1
-                if stale_epochs >= int(self.params["patience"]):
-                    break
+                epoch_loss_sum = 0.0
+                epoch_batches = 0
+                for batch in finetuning_dataloader:
+                    if self._backbone_model_type() == "classifier":
+                        context_labels = torch.unique(torch.cat([labels.reshape(-1) for labels in batch.y_context]))
+                        query_labels = torch.unique(batch.event_query_raw.reshape(-1).long())
+                        if not bool(torch.isin(query_labels, context_labels, assume_unique=True).all()):
+                            continue
 
-        if best_backbone is not None:
-            self.finetuned_estimator_ = best_backbone
-        if best_head_state is not None and self.head is not None:
-            self.head.load_state_dict(best_head_state)
-        if self.head is None:
-            raise RuntimeError("TabPFN survival head was not initialized.")
-        self.backbone = self._build_evaluation_backbone()
-        self.backbone.fit(X_train_np, surrogate_y_train)
+                    self.finetuned_estimator_.fit_from_preprocessed(
+                        batch.X_context,
+                        batch.y_context,
+                        batch.cat_indices,
+                        batch.configs,
+                    )
+                    embeddings = self._extract_batch_embeddings(batch.X_query)
+                    if self.head is None:
+                        self.head_input_dim_ = int(embeddings.shape[1])
+                        self.head = self._build_head(self.head_input_dim_).to(self.device_)
+                        params = list(self.head.parameters())
+                        if str(self.params["backbone_training"]).lower() == "finetune":
+                            params.extend(list(self.finetuned_estimator_.model_.parameters()))
+                        opt_name = str(self.params["optimizer"]).lower()
+                        optimizer_cls = torch.optim.AdamW if opt_name == "adamw" else torch.optim.Adam
+                        optimizer = optimizer_cls(
+                            params,
+                            lr=float(self.params["lr"]),
+                            weight_decay=float(self.params["weight_decay"]),
+                        )
+                    if optimizer is None or self.head is None:
+                        raise RuntimeError("Optimizer and head must be initialized before training.")
 
-        train_embeddings = self._extract_inference_embeddings(X_train_np)
-        train_embeddings_t = torch.as_tensor(train_embeddings, dtype=torch.float32, device=self.device_)
-        self.head.eval()
-        with torch.no_grad():
-            train_log_risk = self.head(train_embeddings_t).squeeze(-1).detach().cpu().numpy()
-        self._fit_baseline_survival(time_train_np, event_train_np, train_log_risk)
-        return self
+                    optimizer.zero_grad(set_to_none=True)
+                    log_risk = self.head(embeddings).squeeze(-1)
+                    event_query = batch.event_query_raw.reshape(-1).to(self.device_)
+                    time_query = batch.time_query_raw.reshape(-1).to(self.device_)
+                    if int(event_query.sum().item()) <= 0:
+                        continue
+                    loss = self._cox_loss(log_risk, event_query, time_query)
+                    loss.backward()
+                    if self.params["grad_clip_value"] is not None:
+                        _clip_grad_norm(self.head.parameters(), float(self.params["grad_clip_value"]))
+                        if str(self.params["backbone_training"]).lower() == "finetune":
+                            _clip_grad_norm(
+                                self.finetuned_estimator_.model_.parameters(),
+                                float(self.params["grad_clip_value"]),
+                            )
+                    optimizer.step()
+
+                    epoch_loss_sum += float(loss.detach().item())
+                    epoch_batches += 1
+
+                if self.head is None:
+                    raise RuntimeError("No valid survival batches were available for TabPFN survival training.")
+
+                monitor = epoch_loss_sum / max(epoch_batches, 1)
+                if X_val is not None and time_val is not None and event_val is not None:
+                    monitor = self._evaluate_validation_loss(
+                        X_train_np,
+                        surrogate_y_train,
+                        np.asarray(X_val, dtype=np.float32),
+                        np.asarray(time_val, dtype=np.float64),
+                        np.asarray(event_val, dtype=np.int32),
+                    )
+
+                if monitor + 1e-8 < best_monitor:
+                    best_monitor = monitor
+                    best_backbone = deepcopy(self.finetuned_estimator_)
+                    best_head_state = deepcopy(self.head.state_dict())
+                    stale_epochs = 0
+                else:
+                    stale_epochs += 1
+                    if stale_epochs >= int(self.params["patience"]):
+                        break
+
+            if best_backbone is not None:
+                self.finetuned_estimator_ = best_backbone
+            if best_head_state is not None and self.head is not None:
+                self.head.load_state_dict(best_head_state)
+            if self.head is None:
+                raise RuntimeError("TabPFN survival head was not initialized.")
+            self.backbone = self._build_evaluation_backbone()
+            self.backbone.fit(X_train_np, surrogate_y_train)
+
+            train_embeddings = self._extract_inference_embeddings(X_train_np)
+            train_embeddings_t = torch.as_tensor(train_embeddings, dtype=torch.float32, device=self.device_)
+            self.head.eval()
+            with torch.no_grad():
+                train_log_risk = self.head(train_embeddings_t).squeeze(-1).detach().cpu().numpy()
+            self._fit_baseline_survival(time_train_np, event_train_np, train_log_risk)
+            return self
+        except Exception as exc:
+            raise rewrite_foundation_runtime_error(
+                "tabpfn_survival",
+                exc,
+                checkpoint_path=self.params.get("checkpoint_path"),
+            ) from exc
 
     def predict_risk(self, X: np.ndarray) -> np.ndarray:
+        torch = _import_torch()
         if self.backbone is None or self.head is None or self.device_ is None:
             raise RuntimeError("TabPFNSurvivalMethod must be fit before prediction.")
         embeddings = self._extract_inference_embeddings(np.asarray(X, dtype=np.float32))

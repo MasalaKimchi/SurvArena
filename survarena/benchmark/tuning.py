@@ -49,6 +49,7 @@ def prepare_inner_cv_cache(
     import importlib
 
     from survarena.data.preprocess import TabularPreprocessor
+    from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
 
     StratifiedKFold = importlib.import_module("sklearn.model_selection").StratifiedKFold
 
@@ -56,9 +57,9 @@ def prepare_inner_cv_cache(
     skf = StratifiedKFold(n_splits=inner_folds, shuffle=True, random_state=seed)
 
     for train_idx, val_idx in skf.split(X_train, event_train):
-        pre = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
-        X_train_fold = pre.fit_transform(X_train.iloc[train_idx]).to_numpy()
-        X_val_fold = pre.transform(X_train.iloc[val_idx]).to_numpy()
+        pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+        X_train_fold = finalize_preprocessed_features(method_id, pre.fit_transform(X_train.iloc[train_idx]))
+        X_val_fold = finalize_preprocessed_features(method_id, pre.transform(X_train.iloc[val_idx]))
         fold_cache.append(
             {
                 "X_train": X_train_fold,

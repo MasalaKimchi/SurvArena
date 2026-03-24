@@ -1,16 +1,41 @@
 from __future__ import annotations
 
+from functools import lru_cache
+from pathlib import Path
+import subprocess
 import sys
 import types
 
 import numpy as np
+import pytest
 
 from survarena.automl.presets import resolve_preset
-from survarena.methods.foundation.mitra_survival import MitraSurvivalMethod
-from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+from survarena.methods.foundation.readiness import FoundationRuntimeStatus
+
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+
+
+@lru_cache(maxsize=1)
+def _torch_backend_probe() -> tuple[bool, str | None]:
+    completed = subprocess.run(
+        [sys.executable, "-c", "import torch"],
+        check=False,
+        capture_output=True,
+        cwd=str(REPO_ROOT),
+        text=True,
+    )
+    if completed.returncode == 0:
+        return True, None
+    stderr = (completed.stderr or "").strip()
+    stdout = (completed.stdout or "").strip()
+    detail = stderr or stdout or f"subprocess exited with code {completed.returncode}"
+    return False, detail
 
 
 def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+
     class FakeBackbone:
         init_kwargs: dict[str, object] | None = None
         created_version: object | None = None
@@ -49,6 +74,8 @@ def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
 
 
 def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> None:
+    from survarena.methods.foundation import mitra_survival as mitra_module
+
     class FakeTabularPredictor:
         init_kwargs: dict[str, object] | None = None
         fit_kwargs: dict[str, object] | None = None
@@ -70,8 +97,24 @@ def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> No
 
     monkeypatch.setitem(sys.modules, "autogluon", fake_autogluon)
     monkeypatch.setitem(sys.modules, "autogluon.tabular", fake_tabular)
+    monkeypatch.setattr(mitra_module, "ensure_foundation_runtime_ready", lambda method_id, **kwargs: None)
 
-    method = MitraSurvivalMethod(
+    class FakeArtifacts:
+        def __init__(self) -> None:
+            self.head = object()
+            self.device = "cpu"
+            self.input_dim = 1
+            self.baseline_event_times = np.asarray([1.0, 3.0], dtype=float)
+            self.baseline_survival = np.asarray([0.9, 0.6], dtype=float)
+
+    monkeypatch.setattr(mitra_module, "_train_neural_cox_head", lambda **kwargs: FakeArtifacts())
+    monkeypatch.setattr(
+        mitra_module,
+        "_predict_head_risk",
+        lambda **kwargs: np.asarray(kwargs["features"], dtype=float).reshape(-1),
+    )
+
+    method = mitra_module.MitraSurvivalMethod(
         backbone_training="finetune",
         fine_tune_steps=123,
     )
@@ -101,8 +144,17 @@ def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> No
 
 def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> None:
     monkeypatch.setattr(
-        "survarena.automl.presets._has_dependency",
-        lambda module_name: module_name in {"tabpfn", "autogluon.tabular"},
+        "survarena.automl.presets._foundation_runtime_status",
+        lambda spec: FoundationRuntimeStatus(
+            method_id=spec.method_id,
+            dependency_module=spec.dependency_module,
+            install_extra=spec.install_extra,
+            dependency_installed=True,
+            runtime_ready=True,
+            requires_hf_auth=spec.requires_hf_auth,
+            auth_configured=True,
+            install_command=None,
+        ),
     )
 
     preset = resolve_preset(
@@ -118,7 +170,12 @@ def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> Non
 
 
 def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:
+    torch_ready, probe_detail = _torch_backend_probe()
+    if not torch_ready:
+        pytest.skip(f"Torch backend probe failed in this environment: {probe_detail}")
+
     import torch
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
 
     class FakeExecutor:
         def __init__(self) -> None:

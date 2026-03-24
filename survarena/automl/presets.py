@@ -4,6 +4,7 @@ import importlib.util
 from dataclasses import dataclass
 
 from survarena.methods.foundation.catalog import available_foundation_model_specs
+from survarena.methods.foundation.readiness import foundation_runtime_status
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +63,10 @@ def _has_dependency(module_name: str | None) -> bool:
         return importlib.util.find_spec(module_name) is not None
     except ModuleNotFoundError:
         return False
+
+
+def _foundation_runtime_status(spec):  # type: ignore[no-untyped-def]
+    return foundation_runtime_status(spec)
 
 
 def resolve_preset(
@@ -127,10 +132,9 @@ def resolve_preset(
     eligible_foundation_methods: list[str] = []
     if foundation_requested and foundation_supported:
         for spec in available_foundation_model_specs():
-            if not _has_dependency(spec.dependency_module):
-                portfolio_notes.append(
-                    f"Skipped {spec.method_id} because the optional '{spec.dependency_module}' dependency is not installed."
-                )
+            runtime_status = _foundation_runtime_status(spec)
+            if not runtime_status.runtime_ready:
+                portfolio_notes.append(f"Skipped {spec.method_id} because {runtime_status.blocked_reason}")
                 continue
             if spec.max_rows_hint is not None and n_rows > spec.max_rows_hint:
                 portfolio_notes.append(
@@ -142,6 +146,8 @@ def resolve_preset(
                     f"Skipped {spec.method_id} because feature count ({n_features}) exceeds its current heuristic ({spec.max_features_hint})."
                 )
                 continue
+            if runtime_status.warning_reason is not None:
+                portfolio_notes.append(f"{spec.method_id}: {runtime_status.warning_reason}")
             eligible_foundation_methods.append(spec.method_id)
 
     if foundation_requested:

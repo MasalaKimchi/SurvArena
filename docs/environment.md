@@ -26,6 +26,13 @@ To include the optional foundation-model adapters during setup:
 INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh
 ```
 
+To install only one optional foundation adapter:
+
+```bash
+INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh
+INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh
+```
+
 ## Manual setup
 
 ```bash
@@ -43,6 +50,14 @@ python -m pip install -e ".[foundation]"
 python scripts/check_environment.py --include-foundation
 ```
 
+Or install just one:
+
+```bash
+python -m pip install -e ".[foundation-tabpfn]"
+python -m pip install -e ".[foundation-mitra]"
+survarena foundation-check
+```
+
 SurvArena should be run from the repo-local `.venv` whenever possible. The optional
 foundation-model stack can force transitive version changes that are better kept
 out of a shared global interpreter.
@@ -50,8 +65,9 @@ out of a shared global interpreter.
 ## What is validated
 
 - whether Python is running inside a virtual environment
-- importability of core dependencies (`numpy`, `pandas`, `yaml`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`)
+- importability of core dependencies (`numpy`, `pandas`, `yaml`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`, `xgboost`, `catboost`)
 - optional importability of foundation-model dependencies (`tabpfn`, `autogluon.tabular`)
+- per-backbone runtime readiness, including install hints and TabPFN auth warnings
 - `torchsurv` metric classes and IPCW API
 - synthetic metric run for:
   - Uno C-index

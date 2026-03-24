@@ -2,12 +2,31 @@ from __future__ import annotations
 
 from copy import deepcopy
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-import torch
-from torch import nn
-from torchsurv.loss.cox import neg_partial_log_likelihood
+
+if TYPE_CHECKING:
+    import torch
+    from torch import nn
+
+
+def _import_torch():
+    import torch
+
+    return torch
+
+
+def _import_nn():
+    from torch import nn
+
+    return nn
+
+
+def _import_cox_loss():
+    from torchsurv.loss.cox import neg_partial_log_likelihood
+
+    return neg_partial_log_likelihood
 
 
 def parse_hidden_layers(value: Any) -> list[int]:
@@ -19,7 +38,8 @@ def parse_hidden_layers(value: Any) -> list[int]:
     raise ValueError(f"Unsupported hidden_layers value: {value!r}")
 
 
-def activation_cls(name: str) -> type[nn.Module]:
+def activation_cls(name: str) -> type[Any]:
+    nn = _import_nn()
     mapping: dict[str, type[nn.Module]] = {
         "relu": nn.ReLU,
         "selu": nn.SELU,
@@ -31,12 +51,14 @@ def activation_cls(name: str) -> type[nn.Module]:
 
 
 def resolve_device(raw_device: str) -> torch.device:
+    torch = _import_torch()
     if raw_device == "auto":
         return torch.device("cuda" if torch.cuda.is_available() else "cpu")
     return torch.device(raw_device)
 
 
 def set_torch_seed(seed: int) -> None:
+    torch = _import_torch()
     torch.manual_seed(seed)
     if torch.cuda.is_available():
         torch.cuda.manual_seed_all(seed)
@@ -52,6 +74,7 @@ def build_mlp_head(
     activation: str,
     dropout: float,
 ) -> nn.Module:
+    nn = _import_nn()
     hidden_layer_sizes = parse_hidden_layers(hidden_layers)
     activation_module = activation_cls(activation)
 
@@ -69,6 +92,7 @@ def build_mlp_head(
 
 
 def forward_in_chunks(head: nn.Module, X: torch.Tensor, batch_size: int) -> torch.Tensor:
+    torch = _import_torch()
     outputs: list[torch.Tensor] = []
     for start in range(0, X.shape[0], batch_size):
         end = min(start + batch_size, X.shape[0])
@@ -100,8 +124,8 @@ def fit_baseline_survival(
 
 @dataclass(frozen=True, slots=True)
 class NeuralCoxArtifacts:
-    head: nn.Module
-    device: torch.device
+    head: Any
+    device: Any
     input_dim: int
     baseline_event_times: np.ndarray
     baseline_survival: np.ndarray
@@ -127,6 +151,8 @@ def train_neural_cox_head(
     time_val: np.ndarray | None = None,
     event_val: np.ndarray | None = None,
 ) -> NeuralCoxArtifacts:
+    torch = _import_torch()
+    neg_partial_log_likelihood = _import_cox_loss()
     train_features_np = np.asarray(train_features, dtype=np.float32)
     if train_features_np.ndim != 2:
         raise ValueError(f"Neural Cox head expects 2D train features, received {train_features_np.shape}.")

@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 
 from survarena import cli
+from survarena.methods.foundation.readiness import FoundationRuntimeStatus
 
 
 def test_fit_cli_passes_models_and_retention_flags(monkeypatch, capsys) -> None:
@@ -105,3 +106,38 @@ def test_compare_cli_invokes_user_compare_workflow(monkeypatch, capsys) -> None:
     assert captured["seeds"] == [11]
     assert captured["output_dir"] == "tmp/results"
     assert '"benchmark_id": "user_compare_fixed"' in capsys.readouterr().out
+
+
+def test_foundation_check_cli_emits_runtime_status(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "foundation_runtime_catalog",
+        lambda: [
+            FoundationRuntimeStatus(
+                method_id="tabpfn_survival",
+                dependency_module="tabpfn",
+                install_extra="foundation-tabpfn",
+                dependency_installed=True,
+                runtime_ready=True,
+                requires_hf_auth=True,
+                auth_configured=False,
+                install_command='python -m pip install -e ".[foundation-tabpfn]"',
+                blocked_reason=None,
+                warning_reason="Run `hf auth login` first.",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "foundation-check",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"method_id": "tabpfn_survival"' in output
+    assert '"warning_reason": "Run `hf auth login` first."' in output

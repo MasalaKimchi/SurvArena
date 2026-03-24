@@ -33,13 +33,31 @@ Available predictor presets:
 - `all` (default): `best` portfolio plus eligible foundation adapters
 - `foundation`: starts with `coxph` and adds eligible foundation-model adapters
 
+Additional opt-in model adapters are available through explicit `included_models`
+or `--models` selection:
+
+- `weibull_aft`, `lognormal_aft`, `loglogistic_aft`: parametric AFT regressors from lifelines
+- `aalen_additive`: additive hazards regression from lifelines with regularization
+- `fast_survival_svm`: large-margin ranking model with a calibrated survival head
+- `gradient_boosting_survival`: gradient-boosted Cox model with tree base learners
+- `componentwise_gradient_boosting`: sparse component-wise Cox boosting
+- `extra_survival_trees`: extremely randomized survival trees
+- `xgboost_cox`, `catboost_cox`: conventional tabular gradient boosting backends with calibrated Cox survival curves
+- `xgboost_aft`, `catboost_survival_aft`: boosted AFT regressors with distributional survival curves
+- `logistic_hazard`, `pmf`, `mtlr`, `deephit_single`, `pchazard`, `cox_time`: neural survival methods from pycox
+
 Experimental foundation-model support is available through:
 
 - `tabpfn_survival`
 - `mitra_survival`
 
-Those adapters are optional, live behind the `foundation` package extra, and are
-added only when dataset-shape and dependency checks pass.
+Those adapters are optional and can be installed either together or one by one:
+
+- `foundation`: installs both foundation adapters
+- `foundation-tabpfn`: installs only `tabpfn_survival`
+- `foundation-mitra`: installs only `mitra_survival`
+
+They are added to predictor presets only when dataset-shape and runtime checks pass.
 
 ### TabPFN access setup (required)
 
@@ -58,7 +76,8 @@ The benchmark runner currently covers:
 
 - datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`, `pbc`
 - a placeholder config track for `kkbox`
-- methods: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`, `tabpfn_survival`, `mitra_survival`
+- default benchmark-track methods: `coxph`, `coxnet`, `rsf`, `deepsurv`, `deepsurv_moco`, `tabpfn_survival`, `mitra_survival`
+- additional registered methods for explicit benchmark configs: `weibull_aft`, `lognormal_aft`, `loglogistic_aft`, `aalen_additive`, `fast_survival_svm`, `gradient_boosting_survival`, `componentwise_gradient_boosting`, `extra_survival_trees`, `xgboost_cox`, `xgboost_aft`, `catboost_cox`, `catboost_survival_aft`, `logistic_hazard`, `pmf`, `mtlr`, `deephit_single`, `pchazard`, `cox_time`
 - metrics: Harrell's C-index, Uno's C-index, integrated Brier score, and time-dependent AUC
 - protocol infrastructure for repeated nested CV, shared seeds, manifests, and aggregated summaries
 
@@ -75,6 +94,20 @@ To include the optional foundation-model stack:
 
 ```bash
 INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh
+```
+
+To install only one optional backbone:
+
+```bash
+INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh
+INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh
+```
+
+To inspect whether foundation adapters are installed and ready before fitting:
+
+```bash
+survarena foundation-check
+python scripts/check_environment.py --include-foundation
 ```
 
 If you only want the core library without repo tooling:

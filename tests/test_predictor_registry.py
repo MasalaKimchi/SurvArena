@@ -35,6 +35,41 @@ class MockSurvivalMethod:
         return np.exp(-np.outer(np.maximum(risk, 0.1), np.asarray(times, dtype=float)))
 
 
+class MockFrameAwareMethod:
+    def __init__(self, seed: int | None = None) -> None:
+        self.seed = seed
+        self.fit_input_type: type | None = None
+        self.fit_columns: list[str] | None = None
+        self.risk_input_type: type | None = None
+        self.risk_columns: list[str] | None = None
+        self.survival_input_type: type | None = None
+        self.survival_columns: list[str] | None = None
+
+    def fit(
+        self,
+        X_train: pd.DataFrame | np.ndarray,
+        time_train: np.ndarray,
+        event_train: np.ndarray,
+        X_val: pd.DataFrame | np.ndarray | None = None,
+        time_val: np.ndarray | None = None,
+        event_val: np.ndarray | None = None,
+    ) -> "MockFrameAwareMethod":
+        self.fit_input_type = type(X_train)
+        self.fit_columns = list(X_train.columns) if isinstance(X_train, pd.DataFrame) else None
+        return self
+
+    def predict_risk(self, X: pd.DataFrame | np.ndarray) -> np.ndarray:
+        self.risk_input_type = type(X)
+        self.risk_columns = list(X.columns) if isinstance(X, pd.DataFrame) else None
+        return np.linspace(0.2, 1.0, num=len(X), dtype=float)
+
+    def predict_survival(self, X: pd.DataFrame | np.ndarray, times: np.ndarray) -> np.ndarray:
+        self.survival_input_type = type(X)
+        self.survival_columns = list(X.columns) if isinstance(X, pd.DataFrame) else None
+        risk = np.maximum(self.predict_risk(X), 0.1)
+        return np.exp(-np.outer(risk, np.asarray(times, dtype=float)))
+
+
 def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, monkeypatch) -> None:
     frame = pd.DataFrame(
         {
@@ -955,6 +990,149 @@ def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Pat
     leaderboard = predictor.leaderboard().set_index("method_id")
     assert bool(leaderboard.loc["mock_b", "retained_for_inference"]) is True
     assert bool(leaderboard.loc["mock_a", "retained_for_inference"]) is False
+
+
+@pytest.mark.parametrize("method_id", ["catboost_cox", "catboost_survival_aft"])
+def test_predictor_preserves_native_categorical_frames_for_catboost_method(
+    tmp_path: Path,
+    monkeypatch,
+    method_id: str,
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0],
+            "stage": ["i", "ii", "ii", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=(method_id,), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_prepare_validation_fold_cache(**kwargs) -> list[dict[str, object]]:
+        return [
+            {
+                "X_train": pd.DataFrame({"age": [61.0, 57.0], "stage": ["i", "ii"]}),
+                "X_val": pd.DataFrame({"age": [70.0, 66.0], "stage": ["ii", "iii"]}),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 0], dtype=int),
+                "time_val": np.asarray([3.0, 4.0], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ]
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.8,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.8,
+                    "td_auc_50": 0.8,
+                    "td_auc_75": 0.8,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: MockFrameAwareMethod)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="fast",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, tuning_data=frame, dataset_name="toy")
+
+    fitted = predictor.fitted_models_[method_id]
+    assert fitted.fit_input_type is pd.DataFrame
+    assert fitted.fit_columns == ["age", "stage"]
+
+    predictor.predict_risk(frame)
+    predictor.predict_survival(frame)
+
+    assert fitted.risk_input_type is pd.DataFrame
+    assert fitted.risk_columns == ["age", "stage"]
+    assert fitted.survival_input_type is pd.DataFrame
+    assert fitted.survival_columns == ["age", "stage"]
+
+
+@pytest.mark.parametrize("method_id", ["catboost_cox", "catboost_survival_aft"])
+def test_bagged_predictor_preserves_native_categorical_frames_for_catboost_method(
+    tmp_path: Path,
+    monkeypatch,
+    method_id: str,
+) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+
+    def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
+        return PresetConfig(name="test", method_ids=(method_id,), n_trials=0, holdout_frac=0.25)
+
+    def fake_read_yaml(path: Path) -> dict[str, object]:
+        return {"default_params": {}}
+
+    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+        return {
+            "best_params": {},
+            "best_score": 0.8,
+            "n_trials_completed": 0,
+            "best_metric_rows": [
+                {
+                    "uno_c": 0.8,
+                    "harrell_c": 0.8,
+                    "ibs": 0.2,
+                    "td_auc_25": 0.8,
+                    "td_auc_50": 0.8,
+                    "td_auc_75": 0.8,
+                }
+            ],
+        }
+
+    monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
+    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: MockFrameAwareMethod)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="fast",
+        save_path=tmp_path,
+    )
+    predictor.fit(frame, dataset_name="toy", num_bag_folds=2)
+
+    fitted = predictor.fitted_models_[method_id]
+    members = fitted.members
+    assert len(members) == 2
+    assert all(member.model.fit_input_type is pd.DataFrame for member in members)
+    assert all(member.model.fit_columns == ["age", "stage"] for member in members)
+
+    predictor.predict_risk(frame)
+    predictor.predict_survival(frame)
+
+    assert all(member.model.risk_input_type is pd.DataFrame for member in members)
+    assert all(member.model.risk_columns == ["age", "stage"] for member in members)
+    assert all(member.model.survival_input_type is pd.DataFrame for member in members)
+    assert all(member.model.survival_columns == ["age", "stage"] for member in members)
 
 
 def test_public_package_exports_survival_predictor() -> None:

@@ -37,6 +37,8 @@ from survarena.evaluation.metrics import (
 )
 from survarena.logging.tracker import write_json
 from survarena.methods.foundation.catalog import foundation_model_catalog
+from survarena.methods.foundation.readiness import foundation_runtime_status
+from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
 from survarena.methods.registry import get_method_class, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
 
@@ -435,6 +437,7 @@ class SurvivalPredictor:
         implemented_method_ids = set(registered_method_ids())
         rows: list[dict[str, Any]] = []
         for spec in foundation_model_catalog():
+            runtime_status = foundation_runtime_status(spec)
             rows.append(
                 {
                     "method_id": spec.method_id,
@@ -445,6 +448,14 @@ class SurvivalPredictor:
                     "task_support": list(spec.task_support),
                     "supports_finetune": spec.supports_finetune,
                     "supports_pretrained_weights": spec.supports_pretrained_weights,
+                    "dependency_installed": runtime_status.dependency_installed,
+                    "runtime_ready": runtime_status.runtime_ready,
+                    "requires_hf_auth": runtime_status.requires_hf_auth,
+                    "auth_configured": runtime_status.auth_configured,
+                    "install_extra": runtime_status.install_extra,
+                    "install_command": runtime_status.install_command,
+                    "blocked_reason": runtime_status.blocked_reason,
+                    "warning_reason": runtime_status.warning_reason,
                     "notes": spec.notes,
                 }
             )
@@ -704,7 +715,8 @@ class SurvivalPredictor:
         preprocessor = self.model_preprocessors_[model_id]
         if preprocessor is None:
             raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
-        return np.asarray(model.predict_risk(preprocessor.transform(frame).to_numpy()), dtype=float)
+        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
+        return np.asarray(model.predict_risk(transformed), dtype=float)
 
     def _predict_model_survival(self, model_id: str, frame: pd.DataFrame, survival_times: np.ndarray) -> np.ndarray:
         model = self.fitted_models_[model_id]
@@ -713,7 +725,7 @@ class SurvivalPredictor:
         preprocessor = self.model_preprocessors_[model_id]
         if preprocessor is None:
             raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
-        transformed = preprocessor.transform(frame).to_numpy()
+        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
         return np.asarray(model.predict_survival(transformed, survival_times), dtype=float)
 
     def _read_features(self, data: pd.DataFrame | str | Path) -> pd.DataFrame:
@@ -838,8 +850,8 @@ class SurvivalPredictor:
         params: dict[str, Any],
         dataset: SurvivalDataset,
     ) -> tuple[Any, TabularPreprocessor]:
-        preprocessor = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
-        X_train_proc = preprocessor.fit_transform(dataset.X).to_numpy()
+        preprocessor = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+        X_train_proc = finalize_preprocessed_features(method_id, preprocessor.fit_transform(dataset.X))
         model = method_cls(**_resolve_runtime_method_params(params, seed=self.random_state))
         with quiet_training_output(enabled=not self.verbose):
             model.fit(X_train_proc, dataset.time, dataset.event)
@@ -861,9 +873,9 @@ class SurvivalPredictor:
         )
         members: list[BaggedModelMember] = []
         for member_index, fold in enumerate(bagging_folds):
-            preprocessor = TabularPreprocessor(scale_numeric=(method_id != "rsf"))
-            X_train_proc = preprocessor.fit_transform(fold.train_X).to_numpy()
-            X_validation_proc = preprocessor.transform(fold.validation_X).to_numpy()
+            preprocessor = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+            X_train_proc = finalize_preprocessed_features(method_id, preprocessor.fit_transform(fold.train_X))
+            X_validation_proc = finalize_preprocessed_features(method_id, preprocessor.transform(fold.validation_X))
             model = method_cls(
                 **_resolve_runtime_method_params(params, seed=self.random_state + member_index)
             )
@@ -876,7 +888,7 @@ class SurvivalPredictor:
                     fold.validation_time,
                     fold.validation_event,
                 )
-            members.append(BaggedModelMember(model=model, preprocessor=preprocessor))
+            members.append(BaggedModelMember(method_id=method_id, model=model, preprocessor=preprocessor))
         return BaggedSurvivalEnsemble(members)
 
     def _validate_time_limit(self, time_limit: float | None) -> float | None:
