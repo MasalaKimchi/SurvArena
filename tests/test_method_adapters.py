@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import importlib.util
 import json
 import subprocess
 import sys
@@ -68,6 +69,8 @@ def test_registered_method_ids_include_new_survival_adapters() -> None:
     ],
 )
 def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params: dict[str, object]) -> None:
+    if method_id.startswith("catboost") and importlib.util.find_spec("catboost") is None:
+        pytest.skip("catboost is not installed in this test environment.")
     X_train, time_train, event_train, X_test = _toy_survival_arrays()
     method_cls = get_method_class(method_id)
     model = method_cls(**params)
@@ -86,6 +89,8 @@ def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params
 
 
 def test_catboost_cox_accepts_native_categorical_dataframe() -> None:
+    if importlib.util.find_spec("catboost") is None:
+        pytest.skip("catboost is not installed in this test environment.")
     frame = pd.DataFrame(
         {
             "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0, 68.0, 55.0],
@@ -110,6 +115,8 @@ def test_catboost_cox_accepts_native_categorical_dataframe() -> None:
 
 
 def test_catboost_survival_aft_accepts_native_categorical_dataframe() -> None:
+    if importlib.util.find_spec("catboost") is None:
+        pytest.skip("catboost is not installed in this test environment.")
     frame = pd.DataFrame(
         {
             "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0, 68.0, 55.0],

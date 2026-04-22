@@ -5,7 +5,7 @@ from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, tune_hyperparameters
+from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, select_hyperparameters
 from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, registered_method_ids
 
@@ -26,6 +26,7 @@ def evaluate_split(
     primary_metric: str,
     horizons_quantiles: tuple[float, float, float],
     benchmark_cfg_hash: str,
+    autogluon_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -71,9 +72,10 @@ def evaluate_split(
         )
 
         with timer() as tune_timer:
-            tuning_result = tune_hyperparameters(
+            method_cfg_for_selection = _method_cfg_with_autogluon_defaults(method_cfg, autogluon_cfg)
+            tuning_result = select_hyperparameters(
                 method_id=method_id,
-                method_cfg=method_cfg,
+                method_cfg=method_cfg_for_selection,
                 fold_cache=fold_cache,
                 primary_metric=primary_metric,
                 n_trials=n_trials,
@@ -118,6 +120,9 @@ def evaluate_split(
 
         peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
+        autogluon_metadata = _autogluon_metadata(model)
+        training_backend = "autogluon" if method_id == "autogluon_survival" else "native"
+        hpo_backend = "autogluon" if method_id == "autogluon_survival" and best_params.get("hyperparameter_tune_kwargs") else "none"
 
         manifest = RunManifest(
             run_id=run_id,
@@ -151,11 +156,20 @@ def evaluate_split(
                 "fit_time_sec": fit_time_sec,
                 "infer_time_sec": infer_time_sec,
                 "peak_memory_mb": peak_memory_mb,
+                "training_backend": training_backend,
+                "hpo_backend": hpo_backend,
+                "autogluon_presets": best_params.get("presets") if method_id == "autogluon_survival" else None,
+                "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
+                "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
+                "autogluon_path": autogluon_metadata.get("autogluon_path"),
+                "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
+                "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
                 "n_trials_requested": n_trials,
                 "n_trials_completed": n_trials_completed,
                 "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
+                "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
             },
             "failure": None,
         }
@@ -174,6 +188,14 @@ def evaluate_split(
             "fit_time_sec": fit_time_sec,
             "infer_time_sec": infer_time_sec,
             "peak_memory_mb": peak_memory_mb,
+            "training_backend": training_backend,
+            "hpo_backend": hpo_backend,
+            "autogluon_presets": best_params.get("presets") if method_id == "autogluon_survival" else None,
+            "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
+            "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
+            "autogluon_path": autogluon_metadata.get("autogluon_path"),
+            "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
+            "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
             "n_trials_requested": n_trials,
             "n_trials_completed": n_trials_completed,
             "status": "success",
@@ -238,10 +260,48 @@ def evaluate_split(
             "fit_time_sec": np.nan,
             "infer_time_sec": np.nan,
             "peak_memory_mb": peak_memory_mb,
+            "training_backend": "autogluon" if method_id == "autogluon_survival" else "native",
+            "hpo_backend": "none",
+            "autogluon_presets": None,
+            "autogluon_best_model": None,
+            "autogluon_model_count": 0,
+            "autogluon_path": None,
+            "bagging_folds": 0,
+            "stack_levels": 0,
             "n_trials_requested": n_trials,
             "n_trials_completed": 0,
             "status": "failed",
         }
+
+
+def _autogluon_metadata(model: Any) -> dict[str, Any]:
+    metadata_getter = getattr(model, "autogluon_metadata", None)
+    if callable(metadata_getter):
+        return dict(metadata_getter())
+    return {}
+
+
+def _method_cfg_with_autogluon_defaults(method_cfg: dict[str, Any], autogluon_cfg: dict[str, Any] | None) -> dict[str, Any]:
+    if method_cfg.get("method_id") != "autogluon_survival":
+        return method_cfg
+    merged = dict(method_cfg)
+    defaults = dict(method_cfg.get("default_params", {}))
+    if autogluon_cfg:
+        defaults.update(
+            {
+                "presets": autogluon_cfg.get("presets", defaults.get("presets", "medium")),
+                "time_limit": autogluon_cfg.get("time_limit_seconds", defaults.get("time_limit")),
+                "hyperparameter_tune_kwargs": autogluon_cfg.get(
+                    "hyperparameter_tune_kwargs",
+                    defaults.get("hyperparameter_tune_kwargs"),
+                ),
+                "num_bag_folds": autogluon_cfg.get("num_bag_folds", defaults.get("num_bag_folds", 0)),
+                "num_stack_levels": autogluon_cfg.get("num_stack_levels", defaults.get("num_stack_levels", 0)),
+                "refit_full": autogluon_cfg.get("refit_full", defaults.get("refit_full", False)),
+            }
+        )
+    merged["default_params"] = defaults
+    return merged
 
 
 def run_benchmark(
@@ -291,8 +351,14 @@ def run_benchmark(
     else:
         outer_repeats = requested_outer_repeats
 
-    n_trials = int(n_trials_override) if n_trials_override is not None else int(benchmark_cfg["tuning"]["n_trials"])
-    timeout_seconds = benchmark_cfg.get("tuning", {}).get("timeout_seconds")
+    autogluon_cfg = dict(benchmark_cfg.get("autogluon", {}))
+    legacy_tuning_cfg = dict(benchmark_cfg.get("tuning", {}))
+    n_trials = int(n_trials_override) if n_trials_override is not None else int(legacy_tuning_cfg.get("n_trials", 0))
+    if n_trials > 0:
+        autogluon_hpo = dict(autogluon_cfg.get("hyperparameter_tune_kwargs") or {})
+        autogluon_hpo.setdefault("num_trials", n_trials)
+        autogluon_cfg["hyperparameter_tune_kwargs"] = autogluon_hpo
+    timeout_seconds = autogluon_cfg.get("time_limit_seconds", legacy_tuning_cfg.get("timeout_seconds"))
     timeout_seconds = None if timeout_seconds is None else float(timeout_seconds)
 
     if dry_run:
@@ -304,6 +370,7 @@ def run_benchmark(
         print(f"outer_repeats={outer_repeats}")
         print(f"n_trials={n_trials}")
         print(f"timeout_seconds={timeout_seconds}")
+        print(f"autogluon={autogluon_cfg}")
         print(f"primary_metric={primary_metric}")
         return
 
@@ -322,6 +389,7 @@ def run_benchmark(
             "seeds": seeds,
             "n_trials": n_trials,
             "timeout_seconds": timeout_seconds,
+            "autogluon": autogluon_cfg,
             "primary_metric": primary_metric,
             "benchmark_config_hash": benchmark_cfg_hash,
             "output_dir": str(experiment_dir),
@@ -365,6 +433,7 @@ def run_benchmark(
                     primary_metric=primary_metric,
                     horizons_quantiles=horizons_q,  # type: ignore[arg-type]
                     benchmark_cfg_hash=benchmark_cfg_hash,
+                    autogluon_cfg=autogluon_cfg,
                 )
                 run_records.append(record.pop("run_payload"))
                 all_records.append(record)

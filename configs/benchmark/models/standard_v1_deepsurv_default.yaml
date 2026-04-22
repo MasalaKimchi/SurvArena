@@ -1,0 +1,17 @@
+benchmark_id: standard_v1_deepsurv_default
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 5
+outer_repeats: 3
+inner_folds: 3
+seeds: [11, 22, 33, 44, 55]
+primary_metric: harrell_c
+secondary_metrics: [harrell_c, ibs, td_auc]
+tuning:
+  n_trials: 0
+  timeout_seconds: null
+autogluon:
+  enabled: false
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+datasets: [support, metabric, aids, gbsg2, flchain, whas500]
+methods: [deepsurv]

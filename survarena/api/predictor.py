@@ -22,7 +22,7 @@ from survarena.automl.validation import (
 )
 from survarena.benchmark.tuning import (
     resolve_runtime_method_params as _resolve_runtime_method_params,
-    tune_hyperparameters,
+    select_hyperparameters,
 )
 from survarena.config import read_yaml
 from survarena.data.io import read_tabular_data
@@ -45,6 +45,7 @@ from survarena.utils.quiet import quiet_training_output
 
 _PREDICTOR_SERIALIZATION_VERSION = 1
 _SELECTION_TIME_BUDGET_RATIO = 0.8
+tune_hyperparameters = select_hyperparameters
 
 
 class _PredictorUnpickler(pickle.Unpickler):
@@ -76,6 +77,14 @@ class PredictorModelResult:
     fit_time_sec: float
     n_trials_completed: int
     params: dict[str, Any]
+    training_backend: str = "native"
+    hpo_backend: str = "none"
+    autogluon_presets: Any | None = None
+    autogluon_best_model: str | None = None
+    autogluon_model_count: int = 0
+    autogluon_path: str | None = None
+    bagging_folds: int = 0
+    stack_levels: int = 0
     time_limit_sec: float | None = None
     retained_for_inference: bool = False
     status: str = "success"
@@ -324,6 +333,12 @@ class SurvivalPredictor:
                 )
                 break
             try:
+                method_cfg = self._method_cfg_with_autogluon_controls(
+                    method_id=method_id,
+                    method_cfg=method_cfg,
+                    time_limit=method_time_limit,
+                    tune_kwargs=resolved_tuning_controls,
+                )
                 if selection_folds is not None:
                     fold_cache = prepare_resampled_fold_cache(method_id=method_id, folds=selection_folds)
                 else:
@@ -360,6 +375,11 @@ class SurvivalPredictor:
                         fit_time_sec=float(perf_counter() - started_at),
                         n_trials_completed=int(tuning_result["n_trials_completed"]),
                         params=dict(tuning_result["best_params"]),
+                        training_backend=self._training_backend_for_method(method_id),
+                        hpo_backend=self._hpo_backend_for_method(method_id, dict(tuning_result["best_params"])),
+                        autogluon_presets=dict(tuning_result["best_params"]).get("presets"),
+                        bagging_folds=int(dict(tuning_result["best_params"]).get("num_bag_folds", 0) or 0),
+                        stack_levels=int(dict(tuning_result["best_params"]).get("num_stack_levels", 0) or 0),
                         time_limit_sec=method_time_limit,
                     )
                 )
@@ -372,6 +392,7 @@ class SurvivalPredictor:
                         fit_time_sec=float(perf_counter() - started_at),
                         n_trials_completed=0,
                         params={},
+                        training_backend=self._training_backend_for_method(method_id),
                         time_limit_sec=method_time_limit,
                         status="failed",
                         error=str(exc),
@@ -610,6 +631,14 @@ class SurvivalPredictor:
                 "selection_metric": self.eval_metric,
                 "selection_score": result.selection_score,
                 "fit_time_sec": result.fit_time_sec,
+                "training_backend": result.training_backend,
+                "hpo_backend": result.hpo_backend,
+                "autogluon_presets": result.autogluon_presets,
+                "autogluon_best_model": result.autogluon_best_model,
+                "autogluon_model_count": result.autogluon_model_count,
+                "autogluon_path": result.autogluon_path,
+                "bagging_folds": result.bagging_folds,
+                "stack_levels": result.stack_levels,
                 "n_trials_completed": result.n_trials_completed,
                 "time_limit_sec": result.time_limit_sec,
                 "retained_for_inference": result.retained_for_inference,
@@ -837,6 +866,7 @@ class SurvivalPredictor:
                     dataset=dataset,
                 )
             self.fitted_models_[result.method_id] = model
+            self._attach_result_fit_metadata(result, model)
             self.model_preprocessors_[result.method_id] = preprocessor
             self.model_survival_times_[result.method_id] = self._default_survival_times(dataset.time, dataset.event)
             result.retained_for_inference = True
@@ -1016,6 +1046,7 @@ class SurvivalPredictor:
                     fit_time_sec=0.0,
                     n_trials_completed=0,
                     params={},
+                    training_backend=self._training_backend_for_method(method_id),
                     time_limit_sec=0.0,
                     status="skipped",
                     error="Global fit time budget exhausted before this model could be selected.",
@@ -1042,6 +1073,46 @@ class SurvivalPredictor:
             "eval_metric": self.eval_metric,
             "retain_top_k_models": self.retain_top_k_models,
         }
+
+    def _training_backend_for_method(self, method_id: str) -> str:
+        return "autogluon" if method_id == "autogluon_survival" else "native"
+
+    def _hpo_backend_for_method(self, method_id: str, params: dict[str, Any]) -> str:
+        if method_id == "autogluon_survival" and params.get("hyperparameter_tune_kwargs"):
+            return "autogluon"
+        return "none"
+
+    def _method_cfg_with_autogluon_controls(
+        self,
+        *,
+        method_id: str,
+        method_cfg: dict[str, Any],
+        time_limit: float | None,
+        tune_kwargs: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        if method_id != "autogluon_survival":
+            return method_cfg
+        resolved = dict(method_cfg)
+        defaults = dict(method_cfg.get("default_params", {}))
+        if time_limit is not None:
+            defaults["time_limit"] = float(time_limit)
+        if tune_kwargs and tune_kwargs.get("n_trials", 0) > 0:
+            defaults["hyperparameter_tune_kwargs"] = {"num_trials": int(tune_kwargs["n_trials"])}
+        defaults["num_bag_folds"] = self.num_bag_folds_
+        defaults["num_stack_levels"] = 1 if self.num_bag_folds_ >= 2 else 0
+        defaults["refit_full"] = self.refit_full_
+        defaults["verbosity"] = 2 if self.verbose else 0
+        resolved["default_params"] = defaults
+        return resolved
+
+    def _attach_result_fit_metadata(self, result: PredictorModelResult, model: Any) -> None:
+        metadata_getter = getattr(model, "autogluon_metadata", None)
+        if not callable(metadata_getter):
+            return
+        metadata = dict(metadata_getter())
+        result.autogluon_best_model = metadata.get("autogluon_best_model")
+        result.autogluon_model_count = int(metadata.get("autogluon_model_count") or 0)
+        result.autogluon_path = metadata.get("autogluon_path")
 
     def _default_survival_times(self, time: np.ndarray, event: np.ndarray) -> np.ndarray:
         event_times = time[event.astype(bool)]

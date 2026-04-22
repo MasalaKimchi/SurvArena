@@ -38,7 +38,7 @@ class RunManifest:
                 "pycox",
                 "xgboost",
                 "catboost",
-                "optuna",
+                "autogluon.tabular",
             ]
         )
         return {

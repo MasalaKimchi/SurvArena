@@ -37,6 +37,7 @@ _REGISTRY_TARGETS = {
     "cox_time": ("survarena.methods.deep.pycox_models", "CoxTimeMethod"),
     "mitra_survival": ("survarena.methods.foundation.mitra_survival", "MitraSurvivalMethod"),
     "tabpfn_survival": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalMethod"),
+    "autogluon_survival": ("survarena.methods.automl.autogluon_survival", "AutoGluonSurvivalMethod"),
 }
 
 

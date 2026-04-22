@@ -156,6 +156,7 @@ Tracked benchmark configs:
 
 - `configs/benchmark/standard_v1.yaml`: repeated nested CV on `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`
 - `configs/benchmark/large_v1.yaml`: fixed-split placeholder for `kkbox`
+- `configs/benchmark/models/`: one-method benchmark configs, including AutoGluon-backed default and tuned variants
 
 Example:
 
@@ -167,6 +168,10 @@ python -m survarena.run_benchmark \
   --limit-seeds 1 \
   --n-trials 2
 ```
+
+`--n-trials` is retained as a compatibility alias for AutoGluon
+`hyperparameter_tune_kwargs.num_trials`. New benchmark configs should prefer an
+`autogluon:` block. See [`docs/autogluon_backend.md`](docs/autogluon_backend.md).
 
 ## Artifacts
 
@@ -190,6 +195,7 @@ models, per-model test metrics, and the foundation-model catalog.
 - [docs/protocol.md](docs/protocol.md)
 - [docs/datasets.md](docs/datasets.md)
 - [docs/environment.md](docs/environment.md)
+- [docs/autogluon_backend.md](docs/autogluon_backend.md)
 - [blueprint.md](blueprint.md)
 - [docs/autogluon_comparison.md](docs/autogluon_comparison.md)
 - [docs/tabular_foundation_models_todo.md](docs/tabular_foundation_models_todo.md)

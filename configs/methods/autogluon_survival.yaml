@@ -1,0 +1,13 @@
+method_id: autogluon_survival
+display_name: AutoGluon Tabular Survival Risk Adapter
+default_params:
+  presets: medium
+  time_limit: null
+  hyperparameters: null
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+  verbosity: 0
+search_space: {}
+notes: AutoGluon binary event-risk adapter for right-censored survival benchmarks. Survival curves use Breslow calibration from predicted event risk.

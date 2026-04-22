@@ -1,19 +1,17 @@
-benchmark_id: large_v1
+benchmark_id: standard_v1_autogluon_survival_default
 task_type: right_censored_survival
-split_strategy: fixed_split
+split_strategy: repeated_nested_cv
+outer_folds: 5
+outer_repeats: 3
+inner_folds: 3
 seeds: [11, 22, 33, 44, 55]
 primary_metric: harrell_c
-secondary_metrics:
-  - harrell_c
-  - ibs
-  - td_auc
+secondary_metrics: [harrell_c, ibs, td_auc]
 tuning:
   n_trials: 0
   timeout_seconds: null
-  max_epochs: 200
-  patience: 20
 autogluon:
-  enabled: false
+  enabled: true
   presets: medium
   time_limit_seconds: null
   hyperparameter_tune_kwargs: null
@@ -21,11 +19,5 @@ autogluon:
   num_stack_levels: 0
   refit_full: false
 time_horizons_quantiles: [0.25, 0.5, 0.75]
-datasets:
-  - kkbox
-methods:
-  - coxph
-  - coxnet
-  - rsf
-  - deepsurv
-notes: Large-scale track placeholder for KKBox fixed split protocol.
+datasets: [support, metabric, aids, gbsg2, flchain, whas500]
+methods: [autogluon_survival]

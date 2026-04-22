@@ -46,7 +46,7 @@ survarena foundation-check
 ## What the Check Covers
 
 - virtual environment detection
-- core imports such as `numpy`, `pandas`, `torch`, `torchsurv`, `optuna`, `lifelines`, `sksurv`, `xgboost`, and `catboost`
+- core imports such as `numpy`, `pandas`, `torch`, `torchsurv`, `autogluon.tabular`, `lifelines`, `sksurv`, `xgboost`, and `catboost`
 - optional foundation imports such as `tabpfn` and `autogluon.tabular`
 - runtime readiness messages for wired foundation adapters
 - smoke tests for Harrell C-index, Uno C-index, integrated Brier score, and time-dependent AUC

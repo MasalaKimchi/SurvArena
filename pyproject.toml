@@ -27,7 +27,7 @@ dependencies = [
     "torchtuples==0.2.2",
     "torchsurv==0.1.5",
     "torch==2.2.2",
-    "optuna==4.8.0",
+    "autogluon.tabular==1.5.0",
     "matplotlib==3.9.2",
     "seaborn==0.13.2",
     "psutil==5.9.8",

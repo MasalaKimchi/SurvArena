@@ -91,6 +91,7 @@ def compare_survival_models(
     seeds: list[int] | tuple[int, ...] | None = None,
     n_trials: int = 0,
     timeout_seconds: float | None = None,
+    autogluon: dict[str, Any] | None = None,
     output_dir: str | Path | None = None,
     benchmark_id: str | None = None,
     dry_run: bool = False,
@@ -140,6 +141,14 @@ def compare_survival_models(
             f"Requested {outer_repeats} outer repeats but only {len(resolved_seeds)} seeds were provided."
         )
 
+    autogluon_cfg = dict(autogluon or {})
+    if timeout_seconds is not None:
+        autogluon_cfg.setdefault("time_limit_seconds", float(timeout_seconds))
+    if int(n_trials) > 0:
+        hpo_kwargs = dict(autogluon_cfg.get("hyperparameter_tune_kwargs") or {})
+        hpo_kwargs.setdefault("num_trials", int(n_trials))
+        autogluon_cfg["hyperparameter_tune_kwargs"] = hpo_kwargs
+
     resolved_benchmark_id = benchmark_id or (
         "user_compare_fixed" if split_strategy == "fixed_split" else "user_compare_cv"
     )
@@ -156,6 +165,7 @@ def compare_survival_models(
         "methods": list(method_ids),
         "n_trials": int(n_trials),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
+        "autogluon": autogluon_cfg,
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
     }
@@ -173,6 +183,7 @@ def compare_survival_models(
         "seeds": list(resolved_seeds),
         "n_trials": int(n_trials),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
+        "autogluon": autogluon_cfg,
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
     }
@@ -231,6 +242,7 @@ def compare_survival_models(
                 primary_metric=primary_metric,
                 horizons_quantiles=horizons_quantiles,
                 benchmark_cfg_hash=benchmark_cfg_hash,
+                autogluon_cfg=autogluon_cfg,
             )
             run_records.append(record.pop("run_payload"))
             all_records.append(record)

@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     fit_parser.add_argument("--test", default=None, help="Optional test CSV or Parquet data.")
     fit_parser.add_argument("--time-col", required=True, help="Name of the duration column.")
     fit_parser.add_argument("--event-col", required=True, help="Name of the event indicator column.")
-    fit_parser.add_argument("--presets", default="all", choices=["fast", "medium", "best", "all", "foundation"])
+    fit_parser.add_argument("--presets", default="all", choices=["fast", "medium", "best", "all", "foundation", "autogluon"])
     fit_parser.add_argument("--models", type=_parse_csv_list, default=None, help="Optional comma-separated model ids.")
     fit_parser.add_argument(
         "--exclude-models",
@@ -116,7 +116,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional comma-separated feature columns to drop before fitting.",
     )
-    compare_parser.add_argument("--presets", default="fast", choices=["fast", "medium", "best", "all", "foundation"])
+    compare_parser.add_argument("--presets", default="fast", choices=["fast", "medium", "best", "all", "foundation", "autogluon"])
     compare_parser.add_argument("--models", type=_parse_csv_list, default=None, help="Optional comma-separated model ids.")
     compare_parser.add_argument(
         "--exclude-models",

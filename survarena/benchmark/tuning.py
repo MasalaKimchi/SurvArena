@@ -137,7 +137,7 @@ def _inner_cv_evaluate(
     return result
 
 
-def tune_hyperparameters(
+def select_hyperparameters(
     *,
     method_id: str,
     method_cfg: dict[str, Any],
@@ -149,10 +149,6 @@ def tune_hyperparameters(
     quiet: bool = False,
     metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
 ) -> dict[str, Any]:
-    import importlib
-
-    optuna = importlib.import_module("optuna")
-
     from survarena.utils.quiet import quiet_training_output
 
     with quiet_training_output(enabled=quiet):
@@ -167,39 +163,6 @@ def tune_hyperparameters(
         )
         default_score = float(default_eval["primary_score"])
         default_metric_rows = default_eval.get("metric_rows")
-        if not method_cfg.get("search_space") or n_trials <= 0:
-            return {
-                "best_params": defaults,
-                "best_score": default_score,
-                "n_trials_completed": 0,
-                "best_metric_rows": default_metric_rows,
-            }
-
-        def objective(trial: Any) -> float:
-            params = method_param_suggestions(trial, method_cfg)
-            trial_eval = _inner_cv_evaluate(
-                method_id=method_id,
-                params=resolve_runtime_method_params(params, seed=seed),
-                fold_cache=fold_cache,
-                primary_metric=primary_metric,
-                metric_bundle_callback=metric_bundle_callback,
-            )
-            metric_rows = trial_eval.get("metric_rows")
-            if metric_rows is not None:
-                trial.set_user_attr("metric_rows", metric_rows)
-            return float(trial_eval["primary_score"])
-
-        sampler = optuna.samplers.TPESampler(seed=seed)
-        study = optuna.create_study(direction=direction, sampler=sampler)
-        study.optimize(
-            objective,
-            n_trials=n_trials,
-            timeout=timeout_seconds,
-            show_progress_bar=False,
-        )
-
-    completed_trials = [trial for trial in study.trials if trial.state == optuna.trial.TrialState.COMPLETE]
-    if not completed_trials:
         return {
             "best_params": defaults,
             "best_score": default_score,
@@ -207,24 +170,5 @@ def tune_hyperparameters(
             "best_metric_rows": default_metric_rows,
         }
 
-    best_trial = study.best_trial
-    best_trial_score = float(study.best_value)
-    if _is_better_score(default_score, best_trial_score, direction=direction):
-        return {
-            "best_params": defaults,
-            "best_score": default_score,
-            "n_trials_completed": len(completed_trials),
-            "best_metric_rows": default_metric_rows,
-        }
 
-    allowed_keys = set(method_cfg.get("search_space", {}).keys())
-    best_trial_params = dict(best_trial.params if best_trial.params else {})
-    filtered_trial_params = {k: v for k, v in best_trial_params.items() if k in allowed_keys}
-    best_params = dict(defaults)
-    best_params.update(filtered_trial_params)
-    return {
-        "best_params": best_params,
-        "best_score": best_trial_score,
-        "n_trials_completed": len(completed_trials),
-        "best_metric_rows": best_trial.user_attrs.get("metric_rows", default_metric_rows),
-    }
+tune_hyperparameters = select_hyperparameters

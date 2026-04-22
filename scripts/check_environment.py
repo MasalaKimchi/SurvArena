@@ -13,7 +13,7 @@ CORE_REQUIRED = [
     "yaml",
     "torch",
     "torchsurv",
-    "optuna",
+    "autogluon.tabular",
     "lifelines",
     "sksurv",
     "xgboost",
@@ -22,7 +22,6 @@ CORE_REQUIRED = [
 
 FOUNDATION_REQUIRED = [
     "tabpfn",
-    "autogluon.tabular",
 ]
 
 
