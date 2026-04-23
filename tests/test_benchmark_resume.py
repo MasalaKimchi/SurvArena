@@ -116,6 +116,31 @@ def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, 
     monkeypatch.setattr("survarena.benchmark.runner.registered_method_ids", lambda: {"coxph"})
 
 
+def _install_retry_monkeypatches(
+    monkeypatch,
+    *,
+    statuses: list[str],
+    captured_run_records: list[dict[str, object]],
+) -> dict[str, int]:
+    calls = {"count": 0}
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    state = {"idx": 0}
+
+    def _fake_evaluate_split(**_kwargs):
+        status = statuses[min(state["idx"], len(statuses) - 1)]
+        state["idx"] += 1
+        calls["count"] += 1
+        return _record(status=status)
+
+    def _capture_run_ledger(_root, run_records, **_kwargs):
+        captured_run_records.extend(run_records)
+
+    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
+    monkeypatch.setattr("survarena.logging.export.export_run_ledger", _capture_run_ledger)
+    return calls
+
+
 def test_resume_eligibility_includes_only_integrity_valid_success_rows(tmp_path: Path, monkeypatch) -> None:
     fold_results = pd.DataFrame(
         [
@@ -183,3 +208,39 @@ def test_resume_completed_keys_ignore_non_success_rows(tmp_path: Path, monkeypat
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0)
 
     assert calls["count"] == 1
+
+
+def test_retry_budget_stops_after_max_retries_with_final_failure_preserved(tmp_path: Path, monkeypatch) -> None:
+    run_records: list[dict[str, object]] = []
+    calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed", "failed"], captured_run_records=run_records)
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
+
+    assert calls["count"] == 2
+    assert len(run_records) == 2
+    assert run_records[-1]["metrics"]["status"] == "failed"
+
+
+def test_run_ledger_records_status_retry_attempt_and_failure_fields_per_attempt(tmp_path: Path, monkeypatch) -> None:
+    run_records: list[dict[str, object]] = []
+    _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed"], captured_run_records=run_records)
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
+
+    assert len(run_records) == 2
+    assert [record["retry_attempt"] for record in run_records] == [0, 1]
+    assert [record["status"] for record in run_records] == ["failed", "failed"]
+    assert all(record["failure"] is not None for record in run_records)
+
+
+def test_successful_retry_keeps_prior_failure_evidence_in_run_records(tmp_path: Path, monkeypatch) -> None:
+    run_records: list[dict[str, object]] = []
+    calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "success"], captured_run_records=run_records)
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=2)
+
+    assert calls["count"] == 2
+    assert len(run_records) == 2
+    assert run_records[0]["status"] == "failed"
+    assert run_records[0]["failure"] is not None
+    assert run_records[1]["status"] == "success"
