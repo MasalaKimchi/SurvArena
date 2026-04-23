@@ -340,6 +340,7 @@ models, per-model test metrics, and the foundation-model catalog.
 Benchmark runs write timestamped experiment folders under `results/summary/`.
 Each experiment can include:
 
+- `README.md` and `experiment_navigator.json` as concise entry points
 - fold results
 - seed summaries
 - overall summaries
