@@ -141,7 +141,7 @@ def _install_retry_monkeypatches(
     return calls
 
 
-def test_resume_eligibility_includes_only_integrity_valid_success_rows(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_resume_preserves_successful_outputs(tmp_path: Path, monkeypatch) -> None:
     fold_results = pd.DataFrame(
         [
             {
@@ -164,7 +164,7 @@ def test_resume_eligibility_includes_only_integrity_valid_success_rows(tmp_path:
     assert calls["count"] == 0
 
 
-def test_resume_eligibility_reexecutes_success_rows_missing_required_outputs(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_resume_reruns_incomplete_success_outputs(tmp_path: Path, monkeypatch) -> None:
     fold_results = pd.DataFrame(
         [
             {
@@ -187,7 +187,7 @@ def test_resume_eligibility_reexecutes_success_rows_missing_required_outputs(tmp
     assert calls["count"] == 1
 
 
-def test_resume_completed_keys_ignore_non_success_rows(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_resume_ignores_non_success_completed_keys(tmp_path: Path, monkeypatch) -> None:
     fold_results = pd.DataFrame(
         [
             {
@@ -210,7 +210,7 @@ def test_resume_completed_keys_ignore_non_success_rows(tmp_path: Path, monkeypat
     assert calls["count"] == 1
 
 
-def test_retry_budget_stops_after_max_retries_with_final_failure_preserved(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_retry_budget_caps_failed_rows(tmp_path: Path, monkeypatch) -> None:
     run_records: list[dict[str, object]] = []
     calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed", "failed"], captured_run_records=run_records)
 
@@ -221,7 +221,7 @@ def test_retry_budget_stops_after_max_retries_with_final_failure_preserved(tmp_p
     assert run_records[-1]["metrics"]["status"] == "failed"
 
 
-def test_run_ledger_records_status_retry_attempt_and_failure_fields_per_attempt(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_failure_records_include_attempt_metadata(tmp_path: Path, monkeypatch) -> None:
     run_records: list[dict[str, object]] = []
     _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed"], captured_run_records=run_records)
 
@@ -233,7 +233,7 @@ def test_run_ledger_records_status_retry_attempt_and_failure_fields_per_attempt(
     assert all(record["failure"] is not None for record in run_records)
 
 
-def test_successful_retry_keeps_prior_failure_evidence_in_run_records(tmp_path: Path, monkeypatch) -> None:
+def test_exec04_successful_retry_keeps_failed_attempt_evidence(tmp_path: Path, monkeypatch) -> None:
     run_records: list[dict[str, object]] = []
     calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "success"], captured_run_records=run_records)
 
