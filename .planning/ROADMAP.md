@@ -10,7 +10,7 @@ This roadmap delivers a practitioner-trustworthy survival benchmark by sequencin
 - Integer phases (1, 2, 3): Planned milestone work
 - Decimal phases (2.1, 2.2): Urgent insertions (marked with INSERTED)
 
-- [ ] **Phase 1: Deterministic Execution Foundation** - Lock profile-tier execution and resumable run behavior.
+- [x] **Phase 1: Deterministic Execution Foundation** - Lock profile-tier execution and resumable run behavior.
 - [ ] **Phase 2: Fair Dual-Mode HPO Governance** - Enforce no-HPO/HPO parity under a uniform budget policy.
 - [ ] **Phase 3: Statistical Inference Pipeline** - Produce corrected pairwise statistical outputs for publication-quality claims.
 - [ ] **Phase 4: Global Ranking Robustness** - Add complete matchup-derived ELO with trust diagnostics.
@@ -41,7 +41,7 @@ Plans:
   3. User can trust that a single uniform budget policy is enforced across all model runs in the collection.
 **Plans**: 3 plans
 Plans:
-- [ ] 02-01-PLAN.md — Define dual-mode parity and budget-governance test contracts.
+- [x] 02-01-PLAN.md — Define dual-mode parity and budget-governance test contracts.
 - [ ] 02-02-PLAN.md — Implement deterministic dual-mode runner and uniform budget telemetry.
 - [ ] 02-03-PLAN.md — Enforce parity-gated comparative exports and canonical governance reporting.
 
@@ -82,8 +82,8 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Deterministic Execution Foundation | 0/TBD | Not started | - |
-| 2. Fair Dual-Mode HPO Governance | 0/TBD | Not started | - |
+| 1. Deterministic Execution Foundation | 2/2 | Complete | 2026-04-23 |
+| 2. Fair Dual-Mode HPO Governance | 1/3 | In Progress | - |
 | 3. Statistical Inference Pipeline | 0/TBD | Not started | - |
 | 4. Global Ranking Robustness | 0/TBD | Not started | - |
 | 5. Canonical Artifact and Quality Hardening | 0/TBD | Not started | - |
