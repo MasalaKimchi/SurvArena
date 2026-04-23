@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
 from survarena.benchmark.runner import validate_benchmark_profile_contract
+from survarena.config import read_yaml
 from survarena.data.splitters import load_or_create_splits
 
 
@@ -146,3 +149,13 @@ def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
     )
 
     assert [split.split_id for split in reused] == [split.split_id for split in created]
+
+
+def test_profile_contract_configs_use_canonical_tier_intent() -> None:
+    smoke_cfg = read_yaml(Path("configs/benchmark/smoke_all_models_no_hpo.yaml"))
+    standard_cfg = read_yaml(Path("configs/benchmark/standard_v1.yaml"))
+    manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_v1.yaml"))
+
+    assert smoke_cfg["profile"] == "smoke"
+    assert standard_cfg["profile"] == "standard"
+    assert manuscript_cfg.get("profile", "manuscript") == "manuscript"
