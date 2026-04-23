@@ -212,6 +212,7 @@ def load_or_create_splits(
     seeds: list[int],
     outer_folds: int = 5,
     outer_repeats: int = 3,
+    regenerate_on_mismatch: bool = False,
 ) -> list[SplitDefinition]:
     def _validate_split_integrity(splits_to_check: list[SplitDefinition], n_rows: int) -> None:
         seen_split_ids: set[str] = set()
@@ -287,6 +288,13 @@ def load_or_create_splits(
             _validate_split_integrity(loaded_splits, n_samples)
             _validate_event_stratification(loaded_splits, event)
             return loaded_splits
+        if not regenerate_on_mismatch:
+            raise ValueError(
+                "Existing split manifest payload mismatch for "
+                f"task_id='{task_id}'. "
+                "Deterministic contract violation: refusing to regenerate splits automatically. "
+                "Re-run with explicit regenerate flag to overwrite split artifacts."
+            )
 
     if split_strategy == "repeated_nested_cv":
         splits = create_repeated_nested_outer_splits(

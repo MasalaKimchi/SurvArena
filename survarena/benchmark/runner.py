@@ -393,6 +393,7 @@ def run_benchmark(
     output_dir: Path | None = None,
     resume: bool = False,
     max_retries: int = 0,
+    regenerate_splits: bool = False,
 ) -> None:
     import numpy as np
 
@@ -547,6 +548,7 @@ def run_benchmark(
             seeds=seeds,
             outer_folds=int(benchmark_cfg.get("outer_folds", 5)),
             outer_repeats=outer_repeats,
+            regenerate_on_mismatch=bool(regenerate_splits),
         )
 
         filtered_splits = [split for split in splits if split.seed in seeds]
