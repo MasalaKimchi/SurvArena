@@ -1,0 +1,51 @@
+benchmark_id: smoke_all_models_no_hpo
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 2
+outer_repeats: 1
+inner_folds: 2
+seeds: [11]
+primary_metric: uno_c
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+  - brier
+  - calibration
+  - net_benefit
+autogluon:
+  enabled: false
+  presets: medium
+  time_limit_seconds: null
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+datasets:
+  - whas500
+methods:
+  - coxph
+  - coxnet
+  - weibull_aft
+  - lognormal_aft
+  - loglogistic_aft
+  - aalen_additive
+  - fast_survival_svm
+  - rsf
+  - extra_survival_trees
+  - gradient_boosting_survival
+  - componentwise_gradient_boosting
+  - xgboost_cox
+  - xgboost_aft
+  - catboost_cox
+  - catboost_survival_aft
+  - deepsurv
+  - deepsurv_moco
+  - logistic_hazard
+  - pmf
+  - mtlr
+  - deephit_single
+  - pchazard
+  - cox_time
+notes: Quick no-HPO smoke benchmark that exercises every manuscript default model once on a small built-in dataset.

@@ -41,8 +41,8 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional comma-separated model ids to remove from the chosen preset.",
     )
-    fit_parser.add_argument("--eval-metric", default="harrell_c", choices=["harrell_c", "uno_c"])
-    fit_parser.add_argument("--num-trials", type=int, default=None)
+    fit_parser.add_argument("--eval-metric", default="uno_c", choices=["harrell_c", "uno_c"])
+    fit_parser.add_argument("--autogluon-num-trials", type=int, default=None)
     fit_parser.add_argument(
         "--tuning-timeout",
         type=float,
@@ -124,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional comma-separated model ids to remove from the chosen preset.",
     )
-    compare_parser.add_argument("--eval-metric", default="harrell_c", choices=["harrell_c", "uno_c"])
+    compare_parser.add_argument("--eval-metric", default="uno_c", choices=["harrell_c", "uno_c"])
     compare_parser.add_argument(
         "--split-strategy",
         default="fixed_split",
@@ -139,7 +139,6 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional comma-separated random seeds. fixed_split expects exactly one seed.",
     )
-    compare_parser.add_argument("--n-trials", type=int, default=0)
     compare_parser.add_argument("--timeout-seconds", type=float, default=None)
     compare_parser.add_argument("--save-path", default=None, help="Optional directory for benchmark outputs.")
     compare_parser.add_argument(
@@ -170,7 +169,6 @@ def main() -> None:
             label_event=args.event_col,
             eval_metric=args.eval_metric,
             presets=args.presets,
-            num_trials=args.num_trials,
             included_models=args.models,
             excluded_models=args.exclude_models,
             retain_top_k_models=None if args.retain_all_models else args.retain_top_k_models,
@@ -180,10 +178,10 @@ def main() -> None:
             enable_foundation_models=args.enable_foundation_models,
         )
         hyperparameter_tune_kwargs = None
-        if args.num_trials is not None or args.tuning_timeout is not None:
+        if args.autogluon_num_trials is not None or args.tuning_timeout is not None:
             hyperparameter_tune_kwargs = {}
-            if args.num_trials is not None:
-                hyperparameter_tune_kwargs["num_trials"] = args.num_trials
+            if args.autogluon_num_trials is not None:
+                hyperparameter_tune_kwargs["num_trials"] = args.autogluon_num_trials
             if args.tuning_timeout is not None:
                 hyperparameter_tune_kwargs["timeout"] = args.tuning_timeout
         predictor.fit(
@@ -219,7 +217,6 @@ def main() -> None:
             outer_repeats=args.outer_repeats,
             inner_folds=args.inner_folds,
             seeds=args.seeds,
-            n_trials=args.n_trials,
             timeout_seconds=args.timeout_seconds,
             output_dir=args.save_path,
             dry_run=args.dry_run,

@@ -13,8 +13,8 @@ artifacts.
 - outer loop: 5 folds x 3 repeats
 - inner loop: 3 folds
 - seeds: `[11, 22, 33, 44, 55]`
-- primary metric: `harrell_c`
-- secondary metrics: `harrell_c`, `ibs`, `td_auc`
+- primary metric: `uno_c`
+- secondary metrics: `harrell_c`, `ibs`, `td_auc`, `brier`, `calibration`, `net_benefit`
 - default methods: `coxph`, `coxnet`, `rsf`, `deepsurv`
 
 `configs/benchmark/large_v1.yaml` is the fixed-split large-track placeholder for `kkbox`.
@@ -40,8 +40,10 @@ Supported split strategies:
 ## Metrics
 
 - discrimination: Harrell C-index, Uno C-index
-- overall survival quality: integrated Brier score, time-dependent AUC
+- overall survival quality: integrated Brier score, Brier score at 25/50/75% event-time horizons, time-dependent AUC
+- calibration and utility: median-horizon calibration slope/intercept and median-horizon net benefit
 - efficiency: fit time, inference time, peak memory
+- manuscript comparison: per-dataset ranks, mean/median rank, pairwise win rate, ELO-style ratings, bootstrap confidence intervals, failure rate, missing-metric rate
 
 Metric computation is backed by `torchsurv`.
 
@@ -61,9 +63,19 @@ Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 - `<benchmark_id>_overall_summary.json`
 - `<benchmark_id>_leaderboard.csv`
 - `<benchmark_id>_leaderboard.json`
+- `<benchmark_id>_rank_summary.csv`
+- `<benchmark_id>_pairwise_win_rate.csv`
+- `<benchmark_id>_elo_ratings.csv`
+- `<benchmark_id>_bootstrap_ci.csv`
+- `<benchmark_id>_failure_summary.csv`
+- `<benchmark_id>_missing_metric_summary.csv`
+- `<benchmark_id>_dataset_curation.csv`
+- `<benchmark_id>_manuscript_summary.json`
 - `<benchmark_id>_run_records.jsonl.gz`
 - `<benchmark_id>_run_records_index.json`
 - `experiment_manifest.json`
+
+Run ledgers and manuscript summaries include explicit `schema_version` fields.
 
 Key per-run fields in fold results:
 
@@ -76,6 +88,9 @@ Key per-run fields in fold results:
 - `harrell_c`
 - `uno_c`
 - `ibs`
+- `brier_25`, `brier_50`, `brier_75`
+- `calibration_slope_50`, `calibration_intercept_50`
+- `net_benefit_50`
 - `fit_time_sec`
 - `infer_time_sec`
 - `peak_memory_mb`

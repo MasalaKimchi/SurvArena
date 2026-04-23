@@ -46,7 +46,7 @@ def test_predictor_fit_surfaces_when_all_candidate_models_fail(tmp_path: Path, m
 
     monkeypatch.setattr(
         "survarena.api.predictor.resolve_preset",
-        lambda *args, **kwargs: PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25),
+        lambda *args, **kwargs: PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25),
     )
     monkeypatch.setattr("survarena.api.predictor.read_yaml", lambda path: {"default_params": {}})
     monkeypatch.setattr(
@@ -63,10 +63,10 @@ def test_predictor_fit_surfaces_when_all_candidate_models_fail(tmp_path: Path, m
         ],
     )
 
-    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
         raise RuntimeError(f"{method_id} exploded")
 
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
 
     predictor = SurvivalPredictor(
         label_time="time",

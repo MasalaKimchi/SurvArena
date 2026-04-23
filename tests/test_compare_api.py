@@ -55,8 +55,6 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
             "fit_time_sec": 0.05,
             "infer_time_sec": 0.02,
             "peak_memory_mb": 128.0,
-            "n_trials_requested": kwargs["n_trials"],
-            "n_trials_completed": 0,
             "status": "success",
         }
 
@@ -82,4 +80,12 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert (output_dir / "user_compare_fixed_overall_summary.json").exists()
     assert (output_dir / "user_compare_fixed_leaderboard.csv").exists()
     assert (output_dir / "user_compare_fixed_leaderboard.json").exists()
+    assert (output_dir / "user_compare_fixed_rank_summary.csv").exists()
+    assert (output_dir / "user_compare_fixed_pairwise_win_rate.csv").exists()
+    assert (output_dir / "user_compare_fixed_bootstrap_ci.csv").exists()
+    assert (output_dir / "user_compare_fixed_elo_ratings.csv").exists()
+    assert (output_dir / "user_compare_fixed_failure_summary.csv").exists()
+    assert (output_dir / "user_compare_fixed_missing_metric_summary.csv").exists()
+    assert (output_dir / "user_compare_fixed_dataset_curation.csv").exists()
+    assert (output_dir / "user_compare_fixed_manuscript_summary.json").exists()
     assert (output_dir / "user_compare_fixed_run_records.jsonl.gz").exists()

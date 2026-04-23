@@ -6,6 +6,7 @@ from time import perf_counter
 from typing import Any
 
 from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, select_hyperparameters
+from survarena.logging.export import MANUSCRIPT_METRIC_COLUMNS
 from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, registered_method_ids
 
@@ -21,7 +22,6 @@ def evaluate_split(
     event: Any,
     method_cfg: dict[str, Any],
     inner_folds: int,
-    n_trials: int,
     timeout_seconds: float | None,
     primary_metric: str,
     horizons_quantiles: tuple[float, float, float],
@@ -73,19 +73,16 @@ def evaluate_split(
 
         with timer() as tune_timer:
             method_cfg_for_selection = _method_cfg_with_autogluon_defaults(method_cfg, autogluon_cfg)
-            tuning_result = select_hyperparameters(
+            selection_result = select_hyperparameters(
                 method_id=method_id,
                 method_cfg=method_cfg_for_selection,
                 fold_cache=fold_cache,
                 primary_metric=primary_metric,
-                n_trials=n_trials,
                 seed=split.seed,
-                timeout_seconds=timeout_seconds,
             )
         tuning_sec = tune_timer.elapsed
-        best_params = dict(tuning_result["best_params"])
-        validation_score = float(tuning_result["best_score"])
-        n_trials_completed = int(tuning_result["n_trials_completed"])
+        best_params = dict(selection_result["best_params"])
+        validation_score = float(selection_result["best_score"])
 
         pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
         X_train_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
@@ -164,11 +161,11 @@ def evaluate_split(
                 "autogluon_path": autogluon_metadata.get("autogluon_path"),
                 "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
                 "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
-                "n_trials_requested": n_trials,
-                "n_trials_completed": n_trials_completed,
                 "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
+            },
+            "backend_metadata": {
                 "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
             },
             "failure": None,
@@ -196,8 +193,6 @@ def evaluate_split(
             "autogluon_path": autogluon_metadata.get("autogluon_path"),
             "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
             "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
-            "n_trials_requested": n_trials,
-            "n_trials_completed": n_trials_completed,
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
@@ -255,6 +250,7 @@ def evaluate_split(
             "td_auc_25": np.nan,
             "td_auc_50": np.nan,
             "td_auc_75": np.nan,
+            **{metric: np.nan for metric in MANUSCRIPT_METRIC_COLUMNS},
             "tuning_time_sec": np.nan,
             "runtime_sec": elapsed_before_failure,
             "fit_time_sec": np.nan,
@@ -268,8 +264,6 @@ def evaluate_split(
             "autogluon_path": None,
             "bagging_folds": 0,
             "stack_levels": 0,
-            "n_trials_requested": n_trials,
-            "n_trials_completed": 0,
             "status": "failed",
         }
 
@@ -311,15 +305,18 @@ def run_benchmark(
     dataset_override: str | None = None,
     method_override: str | None = None,
     limit_seeds: int | None = None,
-    n_trials_override: int | None = None,
     dry_run: bool = False,
 ) -> None:
+    import numpy as np
+
     from survarena.data.loaders import load_dataset
     from survarena.data.splitters import load_or_create_splits
     from survarena.logging.export import (
         create_experiment_dir,
+        export_dataset_curation_table,
         export_fold_results,
         export_leaderboard,
+        export_manuscript_comparison,
         export_overall_summary,
         export_run_ledger,
         export_seed_summary,
@@ -352,13 +349,7 @@ def run_benchmark(
         outer_repeats = requested_outer_repeats
 
     autogluon_cfg = dict(benchmark_cfg.get("autogluon", {}))
-    legacy_tuning_cfg = dict(benchmark_cfg.get("tuning", {}))
-    n_trials = int(n_trials_override) if n_trials_override is not None else int(legacy_tuning_cfg.get("n_trials", 0))
-    if n_trials > 0:
-        autogluon_hpo = dict(autogluon_cfg.get("hyperparameter_tune_kwargs") or {})
-        autogluon_hpo.setdefault("num_trials", n_trials)
-        autogluon_cfg["hyperparameter_tune_kwargs"] = autogluon_hpo
-    timeout_seconds = autogluon_cfg.get("time_limit_seconds", legacy_tuning_cfg.get("timeout_seconds"))
+    timeout_seconds = autogluon_cfg.get("time_limit_seconds")
     timeout_seconds = None if timeout_seconds is None else float(timeout_seconds)
 
     if dry_run:
@@ -368,7 +359,6 @@ def run_benchmark(
         print(f"methods={methods}")
         print(f"seeds={seeds}")
         print(f"outer_repeats={outer_repeats}")
-        print(f"n_trials={n_trials}")
         print(f"timeout_seconds={timeout_seconds}")
         print(f"autogluon={autogluon_cfg}")
         print(f"primary_metric={primary_metric}")
@@ -377,6 +367,7 @@ def run_benchmark(
     registered_methods = set(registered_method_ids())
     all_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
+    dataset_curation_rows: list[dict[str, Any]] = []
     method_cfg_cache = {method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods}
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     experiment_dir = create_experiment_dir(repo_root)
@@ -387,7 +378,6 @@ def run_benchmark(
             "datasets": datasets,
             "methods": methods,
             "seeds": seeds,
-            "n_trials": n_trials,
             "timeout_seconds": timeout_seconds,
             "autogluon": autogluon_cfg,
             "primary_metric": primary_metric,
@@ -398,6 +388,20 @@ def run_benchmark(
 
     for dataset_id in datasets:
         dataset = load_dataset(dataset_id, repo_root)
+        dataset_curation_rows.append(
+            {
+                "dataset_id": dataset_id,
+                "n_rows": int(len(dataset.X)),
+                "n_features": int(dataset.X.shape[1]),
+                "n_events": int(dataset.event.sum()),
+                "event_rate": float(dataset.event.mean()),
+                "censoring_rate": float(1.0 - dataset.event.mean()),
+                "time_min": float(dataset.time.min()),
+                "time_median": float(np.median(dataset.time)),
+                "time_max": float(dataset.time.max()),
+                "feature_types": getattr(dataset.metadata, "feature_types", {}),
+            }
+        )
         task_id = f"{dataset_id}_{benchmark_id}"
         splits = load_or_create_splits(
             root=repo_root,
@@ -428,7 +432,6 @@ def run_benchmark(
                     event=dataset.event,
                     method_cfg=method_cfg,
                     inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
-                    n_trials=n_trials,
                     timeout_seconds=timeout_seconds,
                     primary_metric=primary_metric,
                     horizons_quantiles=horizons_q,  # type: ignore[arg-type]
@@ -445,12 +448,21 @@ def run_benchmark(
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
     seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
     export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
-    export_leaderboard(
+    leaderboard = export_leaderboard(
         repo_root,
         seed_summary,
         primary_metric=primary_metric,
         output_dir=experiment_dir,
         file_prefix=benchmark_id,
     )
+    export_manuscript_comparison(
+        repo_root,
+        leaderboard,
+        primary_metric=primary_metric,
+        fold_results=frame,
+        output_dir=experiment_dir,
+        file_prefix=benchmark_id,
+    )
+    export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
     export_run_ledger(repo_root, run_records, benchmark_id=benchmark_id, output_dir=experiment_dir)
     print(f"Benchmark run complete. Outputs saved to: {experiment_dir}")

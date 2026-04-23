@@ -6,6 +6,8 @@ from typing import Any
 
 from survarena.utils.env import get_environment_snapshot, get_package_versions
 
+RUN_MANIFEST_SCHEMA_VERSION = "2.0"
+
 
 @dataclass(slots=True)
 class RunManifest:
@@ -42,6 +44,7 @@ class RunManifest:
             ]
         )
         return {
+            "schema_version": RUN_MANIFEST_SCHEMA_VERSION,
             "run_id": self.run_id,
             "timestamp": self.timestamp,
             "benchmark_id": self.benchmark_id,

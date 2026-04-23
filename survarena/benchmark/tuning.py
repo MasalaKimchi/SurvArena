@@ -6,31 +6,6 @@ from typing import Any, Callable
 _RUNTIME_ONLY_METHOD_PARAMS = {"seed"}
 
 
-def method_param_suggestions(trial: Any, method_cfg: dict[str, Any]) -> dict[str, Any]:
-    params: dict[str, Any] = {}
-    for name, spec in method_cfg.get("search_space", {}).items():
-        spec_type = spec["type"]
-        if spec_type == "int":
-            params[name] = trial.suggest_int(name, int(spec["low"]), int(spec["high"]))
-        elif spec_type == "float":
-            params[name] = trial.suggest_float(
-                name,
-                float(spec["low"]),
-                float(spec["high"]),
-                log=bool(spec.get("log", False)),
-            )
-        elif spec_type == "categorical":
-            params[name] = trial.suggest_categorical(name, spec["choices"])
-        elif spec_type == "int_or_none":
-            use_none = trial.suggest_categorical(f"{name}_is_none", [True, False])
-            params[name] = None if use_none else trial.suggest_int(name, int(spec["low"]), int(spec["high"]))
-        else:
-            raise ValueError(f"Unsupported search spec type: {spec_type}")
-    if not params:
-        params = dict(method_cfg.get("default_params", {}))
-    return params
-
-
 def resolve_runtime_method_params(params: dict[str, Any], *, seed: int) -> dict[str, Any]:
     resolved = dict(params)
     resolved["seed"] = int(seed)
@@ -73,23 +48,9 @@ def prepare_inner_cv_cache(
     return fold_cache
 
 
-def _metric_optimization_direction(primary_metric: str) -> str:
-    if primary_metric in {"harrell_c", "uno_c"}:
-        return "maximize"
-    raise ValueError(f"Unsupported primary metric for tuning direction: {primary_metric}")
-
-
 def _searchable_default_params(method_cfg: dict[str, Any]) -> dict[str, Any]:
     defaults = dict(method_cfg.get("default_params", {}))
     return {key: value for key, value in defaults.items() if key not in _RUNTIME_ONLY_METHOD_PARAMS}
-
-
-def _is_better_score(candidate: float, reference: float, *, direction: str) -> bool:
-    if direction == "maximize":
-        return candidate > reference
-    if direction == "minimize":
-        return candidate < reference
-    raise ValueError(f"Unsupported optimization direction: {direction}")
 
 
 def _inner_cv_evaluate(
@@ -143,9 +104,7 @@ def select_hyperparameters(
     method_cfg: dict[str, Any],
     fold_cache: list[dict[str, Any]],
     primary_metric: str,
-    n_trials: int,
     seed: int,
-    timeout_seconds: float | None = None,
     quiet: bool = False,
     metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
 ) -> dict[str, Any]:
@@ -153,7 +112,6 @@ def select_hyperparameters(
 
     with quiet_training_output(enabled=quiet):
         defaults = _searchable_default_params(method_cfg)
-        direction = _metric_optimization_direction(primary_metric)
         default_eval = _inner_cv_evaluate(
             method_id=method_id,
             params=resolve_runtime_method_params(defaults, seed=seed),
@@ -166,9 +124,5 @@ def select_hyperparameters(
         return {
             "best_params": defaults,
             "best_score": default_score,
-            "n_trials_completed": 0,
             "best_metric_rows": default_metric_rows,
         }
-
-
-tune_hyperparameters = select_hyperparameters

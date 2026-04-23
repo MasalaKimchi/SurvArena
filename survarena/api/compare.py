@@ -10,8 +10,10 @@ from survarena.data.splitters import load_or_create_splits
 from survarena.data.user_dataset import load_user_dataset
 from survarena.logging.export import (
     create_experiment_dir,
+    export_dataset_curation_table,
     export_fold_results,
     export_leaderboard,
+    export_manuscript_comparison,
     export_overall_summary,
     export_run_ledger,
     export_seed_summary,
@@ -83,13 +85,12 @@ def compare_survival_models(
     excluded_models: list[str] | None = None,
     presets: str = "fast",
     enable_foundation_models: bool = False,
-    primary_metric: str = "harrell_c",
+    primary_metric: str = "uno_c",
     split_strategy: str = "fixed_split",
     outer_folds: int = 5,
     outer_repeats: int = 1,
     inner_folds: int = 3,
     seeds: list[int] | tuple[int, ...] | None = None,
-    n_trials: int = 0,
     timeout_seconds: float | None = None,
     autogluon: dict[str, Any] | None = None,
     output_dir: str | Path | None = None,
@@ -144,11 +145,6 @@ def compare_survival_models(
     autogluon_cfg = dict(autogluon or {})
     if timeout_seconds is not None:
         autogluon_cfg.setdefault("time_limit_seconds", float(timeout_seconds))
-    if int(n_trials) > 0:
-        hpo_kwargs = dict(autogluon_cfg.get("hyperparameter_tune_kwargs") or {})
-        hpo_kwargs.setdefault("num_trials", int(n_trials))
-        autogluon_cfg["hyperparameter_tune_kwargs"] = hpo_kwargs
-
     resolved_benchmark_id = benchmark_id or (
         "user_compare_fixed" if split_strategy == "fixed_split" else "user_compare_cv"
     )
@@ -163,7 +159,6 @@ def compare_survival_models(
         "inner_folds": int(inner_folds),
         "seeds": list(resolved_seeds),
         "methods": list(method_ids),
-        "n_trials": int(n_trials),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
         "autogluon": autogluon_cfg,
         "resolved_preset": resolved_preset,
@@ -181,7 +176,6 @@ def compare_survival_models(
         "outer_repeats": int(outer_repeats),
         "inner_folds": int(inner_folds),
         "seeds": list(resolved_seeds),
-        "n_trials": int(n_trials),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
         "autogluon": autogluon_cfg,
         "resolved_preset": resolved_preset,
@@ -237,7 +231,6 @@ def compare_survival_models(
                 event=dataset.event,
                 method_cfg=method_cfg,
                 inner_folds=int(inner_folds),
-                n_trials=int(n_trials),
                 timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
                 primary_metric=primary_metric,
                 horizons_quantiles=horizons_quantiles,
@@ -259,12 +252,37 @@ def compare_survival_models(
         file_prefix=resolved_benchmark_id,
     )
     export_overall_summary(repo_root, frame, output_dir=resolved_output_dir, file_prefix=resolved_benchmark_id)
-    export_leaderboard(
+    leaderboard = export_leaderboard(
         repo_root,
         seed_summary,
         primary_metric=primary_metric,
         output_dir=resolved_output_dir,
         file_prefix=resolved_benchmark_id,
+    )
+    export_manuscript_comparison(
+        repo_root,
+        leaderboard,
+        primary_metric=primary_metric,
+        fold_results=frame,
+        output_dir=resolved_output_dir,
+        file_prefix=resolved_benchmark_id,
+    )
+    export_dataset_curation_table(
+        repo_root,
+        [
+            {
+                "dataset_id": dataset.metadata.dataset_id,
+                "dataset_name": dataset.metadata.name,
+                "n_rows": int(len(dataset.X)),
+                "n_features": int(dataset.X.shape[1]),
+                "n_events": int(dataset.event.sum()),
+                "event_rate": float(dataset.event.mean()),
+                "censoring_rate": float(1.0 - dataset.event.mean()),
+                "feature_types": dataset.metadata.feature_types,
+            }
+        ],
+        benchmark_id=resolved_benchmark_id,
+        output_dir=resolved_output_dir,
     )
     export_run_ledger(repo_root, run_records, benchmark_id=resolved_benchmark_id, output_dir=resolved_output_dir)
     return {

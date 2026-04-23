@@ -11,7 +11,6 @@ from survarena.methods.foundation.readiness import foundation_runtime_status
 class PresetConfig:
     name: str
     method_ids: tuple[str, ...]
-    n_trials: int
     holdout_frac: float
     scale_limit_rows: int | None = None
     portfolio_notes: tuple[str, ...] = ()
@@ -21,42 +20,36 @@ _PRESETS: dict[str, PresetConfig] = {
     "fast": PresetConfig(
         name="fast",
         method_ids=("coxph", "rsf"),
-        n_trials=2,
         holdout_frac=0.2,
         scale_limit_rows=100_000,
     ),
     "medium": PresetConfig(
         name="medium",
         method_ids=("coxph", "coxnet", "rsf", "deepsurv"),
-        n_trials=8,
         holdout_frac=0.15,
         scale_limit_rows=50_000,
     ),
     "best": PresetConfig(
         name="best",
         method_ids=("coxph", "coxnet", "rsf", "deepsurv", "deepsurv_moco"),
-        n_trials=16,
         holdout_frac=0.1,
         scale_limit_rows=25_000,
     ),
     "all": PresetConfig(
         name="all",
         method_ids=("coxph", "coxnet", "rsf", "deepsurv", "deepsurv_moco"),
-        n_trials=8,
         holdout_frac=0.15,
         scale_limit_rows=25_000,
     ),
     "foundation": PresetConfig(
         name="foundation",
         method_ids=("coxph",),
-        n_trials=4,
         holdout_frac=0.15,
         scale_limit_rows=10_000,
     ),
     "autogluon": PresetConfig(
         name="autogluon",
         method_ids=("autogluon_survival",),
-        n_trials=0,
         holdout_frac=0.15,
         scale_limit_rows=100_000,
     ),
@@ -179,7 +172,6 @@ def resolve_preset(
     return PresetConfig(
         name=preset.name,
         method_ids=tuple(dict.fromkeys(method_ids)),
-        n_trials=preset.n_trials,
         holdout_frac=preset.holdout_frac,
         scale_limit_rows=preset.scale_limit_rows,
         portfolio_notes=tuple(dict.fromkeys(portfolio_notes)),

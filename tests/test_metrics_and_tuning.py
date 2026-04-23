@@ -6,25 +6,12 @@ import numpy as np
 import pytest
 
 from survarena.benchmark import tuning
-from survarena.evaluation.metrics import MetricBundle, compute_primary_metric_score, horizons_from_train_event_times
-
-
-class FakeTrial:
-    def __init__(self, *, use_none: bool = False) -> None:
-        self.use_none = use_none
-
-    def suggest_int(self, name: str, low: int, high: int) -> int:
-        assert low <= high
-        return high
-
-    def suggest_float(self, name: str, low: float, high: float, *, log: bool = False) -> float:
-        assert low <= high
-        return high if log else (low + high) / 2.0
-
-    def suggest_categorical(self, name: str, choices: list[object]) -> object:
-        if name.endswith("_is_none"):
-            return self.use_none
-        return choices[-1]
+from survarena.evaluation.metrics import (
+    MetricBundle,
+    _event_status_at_horizons,
+    compute_primary_metric_score,
+    horizons_from_train_event_times,
+)
 
 
 def test_metric_bundle_to_dict_casts_all_metrics_to_plain_floats() -> None:
@@ -39,7 +26,7 @@ def test_metric_bundle_to_dict_casts_all_metrics_to_plain_floats() -> None:
 
     as_dict = bundle.to_dict()
 
-    assert as_dict == {
+    assert {key: as_dict[key] for key in ["uno_c", "harrell_c", "ibs", "td_auc_25", "td_auc_50", "td_auc_75"]} == {
         "uno_c": 0.6100000143051147,
         "harrell_c": 0.63,
         "ibs": 0.18000000715255737,
@@ -47,6 +34,8 @@ def test_metric_bundle_to_dict_casts_all_metrics_to_plain_floats() -> None:
         "td_auc_50": 0.6700000166893005,
         "td_auc_75": 0.6800000071525574,
     }
+    for key in ["brier_25", "brier_50", "brier_75", "calibration_slope_50", "calibration_intercept_50", "net_benefit_50"]:
+        assert math.isnan(as_dict[key])
     assert all(isinstance(value, float) for value in as_dict.values())
 
 
@@ -124,59 +113,21 @@ def test_horizons_from_train_event_times_uses_event_quantiles() -> None:
     assert horizons == (3.0, 4.0, 6.0)
 
 
-def test_method_param_suggestions_supports_declared_search_types() -> None:
-    params = tuning.method_param_suggestions(
-        FakeTrial(),
-        {
-            "search_space": {
-                "max_depth": {"type": "int", "low": 2, "high": 5},
-                "lr": {"type": "float", "low": 1e-3, "high": 1e-1, "log": True},
-                "criterion": {"type": "categorical", "choices": ["a", "b"]},
-                "min_leaf": {"type": "int_or_none", "low": 2, "high": 7},
-            }
-        },
+def test_horizon_event_status_marks_censored_before_horizon_unknown() -> None:
+    observed, known = _event_status_at_horizons(
+        np.asarray([1.0, 2.0, 4.0]),
+        np.asarray([0, 1, 0]),
+        (3.0, 5.0, 6.0),
     )
 
-    assert params == {"max_depth": 5, "lr": 0.1, "criterion": "b", "min_leaf": 7}
+    assert observed[:, 0].tolist() == [0.0, 1.0, 0.0]
+    assert known[:, 0].tolist() == [False, True, True]
+    assert known[:, 1].tolist() == [False, True, False]
 
 
-def test_method_param_suggestions_allows_int_or_none_to_return_none() -> None:
-    params = tuning.method_param_suggestions(
-        FakeTrial(use_none=True),
-        {"search_space": {"min_leaf": {"type": "int_or_none", "low": 2, "high": 7}}},
-    )
-
-    assert params == {"min_leaf": None}
-
-
-def test_method_param_suggestions_falls_back_to_default_params_when_search_space_is_empty() -> None:
-    params = tuning.method_param_suggestions(
-        FakeTrial(),
-        {"default_params": {"max_depth": 5, "seed": 17}},
-    )
-
-    assert params == {"max_depth": 5, "seed": 17}
-
-
-def test_method_param_suggestions_rejects_unknown_search_spec_types() -> None:
-    with pytest.raises(ValueError, match="Unsupported search spec type"):
-        tuning.method_param_suggestions(
-            FakeTrial(),
-            {"search_space": {"oops": {"type": "matrix", "low": 0, "high": 1}}},
-        )
-
-
-def test_tuning_helpers_strip_runtime_only_defaults_and_validate_direction() -> None:
+def test_selection_helpers_strip_runtime_only_defaults() -> None:
     assert tuning.resolve_runtime_method_params({"alpha": 0.1, "seed": 3}, seed=11) == {"alpha": 0.1, "seed": 11}
     assert tuning._searchable_default_params({"default_params": {"alpha": 0.1, "seed": 3}}) == {"alpha": 0.1}
-    assert tuning._metric_optimization_direction("harrell_c") == "maximize"
-    assert tuning._metric_optimization_direction("uno_c") == "maximize"
-    assert tuning._is_better_score(0.7, 0.6, direction="maximize") is True
-    assert tuning._is_better_score(0.3, 0.4, direction="minimize") is True
-    with pytest.raises(ValueError, match="Unsupported primary metric"):
-        tuning._metric_optimization_direction("ibs")
-    with pytest.raises(ValueError, match="Unsupported optimization direction"):
-        tuning._is_better_score(0.3, 0.4, direction="sideways")
 
 
 def test_metric_bundle_float_conversion_stays_finite_for_normal_values() -> None:

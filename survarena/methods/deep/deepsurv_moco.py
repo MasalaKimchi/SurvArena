@@ -165,7 +165,6 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
 
         max_epochs = int(self.params["max_epochs"])
         patience = int(self.params["patience"])
-        aux_w = float(np.clip(float(self.params["aux_loss_weight"]), 0.0, 1.0))
         use_momentum = bool(self.params["use_momentum_encoder"])
 
         best_online = deepcopy(self.model.online.state_dict())
@@ -177,11 +176,14 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             self.model.train()
             optimizer.zero_grad(set_to_none=True)
             online_log_hz = self.model.online(X_train_t).squeeze(-1)
-            online_loss = loss_fn(online_log_hz, e_train_t, t_train_t)
-            momentum_loss = self.model(X_train_t, e_train_t, t_train_t) if use_momentum else online_loss
-            train_loss = (1.0 - aux_w) * online_loss + aux_w * momentum_loss
+            train_loss = loss_fn(online_log_hz, e_train_t, t_train_t)
             train_loss.backward()
             optimizer.step()
+            if use_momentum:
+                rate = float(self.params["momentum"])
+                with torch.no_grad():
+                    for target_param, online_param in zip(self.model.target.parameters(), self.model.online.parameters()):
+                        target_param.data.mul_(rate).add_(online_param.data, alpha=1.0 - rate)
 
             with torch.no_grad():
                 if X_val_t is not None and t_val_t is not None and e_val_t is not None:

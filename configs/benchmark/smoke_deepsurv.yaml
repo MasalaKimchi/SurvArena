@@ -10,11 +10,6 @@ secondary_metrics:
   - harrell_c
   - ibs
   - td_auc
-tuning:
-  n_trials: 0
-  timeout_seconds: null
-  max_epochs: 60
-  patience: 10
 autogluon:
   enabled: false
   presets: medium

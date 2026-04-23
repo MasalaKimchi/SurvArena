@@ -1,4 +1,4 @@
-benchmark_id: standard_v1_autogluon_survival_autogluon
+benchmark_id: manuscript_autogluon_v1
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 5
@@ -6,7 +6,13 @@ outer_repeats: 3
 inner_folds: 3
 seeds: [11, 22, 33, 44, 55]
 primary_metric: uno_c
-secondary_metrics: [harrell_c, ibs, td_auc]
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+  - brier
+  - calibration
+  - net_benefit
 autogluon:
   enabled: true
   presets: best
@@ -19,5 +25,13 @@ autogluon:
   num_stack_levels: 1
   refit_full: true
 time_horizons_quantiles: [0.25, 0.5, 0.75]
-datasets: [support, metabric, aids, gbsg2, flchain, whas500]
-methods: [autogluon_survival]
+datasets:
+  - support
+  - metabric
+  - aids
+  - gbsg2
+  - flchain
+  - whas500
+methods:
+  - autogluon_survival
+notes: Manuscript-level AutoGluon event-risk adapter benchmark with AutoGluon-managed HPO, bagging, stacking, and refit.

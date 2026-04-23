@@ -42,8 +42,8 @@ def test_read_tabular_data_rejects_unknown_file_extensions(tmp_path: Path) -> No
 
 def test_read_yaml_loads_mapping_payload(tmp_path: Path) -> None:
     path = tmp_path / "config.yaml"
-    path.write_text("dataset_id: toy\nn_trials: 4\n", encoding="utf-8")
+    path.write_text("dataset_id: toy\nnum_trials: 4\n", encoding="utf-8")
 
     loaded = read_yaml(path)
 
-    assert loaded == {"dataset_id": "toy", "n_trials": 4}
+    assert loaded == {"dataset_id": "toy", "num_trials": 4}

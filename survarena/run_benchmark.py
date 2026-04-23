@@ -18,12 +18,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--dataset", type=str, default=None, help="Optional dataset override.")
     parser.add_argument("--method", type=str, default=None, help="Optional method override.")
     parser.add_argument("--limit-seeds", type=int, default=None, help="Use first N seeds only.")
-    parser.add_argument(
-        "--n-trials",
-        type=int,
-        default=None,
-        help="Deprecated compatibility alias for AutoGluon hyperparameter_tune_kwargs.num_trials.",
-    )
     parser.add_argument("--dry-run", action="store_true", help="Validate setup without fitting models.")
     return parser.parse_args()
 
@@ -46,7 +40,6 @@ def main() -> None:
         dataset_override=args.dataset,
         method_override=args.method,
         limit_seeds=args.limit_seeds,
-        n_trials_override=args.n_trials,
         dry_run=args.dry_run,
     )
 

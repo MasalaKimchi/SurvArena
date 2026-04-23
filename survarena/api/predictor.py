@@ -45,16 +45,6 @@ from survarena.utils.quiet import quiet_training_output
 
 _PREDICTOR_SERIALIZATION_VERSION = 1
 _SELECTION_TIME_BUDGET_RATIO = 0.8
-tune_hyperparameters = select_hyperparameters
-
-
-class _PredictorUnpickler(pickle.Unpickler):
-    def find_class(self, module: str, name: str) -> Any:
-        if module == "src":
-            module = "survarena"
-        elif module.startswith("src."):
-            module = f"survarena.{module.removeprefix('src.')}"
-        return super().find_class(module, name)
 
 
 def _configure_plotting_cache() -> None:
@@ -75,7 +65,7 @@ class PredictorModelResult:
     selection_score: float
     validation_metrics: dict[str, float]
     fit_time_sec: float
-    n_trials_completed: int
+    selection_evaluations: int
     params: dict[str, Any]
     training_backend: str = "native"
     hpo_backend: str = "none"
@@ -98,9 +88,8 @@ class SurvivalPredictor:
         *,
         label_time: str,
         label_event: str,
-        eval_metric: str = "harrell_c",
+        eval_metric: str = "uno_c",
         presets: str = "all",
-        num_trials: int | None = None,
         included_models: list[str] | None = None,
         excluded_models: list[str] | None = None,
         retain_top_k_models: int | None = 1,
@@ -113,7 +102,6 @@ class SurvivalPredictor:
         self.label_event = label_event
         self.eval_metric = eval_metric
         self.presets = presets
-        self.num_trials = num_trials
         self.included_models = included_models
         self.excluded_models = excluded_models
         self.retain_top_k_models = self._validate_retain_top_k_models(retain_top_k_models)
@@ -309,10 +297,6 @@ class SurvivalPredictor:
             method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml")
             for method_id in self.preset_config_.method_ids
         }
-        resolved_num_trials = self._resolve_n_trials(
-            fit_tune_kwargs=resolved_tuning_controls,
-            default_num_trials=self.preset_config_.n_trials,
-        )
         fit_level_tuning_timeout = self._resolve_tuning_timeout_seconds(resolved_tuning_controls)
 
         results: list[PredictorModelResult] = []
@@ -346,24 +330,22 @@ class SurvivalPredictor:
                         method_id=method_id,
                         plan=validation_plan,
                     )
-                tuning_result = tune_hyperparameters(
+                selection_result = select_hyperparameters(
                     method_id=method_id,
                     method_cfg=method_cfg,
                     fold_cache=fold_cache,
                     primary_metric=self.eval_metric,
-                    n_trials=resolved_num_trials,
                     seed=self.random_state,
-                    timeout_seconds=method_time_limit,
                     quiet=not self.verbose,
                     metric_bundle_callback=self._collect_fold_metric_bundle,
                 )
-                metric_rows = tuning_result.get("best_metric_rows")
+                metric_rows = selection_result.get("best_metric_rows")
                 validation_metrics = (
                     self._summarize_metric_rows(metric_rows)
                     if metric_rows
                     else self._fold_cache_metric_summary(
                         method_id=method_id,
-                        params=dict(tuning_result["best_params"]),
+                        params=dict(selection_result["best_params"]),
                         fold_cache=fold_cache,
                     )
                 )
@@ -373,13 +355,13 @@ class SurvivalPredictor:
                         selection_score=float(validation_metrics[f"validation_{self.eval_metric}"]),
                         validation_metrics=validation_metrics,
                         fit_time_sec=float(perf_counter() - started_at),
-                        n_trials_completed=int(tuning_result["n_trials_completed"]),
-                        params=dict(tuning_result["best_params"]),
+                        selection_evaluations=1,
+                        params=dict(selection_result["best_params"]),
                         training_backend=self._training_backend_for_method(method_id),
-                        hpo_backend=self._hpo_backend_for_method(method_id, dict(tuning_result["best_params"])),
-                        autogluon_presets=dict(tuning_result["best_params"]).get("presets"),
-                        bagging_folds=int(dict(tuning_result["best_params"]).get("num_bag_folds", 0) or 0),
-                        stack_levels=int(dict(tuning_result["best_params"]).get("num_stack_levels", 0) or 0),
+                        hpo_backend=self._hpo_backend_for_method(method_id, dict(selection_result["best_params"])),
+                        autogluon_presets=dict(selection_result["best_params"]).get("presets"),
+                        bagging_folds=int(dict(selection_result["best_params"]).get("num_bag_folds", 0) or 0),
+                        stack_levels=int(dict(selection_result["best_params"]).get("num_stack_levels", 0) or 0),
                         time_limit_sec=method_time_limit,
                     )
                 )
@@ -390,7 +372,7 @@ class SurvivalPredictor:
                         selection_score=float("nan"),
                         validation_metrics={},
                         fit_time_sec=float(perf_counter() - started_at),
-                        n_trials_completed=0,
+                        selection_evaluations=0,
                         params={},
                         training_backend=self._training_backend_for_method(method_id),
                         time_limit_sec=method_time_limit,
@@ -511,7 +493,7 @@ class SurvivalPredictor:
     def load(cls, path: str | Path) -> "SurvivalPredictor":
         path = Path(path)
         with path.open("rb") as handle:
-            predictor = _PredictorUnpickler(handle).load()
+            predictor = pickle.load(handle)
         if not isinstance(predictor, cls):
             raise TypeError(f"Serialized object at '{path}' is not a {cls.__name__}.")
         predictor._ensure_runtime_state_defaults()
@@ -639,7 +621,7 @@ class SurvivalPredictor:
                 "autogluon_path": result.autogluon_path,
                 "bagging_folds": result.bagging_folds,
                 "stack_levels": result.stack_levels,
-                "n_trials_completed": result.n_trials_completed,
+                "selection_evaluations": result.selection_evaluations,
                 "time_limit_sec": result.time_limit_sec,
                 "retained_for_inference": result.retained_for_inference,
                 "status": result.status,
@@ -721,7 +703,7 @@ class SurvivalPredictor:
     def _summarize_metric_rows(self, metric_rows: list[dict[str, float]]) -> dict[str, float]:
         bundle_frame = pd.DataFrame(metric_rows)
         metric_summary = {
-            f"validation_{name}": float(bundle_frame[name].mean())
+            f"validation_{name}": float(bundle_frame[name].mean()) if name in bundle_frame.columns else float("nan")
             for name in MetricBundle.__annotations__.keys()
         }
         metric_summary["validation_primary_metric"] = float(metric_summary[f"validation_{self.eval_metric}"])
@@ -962,25 +944,23 @@ class SurvivalPredictor:
         if not isinstance(hyperparameter_tune_kwargs, dict):
             raise TypeError("hyperparameter_tune_kwargs must be a dictionary when provided.")
 
-        supported_keys = {"n_trials", "num_trials", "timeout", "timeout_seconds"}
+        supported_keys = {"num_trials", "timeout", "timeout_seconds"}
         unexpected_keys = sorted(set(hyperparameter_tune_kwargs) - supported_keys)
         if unexpected_keys:
             raise ValueError(
                 "Unsupported hyperparameter_tune_kwargs keys: "
                 f"{unexpected_keys}. Supported keys: {sorted(supported_keys)}"
             )
-        if "n_trials" in hyperparameter_tune_kwargs and "num_trials" in hyperparameter_tune_kwargs:
-            raise ValueError("Specify only one of 'n_trials' or 'num_trials' in hyperparameter_tune_kwargs.")
         if "timeout" in hyperparameter_tune_kwargs and "timeout_seconds" in hyperparameter_tune_kwargs:
             raise ValueError("Specify only one of 'timeout' or 'timeout_seconds' in hyperparameter_tune_kwargs.")
 
         normalized: dict[str, Any] = {}
-        n_trials = hyperparameter_tune_kwargs.get("n_trials", hyperparameter_tune_kwargs.get("num_trials"))
-        if n_trials is not None:
-            resolved_n_trials = int(n_trials)
-            if resolved_n_trials < 0:
-                raise ValueError("hyperparameter_tune_kwargs n_trials must be >= 0.")
-            normalized["n_trials"] = resolved_n_trials
+        num_trials = hyperparameter_tune_kwargs.get("num_trials")
+        if num_trials is not None:
+            resolved_num_trials = int(num_trials)
+            if resolved_num_trials < 0:
+                raise ValueError("hyperparameter_tune_kwargs num_trials must be >= 0.")
+            normalized["num_trials"] = resolved_num_trials
 
         timeout_seconds = hyperparameter_tune_kwargs.get("timeout_seconds", hyperparameter_tune_kwargs.get("timeout"))
         if timeout_seconds is not None:
@@ -990,13 +970,6 @@ class SurvivalPredictor:
             normalized["timeout_seconds"] = resolved_timeout
 
         return normalized
-
-    def _resolve_n_trials(self, *, fit_tune_kwargs: dict[str, Any] | None, default_num_trials: int) -> int:
-        if fit_tune_kwargs is not None and "n_trials" in fit_tune_kwargs:
-            return int(fit_tune_kwargs["n_trials"])
-        if self.num_trials is not None:
-            return int(self.num_trials)
-        return int(default_num_trials)
 
     def _resolve_tuning_timeout_seconds(self, fit_tune_kwargs: dict[str, Any] | None) -> float | None:
         if fit_tune_kwargs is None:
@@ -1044,7 +1017,7 @@ class SurvivalPredictor:
                     selection_score=float("nan"),
                     validation_metrics={},
                     fit_time_sec=0.0,
-                    n_trials_completed=0,
+                    selection_evaluations=0,
                     params={},
                     training_backend=self._training_backend_for_method(method_id),
                     time_limit_sec=0.0,
@@ -1096,8 +1069,8 @@ class SurvivalPredictor:
         defaults = dict(method_cfg.get("default_params", {}))
         if time_limit is not None:
             defaults["time_limit"] = float(time_limit)
-        if tune_kwargs and tune_kwargs.get("n_trials", 0) > 0:
-            defaults["hyperparameter_tune_kwargs"] = {"num_trials": int(tune_kwargs["n_trials"])}
+        if tune_kwargs and tune_kwargs.get("num_trials", 0) > 0:
+            defaults["hyperparameter_tune_kwargs"] = {"num_trials": int(tune_kwargs["num_trials"])}
         defaults["num_bag_folds"] = self.num_bag_folds_
         defaults["num_stack_levels"] = 1 if self.num_bag_folds_ >= 2 else 0
         defaults["refit_full"] = self.refit_full_
@@ -1201,7 +1174,6 @@ class SurvivalPredictor:
                 "label_event": self.label_event,
                 "eval_metric": self.eval_metric,
                 "presets": self.presets,
-                "num_trials": self.num_trials,
                 "retain_top_k_models": self.retain_top_k_models,
                 "random_state": self.random_state,
                 "verbose": self.verbose,

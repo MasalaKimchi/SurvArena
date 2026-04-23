@@ -51,7 +51,7 @@ predictor = SurvivalPredictor(
     label_time="time",
     label_event="event",
     presets="medium",
-    eval_metric="harrell_c",
+    eval_metric="uno_c",
     retain_top_k_models=2,
 )
 
@@ -89,7 +89,7 @@ survarena fit \
   --presets medium \
   --retain-top-k-models 2 \
   --time-limit 1800 \
-  --num-trials 12 \
+  --autogluon-num-trials 12 \
   --tuning-timeout 120 \
   --num-bag-folds 5 \
   --dataset-name my_dataset
@@ -125,7 +125,6 @@ summary = compare_survival_models(
     models=["coxph", "rsf", "deepsurv"],
     split_strategy="fixed_split",
     seeds=[11],
-    n_trials=0,
 )
 ```
 
@@ -165,13 +164,11 @@ python -m survarena.run_benchmark \
   --benchmark-config configs/benchmark/standard_v1.yaml \
   --dataset support \
   --method coxph \
-  --limit-seeds 1 \
-  --n-trials 2
+  --limit-seeds 1
 ```
 
-`--n-trials` is retained as a compatibility alias for AutoGluon
-`hyperparameter_tune_kwargs.num_trials`. New benchmark configs should prefer an
-`autogluon:` block. See [`docs/autogluon_backend.md`](docs/autogluon_backend.md).
+AutoGluon HPO is configured explicitly with an `autogluon:` block. See
+[`docs/autogluon_backend.md`](docs/autogluon_backend.md).
 
 ## Artifacts
 

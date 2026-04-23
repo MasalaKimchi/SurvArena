@@ -2,16 +2,11 @@ benchmark_id: large_v1
 task_type: right_censored_survival
 split_strategy: fixed_split
 seeds: [11, 22, 33, 44, 55]
-primary_metric: harrell_c
+primary_metric: uno_c
 secondary_metrics:
   - harrell_c
   - ibs
   - td_auc
-tuning:
-  n_trials: 0
-  timeout_seconds: null
-  max_epochs: 200
-  patience: 20
 autogluon:
   enabled: false
   presets: medium

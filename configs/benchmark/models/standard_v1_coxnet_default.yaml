@@ -5,11 +5,8 @@ outer_folds: 5
 outer_repeats: 3
 inner_folds: 3
 seeds: [11, 22, 33, 44, 55]
-primary_metric: harrell_c
+primary_metric: uno_c
 secondary_metrics: [harrell_c, ibs, td_auc]
-tuning:
-  n_trials: 0
-  timeout_seconds: null
 autogluon:
   enabled: false
 time_horizons_quantiles: [0.25, 0.5, 0.75]

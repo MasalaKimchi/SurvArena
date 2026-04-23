@@ -81,7 +81,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -104,12 +104,11 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
             }
         ]
 
-    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
         bias = 1.0 if method_id == "mock_a" else 2.0
         return {
             "best_params": {"bias": bias},
             "best_score": bias,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": bias,
@@ -136,7 +135,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
@@ -182,7 +181,7 @@ def test_predictor_retains_only_the_best_model_by_default(tmp_path: Path, monkey
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -199,12 +198,11 @@ def test_predictor_retains_only_the_best_model_by_default(tmp_path: Path, monkey
             }
         ]
 
-    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
         bias = 1.0 if method_id == "mock_a" else 2.0
         return {
             "best_params": {"bias": bias},
             "best_score": bias,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": bias,
@@ -220,7 +218,7 @@ def test_predictor_retains_only_the_best_model_by_default(tmp_path: Path, monkey
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
@@ -253,7 +251,7 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=1, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -270,11 +268,10 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
             }
         ]
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 1,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -290,7 +287,7 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
     monkeypatch.setattr(
         SurvivalPredictor,
@@ -323,17 +320,16 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
     fold_sizes: list[tuple[int, int]] = []
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.5)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.5)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
 
-    def fake_tune_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
         fold_sizes.append((int(fold_cache[0]["X_train"].shape[0]), int(fold_cache[0]["X_val"].shape[0])))
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -348,7 +344,7 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
@@ -379,17 +375,16 @@ def test_predictor_uses_bagged_oof_selection_when_num_bag_folds_enabled(tmp_path
     fold_shapes: list[list[tuple[int, int]]] = []
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
 
-    def fake_tune_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, fold_cache: list[dict[str, np.ndarray]], **kwargs) -> dict[str, object]:
         fold_shapes.append([(int(fold["X_train"].shape[0]), int(fold["X_val"].shape[0])) for fold in fold_cache])
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -405,7 +400,7 @@ def test_predictor_uses_bagged_oof_selection_when_num_bag_folds_enabled(tmp_path
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
@@ -458,16 +453,15 @@ def test_predictor_bagged_models_average_fold_members_for_inference(tmp_path: Pa
             return np.full((X.shape[0], len(times)), float(self.member_id))
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -482,7 +476,7 @@ def test_predictor_bagged_models_average_fold_members_for_inference(tmp_path: Pa
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": AveragingMockMethod}[method_id])
     monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
 
@@ -513,16 +507,15 @@ def test_predictor_bagged_model_round_trips(tmp_path: Path, monkeypatch) -> None
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {"bias": 1.0}}
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -537,7 +530,7 @@ def test_predictor_bagged_model_round_trips(tmp_path: Path, monkeypatch) -> None
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
@@ -565,7 +558,7 @@ def test_predictor_num_bag_sets_requires_bagged_folds(tmp_path: Path, monkeypatc
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
 
@@ -613,7 +606,7 @@ def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path
             return self
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -630,11 +623,10 @@ def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path
             }
         ]
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -650,7 +642,7 @@ def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": RecordingMockMethod}[method_id],
@@ -704,7 +696,7 @@ def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_trai
             return self
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -721,11 +713,10 @@ def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_trai
             }
         ]
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -741,7 +732,7 @@ def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_trai
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": RecordingMockMethod}[method_id],
@@ -762,7 +753,7 @@ def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_trai
     assert summary["final_train_rows"] == 4
 
 
-def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Path, monkeypatch) -> None:
+def test_predictor_fit_level_autogluon_kwargs_are_normalized(tmp_path: Path, monkeypatch) -> None:
     frame = pd.DataFrame(
         {
             "time": [1.0, 2.0, 3.0, 4.0],
@@ -771,10 +762,10 @@ def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Pa
             "stage": ["i", "ii", "ii", "iii"],
         }
     )
-    recorded_calls: list[tuple[int, float | None]] = []
+    recorded_timeout: list[float | None] = []
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a",), n_trials=2, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a",), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -791,12 +782,11 @@ def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Pa
             }
         ]
 
-    def fake_tune_hyperparameters(*, n_trials: int, timeout_seconds: float | None, **kwargs) -> dict[str, object]:
-        recorded_calls.append((n_trials, timeout_seconds))
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
+        recorded_timeout.append(kwargs.get("method_cfg", {}).get("default_params", {}).get("time_limit"))
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": n_trials,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -812,14 +802,13 @@ def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Pa
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
 
     predictor = SurvivalPredictor(
         label_time="time",
         label_event="event",
         presets="medium",
-        num_trials=1,
         save_path=tmp_path,
     )
     predictor.fit(
@@ -830,8 +819,8 @@ def test_predictor_fit_level_hpo_kwargs_override_predictor_defaults(tmp_path: Pa
     )
 
     summary = predictor.fit_summary()
-    assert recorded_calls == [(5, 12.0)]
-    assert summary["hyperparameter_tune_kwargs"] == {"n_trials": 5, "timeout_seconds": 12.0}
+    assert recorded_timeout == [None]
+    assert summary["hyperparameter_tune_kwargs"] == {"num_trials": 5, "timeout_seconds": 12.0}
 
 
 def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path: Path, monkeypatch) -> None:
@@ -844,10 +833,10 @@ def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path
         }
     )
     assigned_budgets = iter([1.5, 0.0])
-    timeout_calls: list[tuple[str, float | None]] = []
+    selection_calls: list[str] = []
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -864,12 +853,11 @@ def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path
             }
         ]
 
-    def fake_tune_hyperparameters(*, method_id: str, timeout_seconds: float | None, **kwargs) -> dict[str, object]:
-        timeout_calls.append((method_id, timeout_seconds))
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+        selection_calls.append(method_id)
         return {
             "best_params": {"bias": 1.0},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.7,
@@ -888,7 +876,7 @@ def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
@@ -907,7 +895,7 @@ def test_predictor_time_limit_skips_candidates_when_budget_is_exhausted(tmp_path
     assert summary["time_limit_sec"] == 3.0
     assert summary["selection_time_budget_sec"] == pytest.approx(2.4)
     assert summary["trained_models"] == ["mock_a"]
-    assert timeout_calls == [("mock_a", 1.5)]
+    assert selection_calls == ["mock_a"]
 
     leaderboard = predictor.leaderboard().set_index("method_id")
     assert bool(leaderboard.loc["mock_a", "retained_for_inference"]) is True
@@ -927,7 +915,7 @@ def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Pat
     assigned_budgets = iter([1.0, 1.0])
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -944,12 +932,11 @@ def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Pat
             }
         ]
 
-    def fake_tune_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
         bias = 1.0 if method_id == "mock_a" else 2.0
         return {
             "best_params": {"bias": bias},
             "best_score": bias,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": bias,
@@ -968,7 +955,7 @@ def test_predictor_time_limit_prioritizes_refitting_the_best_model(tmp_path: Pat
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr(
         "survarena.api.predictor._get_method_class",
         lambda method_id: {"mock_a": MockSurvivalMethod, "mock_b": MockSurvivalMethod}[method_id],
@@ -1008,7 +995,7 @@ def test_predictor_preserves_native_categorical_frames_for_catboost_method(
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=(method_id,), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=(method_id,), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
@@ -1025,11 +1012,10 @@ def test_predictor_preserves_native_categorical_frames_for_catboost_method(
             }
         ]
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.8,
@@ -1045,7 +1031,7 @@ def test_predictor_preserves_native_categorical_frames_for_catboost_method(
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: MockFrameAwareMethod)
 
     predictor = SurvivalPredictor(
@@ -1085,16 +1071,15 @@ def test_bagged_predictor_preserves_native_categorical_frames_for_catboost_metho
     )
 
     def fake_resolve_preset(*args, **kwargs) -> PresetConfig:
-        return PresetConfig(name="test", method_ids=(method_id,), n_trials=0, holdout_frac=0.25)
+        return PresetConfig(name="test", method_ids=(method_id,), holdout_frac=0.25)
 
     def fake_read_yaml(path: Path) -> dict[str, object]:
         return {"default_params": {}}
 
-    def fake_tune_hyperparameters(**kwargs) -> dict[str, object]:
+    def fake_select_hyperparameters(**kwargs) -> dict[str, object]:
         return {
             "best_params": {},
             "best_score": 0.8,
-            "n_trials_completed": 0,
             "best_metric_rows": [
                 {
                     "uno_c": 0.8,
@@ -1109,7 +1094,7 @@ def test_bagged_predictor_preserves_native_categorical_frames_for_catboost_metho
 
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
-    monkeypatch.setattr("survarena.api.predictor.tune_hyperparameters", fake_tune_hyperparameters)
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
     monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: MockFrameAwareMethod)
 
     predictor = SurvivalPredictor(
