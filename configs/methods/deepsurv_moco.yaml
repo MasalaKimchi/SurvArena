@@ -1,7 +1,7 @@
 method_id: deepsurv_moco
 family: deep
 library: torchsurv
-notes: Optional phase-2 DeepSurv momentum-loss variant using torchsurv.loss.momentum.Momentum.
+notes: DeepSurv momentum-loss variant using torchsurv.loss.momentum.Momentum.
 search_space:
   hidden_layers:
     type: categorical
@@ -54,10 +54,6 @@ search_space:
     type: float
     low: 0.5
     high: 2.0
-  aux_loss_weight:
-    type: float
-    low: 0.1
-    high: 0.9
 default_params:
   hidden_layers: "128-64"
   activation: relu
@@ -73,6 +69,5 @@ default_params:
   momentum: 0.999
   queue_size: 512
   temperature: 1.0
-  aux_loss_weight: 0.5
   seed: 0
   device: auto

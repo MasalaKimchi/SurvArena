@@ -14,7 +14,7 @@ from survarena.methods.deep.deepsurv import _activation_cls, _parse_hidden_layer
 
 
 class DeepSurvMomentumMethod(BaseSurvivalMethod):
-    """Optional phase-2 method using torchsurv Momentum with Cox loss."""
+    """DeepSurv variant using torchsurv Momentum with Cox loss."""
 
     def __init__(
         self,
@@ -34,7 +34,6 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         momentum: float = 0.999,
         queue_size: int = 512,
         temperature: float = 1.0,
-        aux_loss_weight: float = 0.5,
     ) -> None:
         super().__init__(
             hidden_layers=hidden_layers,
@@ -53,7 +52,6 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             momentum=momentum,
             queue_size=queue_size,
             temperature=temperature,
-            aux_loss_weight=aux_loss_weight,
         )
         self.model: Momentum | None = None
         self.device: torch.device | None = None
@@ -100,6 +98,11 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             return neg_partial_log_likelihood(log_hz / scale, event, time)
 
         return _scaled_loss
+
+    def _inference_model(self) -> nn.Module:
+        if self.model is None:
+            raise RuntimeError("DeepSurvMomentumMethod must be fit before prediction.")
+        return self.model.target if bool(self.params["use_momentum_encoder"]) else self.model.online
 
     @staticmethod
     def _fit_baseline_survival(time_train: np.ndarray, event_train: np.ndarray, train_log_risk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -184,11 +187,13 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
                 with torch.no_grad():
                     for target_param, online_param in zip(self.model.target.parameters(), self.model.online.parameters()):
                         target_param.data.mul_(rate).add_(online_param.data, alpha=1.0 - rate)
+            else:
+                self.model.target.load_state_dict(self.model.online.state_dict())
 
             with torch.no_grad():
                 if X_val_t is not None and t_val_t is not None and e_val_t is not None:
                     self.model.eval()
-                    val_log_hz = self.model.target(X_val_t).squeeze(-1)
+                    val_log_hz = self._inference_model()(X_val_t).squeeze(-1)
                     monitor = float(loss_fn(val_log_hz, e_val_t, t_val_t).item())
                 else:
                     monitor = float(train_loss.item())
@@ -207,7 +212,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         self.model.target.load_state_dict(best_target)
         self.model.eval()
         with torch.no_grad():
-            train_log_hz = self.model.target(X_train_t).squeeze(-1).detach().cpu().numpy()
+            train_log_hz = self._inference_model()(X_train_t).squeeze(-1).detach().cpu().numpy()
         self.baseline_event_times_, self.baseline_survival_ = self._fit_baseline_survival(
             time_train=np.asarray(time_train, dtype=np.float64),
             event_train=np.asarray(event_train, dtype=np.int32),
@@ -221,7 +226,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         X_t = torch.as_tensor(X, dtype=torch.float32, device=self.device)
         self.model.eval()
         with torch.no_grad():
-            risk = self.model.target(X_t).squeeze(-1).detach().cpu().numpy()
+            risk = self._inference_model()(X_t).squeeze(-1).detach().cpu().numpy()
         return risk.astype(np.float64)
 
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
