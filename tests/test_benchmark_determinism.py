@@ -53,5 +53,5 @@ def test_profile_contract_error_messages_are_actionable() -> None:
     cfg = _base_cfg("smoke")
     del cfg["split_strategy"]
     del cfg["seeds"]
-    with pytest.raises(ValueError, match="split_strategy, seeds"):
+    with pytest.raises(ValueError, match="seeds, split_strategy"):
         validate_benchmark_profile_contract(cfg)

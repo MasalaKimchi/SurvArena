@@ -11,6 +11,74 @@ from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, registered_method_ids
 
 
+_CANONICAL_PROFILES = ("smoke", "standard", "manuscript")
+_PROFILE_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
+    "smoke": ("outer_repeats",),
+    "standard": ("outer_folds", "outer_repeats"),
+    "manuscript": ("outer_folds", "outer_repeats"),
+}
+
+
+def _require_int(cfg: dict[str, Any], key: str) -> int:
+    value = cfg.get(key)
+    if value is None:
+        raise ValueError(f"Missing required deterministic fields: {key}")
+    try:
+        return int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"Deterministic field '{key}' must be an integer. Received: {value!r}") from exc
+
+
+def validate_benchmark_profile_contract(benchmark_cfg: dict[str, Any]) -> None:
+    profile = str(benchmark_cfg.get("profile", "")).lower()
+    if profile not in _CANONICAL_PROFILES:
+        raise ValueError(
+            f"Invalid profile '{profile}'. "
+            f"Allowed profiles: {', '.join(_CANONICAL_PROFILES)}."
+        )
+
+    required_keys = {"split_strategy", "seeds", *(_PROFILE_REQUIRED_KEYS.get(profile, ()))}
+    missing = sorted(key for key in required_keys if key not in benchmark_cfg)
+    if missing:
+        raise ValueError(
+            "Missing required deterministic fields: "
+            + ", ".join(missing)
+            + "."
+        )
+
+    split_strategy = str(benchmark_cfg.get("split_strategy"))
+    if split_strategy != "repeated_nested_cv":
+        raise ValueError(
+            f"Profile '{profile}' requires split_strategy='repeated_nested_cv'. "
+            f"Received: '{split_strategy}'."
+        )
+
+    seeds = benchmark_cfg.get("seeds")
+    if not isinstance(seeds, list) or not seeds or not all(isinstance(seed, int) for seed in seeds):
+        raise ValueError(
+            "Deterministic field 'seeds' must be a non-empty list of integers."
+        )
+
+    outer_repeats = _require_int(benchmark_cfg, "outer_repeats")
+    if profile == "smoke" and outer_repeats != 1:
+        raise ValueError(
+            f"Profile '{profile}' requires outer_repeats=1. Received: {outer_repeats}."
+        )
+
+    if profile in {"standard", "manuscript"}:
+        outer_folds = _require_int(benchmark_cfg, "outer_folds")
+        if outer_folds < 3:
+            raise ValueError(
+                f"Profile '{profile}' requires outer_folds>=3 for deterministic comparability. "
+                f"Received: {outer_folds}."
+            )
+        if outer_repeats < 3:
+            raise ValueError(
+                f"Profile '{profile}' requires outer_repeats>=3 for deterministic comparability. "
+                f"Received: {outer_repeats}."
+            )
+
+
 def evaluate_split(
     *,
     benchmark_id: str,
@@ -25,8 +93,10 @@ def evaluate_split(
     timeout_seconds: float | None,
     primary_metric: str,
     horizons_quantiles: tuple[float, float, float],
+    decision_thresholds: tuple[float, ...],
     benchmark_cfg_hash: str,
     autogluon_cfg: dict[str, Any] | None = None,
+    hpo_cfg: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -79,10 +149,13 @@ def evaluate_split(
                 fold_cache=fold_cache,
                 primary_metric=primary_metric,
                 seed=split.seed,
+                hpo_config=hpo_cfg,
             )
         tuning_sec = tune_timer.elapsed
         best_params = dict(selection_result["best_params"])
         validation_score = float(selection_result["best_score"])
+        hpo_metadata = dict(selection_result.get("hpo_metadata", {}))
+        hpo_trials = list(selection_result.get("hpo_trials", []))
 
         pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
         X_train_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
@@ -113,13 +186,16 @@ def evaluate_split(
             survival_probs=surv_probs,
             survival_times=eval_times,
             horizons=horizons,
+            decision_thresholds=decision_thresholds,
         ).to_dict()
 
         peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
         autogluon_metadata = _autogluon_metadata(model)
         training_backend = "autogluon" if method_id == "autogluon_survival" else "native"
-        hpo_backend = "autogluon" if method_id == "autogluon_survival" and best_params.get("hyperparameter_tune_kwargs") else "none"
+        hpo_backend = str(hpo_metadata.get("backend", "none"))
+        if method_id == "autogluon_survival" and best_params.get("hyperparameter_tune_kwargs"):
+            hpo_backend = "autogluon"
 
         manifest = RunManifest(
             run_id=run_id,
@@ -164,10 +240,14 @@ def evaluate_split(
                 "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
+                "hpo_status": hpo_metadata.get("status", "disabled"),
+                "hpo_trial_count": hpo_metadata.get("trial_count", 0),
             },
             "backend_metadata": {
                 "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
             },
+            "hpo_metadata": hpo_metadata,
+            "hpo_trials": hpo_trials,
             "failure": None,
         }
         return {
@@ -193,6 +273,8 @@ def evaluate_split(
             "autogluon_path": autogluon_metadata.get("autogluon_path"),
             "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
             "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
+            "hpo_status": hpo_metadata.get("status", "disabled"),
+            "hpo_trial_count": hpo_metadata.get("trial_count", 0),
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
@@ -264,6 +346,8 @@ def evaluate_split(
             "autogluon_path": None,
             "bagging_folds": 0,
             "stack_levels": 0,
+            "hpo_status": "failed",
+            "hpo_trial_count": 0,
             "status": "failed",
         }
 
@@ -306,15 +390,20 @@ def run_benchmark(
     method_override: str | None = None,
     limit_seeds: int | None = None,
     dry_run: bool = False,
+    output_dir: Path | None = None,
+    resume: bool = False,
+    max_retries: int = 0,
 ) -> None:
     import numpy as np
 
     from survarena.data.loaders import load_dataset
+    from survarena.data.robustness import apply_label_noise, apply_robustness_track, resolve_robustness_tracks
     from survarena.data.splitters import load_or_create_splits
     from survarena.logging.export import (
         create_experiment_dir,
         export_dataset_curation_table,
         export_fold_results,
+        export_hpo_trials,
         export_leaderboard,
         export_manuscript_comparison,
         export_overall_summary,
@@ -323,8 +412,11 @@ def run_benchmark(
     )
     from survarena.logging.tracker import payload_sha256, write_json
 
+    validate_benchmark_profile_contract(benchmark_cfg)
+
     benchmark_id = benchmark_cfg["benchmark_id"]
     primary_metric = str(benchmark_cfg.get("primary_metric", "harrell_c"))
+    profile = str(benchmark_cfg.get("profile", "custom")).lower()
     datasets = [dataset_override] if dataset_override else list(benchmark_cfg["datasets"])
     methods = [method_override] if method_override else list(benchmark_cfg["methods"])
 
@@ -348,41 +440,84 @@ def run_benchmark(
     else:
         outer_repeats = requested_outer_repeats
 
+    if profile in {"standard", "manuscript"} and (len(seeds) < 3 or int(benchmark_cfg.get("outer_folds", 5)) < 3):
+        print(
+            f"[warning] profile='{profile}' is typically underpowered with seeds={len(seeds)} "
+            f"and outer_folds={int(benchmark_cfg.get('outer_folds', 5))}."
+        )
+
     autogluon_cfg = dict(benchmark_cfg.get("autogluon", {}))
     timeout_seconds = autogluon_cfg.get("time_limit_seconds")
     timeout_seconds = None if timeout_seconds is None else float(timeout_seconds)
+    hpo_cfg = dict(benchmark_cfg.get("hpo", {}))
+    hpo_cfg.setdefault("enabled", False)
+    hpo_cfg.setdefault("max_trials", 20)
+    hpo_cfg.setdefault("timeout_seconds", None)
+    hpo_cfg.setdefault("sampler", "tpe")
+    hpo_cfg.setdefault("pruner", "median")
+    hpo_cfg.setdefault("n_startup_trials", 8)
+    decision_thresholds = tuple(
+        float(x) for x in benchmark_cfg.get("decision_curve", {}).get("thresholds", [0.2])
+    )
 
     if dry_run:
         print("Dry run complete.")
         print(f"benchmark_id={benchmark_id}")
+        print(f"profile={profile}")
         print(f"datasets={datasets}")
         print(f"methods={methods}")
         print(f"seeds={seeds}")
         print(f"outer_repeats={outer_repeats}")
         print(f"timeout_seconds={timeout_seconds}")
         print(f"autogluon={autogluon_cfg}")
+        print(f"hpo={hpo_cfg}")
+        print(f"decision_thresholds={list(decision_thresholds)}")
         print(f"primary_metric={primary_metric}")
         return
 
     registered_methods = set(registered_method_ids())
     all_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
+    hpo_trial_rows: list[dict[str, Any]] = []
     dataset_curation_rows: list[dict[str, Any]] = []
     method_cfg_cache = {method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods}
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
-    experiment_dir = create_experiment_dir(repo_root)
+    experiment_dir = output_dir if output_dir is not None else create_experiment_dir(repo_root)
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    completed_keys: set[tuple[str, str, str, int]] = set()
+    if resume:
+        existing_fold_results = experiment_dir / f"{benchmark_id}_fold_results.csv"
+        if existing_fold_results.exists():
+            import pandas as pd
+
+            existing = pd.read_csv(existing_fold_results)
+            for row in existing.to_dict(orient="records"):
+                if row.get("status") == "success":
+                    completed_keys.add(
+                        (
+                            str(row.get("dataset_id")),
+                            str(row.get("method_id")),
+                            str(row.get("split_id")),
+                            int(row.get("seed", 0)),
+                        )
+                    )
     write_json(
         experiment_dir / "experiment_manifest.json",
         {
             "benchmark_id": benchmark_id,
+            "profile": profile,
             "datasets": datasets,
             "methods": methods,
             "seeds": seeds,
             "timeout_seconds": timeout_seconds,
             "autogluon": autogluon_cfg,
+            "hpo": hpo_cfg,
+            "decision_curve_thresholds": list(decision_thresholds),
             "primary_metric": primary_metric,
             "benchmark_config_hash": benchmark_cfg_hash,
             "output_dir": str(experiment_dir),
+            "resume": bool(resume),
+            "max_retries": int(max_retries),
         },
     )
 
@@ -417,33 +552,87 @@ def run_benchmark(
         filtered_splits = [split for split in splits if split.seed in seeds]
         horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
 
+        robustness_tracks = resolve_robustness_tracks(
+            benchmark_cfg.get("robustness", {}),
+            dataset_id=dataset_id,
+            feature_columns=list(dataset.X.columns),
+            seed_pool=seeds,
+        )
         for method_id in methods:
             if method_id not in registered_methods:
                 raise ValueError(f"Unknown method_id '{method_id}'. Registered: {sorted(registered_methods)}")
             method_cfg = method_cfg_cache[method_id]
             for split in filtered_splits:
-                record = evaluate_split(
-                    benchmark_id=benchmark_id,
-                    dataset_id=dataset_id,
-                    method_id=method_id,
-                    split=split,
-                    X=dataset.X,
-                    time=dataset.time,
-                    event=dataset.event,
-                    method_cfg=method_cfg,
-                    inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
-                    timeout_seconds=timeout_seconds,
-                    primary_metric=primary_metric,
-                    horizons_quantiles=horizons_q,  # type: ignore[arg-type]
-                    benchmark_cfg_hash=benchmark_cfg_hash,
-                    autogluon_cfg=autogluon_cfg,
-                )
-                run_records.append(record.pop("run_payload"))
-                all_records.append(record)
-                print(
-                    f"[{record['status']}] {dataset_id}/{method_id}/{split.split_id}/seed{split.seed} "
-                    f"{primary_metric}={record.get(primary_metric)}"
-                )
+                for track in robustness_tracks:
+                    track_dataset_id = f"{dataset_id}__{track.track_id}"
+                    track_split_id = f"{split.split_id}__{track.track_id}"
+                    key = (track_dataset_id, method_id, track_split_id, int(split.seed))
+                    if key in completed_keys:
+                        continue
+                    X_track = apply_robustness_track(
+                        dataset.X,
+                        track=track,
+                        split=split,
+                        seed=split.seed,
+                    )
+                    event_track = apply_label_noise(
+                        dataset.event,
+                        track=track,
+                        split=split,
+                        seed=split.seed,
+                    )
+                    attempt = 0
+                    while True:
+                        record = evaluate_split(
+                            benchmark_id=benchmark_id,
+                            dataset_id=track_dataset_id,
+                            method_id=method_id,
+                            split=split,
+                            X=X_track,
+                            time=dataset.time,
+                            event=event_track,
+                            method_cfg=method_cfg,
+                            inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
+                            timeout_seconds=timeout_seconds,
+                            primary_metric=primary_metric,
+                            horizons_quantiles=horizons_q,  # type: ignore[arg-type]
+                            decision_thresholds=decision_thresholds,
+                            benchmark_cfg_hash=benchmark_cfg_hash,
+                            autogluon_cfg=autogluon_cfg,
+                            hpo_cfg=hpo_cfg,
+                        )
+                        run_payload = record.pop("run_payload")
+                        run_payload["manifest"]["split_id"] = track_split_id
+                        run_payload["metrics"]["split_id"] = track_split_id
+                        run_payload["metrics"]["robustness_track_id"] = track.track_id
+                        run_payload["metrics"]["retry_attempt"] = int(attempt)
+                        hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
+                        for trial in list(run_payload.get("hpo_trials", [])):
+                            hpo_trial_rows.append(
+                                {
+                                    "benchmark_id": benchmark_id,
+                                    "dataset_id": track_dataset_id,
+                                    "method_id": method_id,
+                                    "split_id": track_split_id,
+                                    "seed": int(split.seed),
+                                    "track_id": track.track_id,
+                                    "hpo_status": hpo_metadata.get("status", "disabled"),
+                                    **trial,
+                                }
+                            )
+                        run_records.append(run_payload)
+                        record["dataset_id"] = track_dataset_id
+                        record["split_id"] = track_split_id
+                        record["robustness_track_id"] = track.track_id
+                        record["retry_attempt"] = int(attempt)
+                        all_records.append(record)
+                        if record["status"] == "success" or attempt >= max_retries:
+                            print(
+                                f"[{record['status']}] {track_dataset_id}/{method_id}/{track_split_id}/seed{split.seed} "
+                                f"{primary_metric}={record.get(primary_metric)}"
+                            )
+                            break
+                        attempt += 1
 
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
     seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
@@ -465,4 +654,5 @@ def run_benchmark(
     )
     export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
     export_run_ledger(repo_root, run_records, benchmark_id=benchmark_id, output_dir=experiment_dir)
+    export_hpo_trials(repo_root, hpo_trial_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
     print(f"Benchmark run complete. Outputs saved to: {experiment_dir}")
