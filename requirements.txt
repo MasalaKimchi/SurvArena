@@ -1,2 +1,26 @@
-# Default contributor install: core package plus developer tooling.
--e .[dev]
+# SurvArena contributor environment
+#
+# Python:
+#   - preferred: CPython 3.11
+#   - supported by scripts/setup_env.sh: CPython 3.10, 3.11, and 3.12
+#   - package metadata: requires-python >=3.10
+#
+# Install from the project metadata in pyproject.toml so the pinned runtime
+# dependencies and optional extras stay defined in one place.
+#
+# Recommended:
+#   python3.11 -m venv .venv
+#   source .venv/bin/activate
+#   python -m pip install --upgrade pip
+#   python -m pip install -r requirements.txt
+#
+# Equivalent scripted setup:
+#   PYTHON_BIN=python3.11 ./scripts/setup_env.sh
+#
+# Optional extras can be installed directly when needed:
+#   python -m pip install -e ".[foundation]"
+#   python -m pip install -e ".[foundation-tabpfn]"
+#   python -m pip install -e ".[foundation-mitra]"
+#   python -m pip install -e ".[tracking]"
+
+-e ".[dev]"
