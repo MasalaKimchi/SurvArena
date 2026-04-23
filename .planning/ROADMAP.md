@@ -26,7 +26,10 @@ This roadmap delivers a practitioner-trustworthy survival benchmark by sequencin
   1. User can run `smoke`, `standard`, and `manuscript` profiles with deterministic split governance.
   2. User can resume an interrupted collection and preserve already completed model/dataset results.
   3. User can inspect structured failure records for failed runs without discarding successful outputs.
-**Plans**: TBD
+**Plans**: 2 plans
+Plans:
+- [x] 01-01-PLAN.md — Enforce deterministic profile-tier and split manifest governance.
+- [x] 01-02-PLAN.md — Implement strict resume eligibility and failure-preserving retries.
 
 ### Phase 2: Fair Dual-Mode HPO Governance
 **Goal**: Users can compare no-HPO and HPO results fairly because every model follows one explicit budget policy.
@@ -36,7 +39,11 @@ This roadmap delivers a practitioner-trustworthy survival benchmark by sequencin
   1. User can run every selected model in both no-HPO and HPO modes within the same benchmark profile.
   2. User can inspect requested versus realized HPO budget usage per model run.
   3. User can trust that a single uniform budget policy is enforced across all model runs in the collection.
-**Plans**: TBD
+**Plans**: 3 plans
+Plans:
+- [ ] 02-01-PLAN.md — Define dual-mode parity and budget-governance test contracts.
+- [ ] 02-02-PLAN.md — Implement deterministic dual-mode runner and uniform budget telemetry.
+- [ ] 02-03-PLAN.md — Enforce parity-gated comparative exports and canonical governance reporting.
 
 ### Phase 3: Statistical Inference Pipeline
 **Goal**: Users can make statistically valid comparative claims with corrected pairwise outputs and uncertainty context.
