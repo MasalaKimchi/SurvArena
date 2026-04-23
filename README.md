@@ -262,6 +262,8 @@ Tracked benchmark configs:
 - `configs/benchmark/standard_v1.yaml`: repeated nested CV on `support`,
   `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`
 - `configs/benchmark/large_v1.yaml`: fixed-split placeholder for `kkbox`
+- `configs/benchmark/cloud_comprehensive_all_models_hpo.yaml`: cloud-scale
+  all-datasets/all-models run with explicit AutoGluon HPO controls
 - `configs/benchmark/models/`: one-method benchmark configs, including
   AutoGluon-backed default and tuned variants
 
@@ -273,6 +275,14 @@ python -m survarena.run_benchmark \
   --dataset support \
   --method coxph \
   --limit-seeds 1
+```
+
+Cloud-scale comprehensive run helper:
+
+```bash
+scripts/run_cloud_comprehensive.sh
+# optionally scope a single cloud worker
+DATASET=support METHOD=rsf scripts/run_cloud_comprehensive.sh
 ```
 
 Dry-run a benchmark configuration without fitting models:
