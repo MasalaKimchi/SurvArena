@@ -11,6 +11,7 @@ from survarena.data.user_dataset import load_user_dataset
 from survarena.logging.export import (
     create_experiment_dir,
     export_dataset_curation_table,
+    export_experiment_navigator,
     export_fold_results,
     export_leaderboard,
     export_manuscript_comparison,
@@ -285,6 +286,14 @@ def compare_survival_models(
         output_dir=resolved_output_dir,
     )
     export_run_ledger(repo_root, run_records, benchmark_id=resolved_benchmark_id, output_dir=resolved_output_dir)
+    export_experiment_navigator(
+        resolved_output_dir,
+        benchmark_id=resolved_benchmark_id,
+        primary_metric=primary_metric,
+        split_count=len(splits),
+        method_count=len(method_ids),
+        leaderboard=leaderboard,
+    )
     return {
         **summary,
         "output_dir": str(resolved_output_dir),
