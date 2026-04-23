@@ -40,7 +40,6 @@ Deferred to future release. Tracked but not in current roadmap.
 
 ### Ecosystem Expansion
 
-- **ECO-01**: User can benchmark R-package survival methods in parity with Python methods.
 - **ECO-02**: User can benchmark optional deep/foundation-heavy tracks with dedicated runtime budgets.
 
 ### Productization
@@ -54,7 +53,7 @@ Explicitly excluded. Documented to prevent scope creep.
 
 | Feature | Reason |
 |---------|--------|
-| R package execution in v1 | Python-only v1 is required to control scope and wall-clock risk |
+| R and other non-Python package execution | Project scope is exclusively Python package ecosystems |
 | Hosted multi-tenant benchmark service in v1 | Core benchmark validity and artifact contract are higher priority |
 | Unlimited or model-specific custom HPO budgets | Breaks fairness and comparability across methods |
 
@@ -64,27 +63,27 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| EXEC-01 | Phase TBD | Pending |
-| EXEC-02 | Phase TBD | Pending |
-| EXEC-03 | Phase TBD | Pending |
-| EXEC-04 | Phase TBD | Pending |
-| STAT-01 | Phase TBD | Pending |
-| STAT-02 | Phase TBD | Pending |
-| STAT-03 | Phase TBD | Pending |
-| STAT-04 | Phase TBD | Pending |
-| RANK-01 | Phase TBD | Pending |
-| RANK-02 | Phase TBD | Pending |
-| RANK-03 | Phase TBD | Pending |
-| QUAL-01 | Phase TBD | Pending |
-| QUAL-02 | Phase TBD | Pending |
-| QUAL-03 | Phase TBD | Pending |
-| QUAL-04 | Phase TBD | Pending |
+| EXEC-01 | Phase 1 | Pending |
+| EXEC-02 | Phase 2 | Pending |
+| EXEC-03 | Phase 2 | Pending |
+| EXEC-04 | Phase 1 | Pending |
+| STAT-01 | Phase 3 | Pending |
+| STAT-02 | Phase 3 | Pending |
+| STAT-03 | Phase 3 | Pending |
+| STAT-04 | Phase 3 | Pending |
+| RANK-01 | Phase 4 | Pending |
+| RANK-02 | Phase 4 | Pending |
+| RANK-03 | Phase 5 | Pending |
+| QUAL-01 | Phase 5 | Pending |
+| QUAL-02 | Phase 5 | Pending |
+| QUAL-03 | Phase 5 | Pending |
+| QUAL-04 | Phase 5 | Pending |
 
 **Coverage:**
 - v1 requirements: 15 total
-- Mapped to phases: 0
-- Unmapped: 15 ⚠️
+- Mapped to phases: 15
+- Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-04-23*
-*Last updated: 2026-04-23 after initial definition*
+*Last updated: 2026-04-23 after roadmap creation*

@@ -28,7 +28,7 @@ A practitioner can trust one benchmark run to produce fair, statistically robust
 
 ### Out of Scope
 
-- R package execution in v1 — Python-first delivery is required for initial milestone velocity.
+- R and other non-Python package execution — project scope is exclusively Python package ecosystems.
 - Web dashboard/UI productization — CLI/API and artifact outputs are the immediate priority.
 - Enterprise orchestration/platform features (multi-tenant scheduling, hosted service) — not required for benchmark core value.
 
@@ -38,7 +38,7 @@ The repository is already a brownfield survival benchmarking toolkit with layere
 
 ## Constraints
 
-- **Ecosystem**: Python-only package coverage in v1 — deliver value before cross-language expansion.
+- **Ecosystem**: Python-only package coverage (exclusive) — non-Python model ecosystems are out of scope.
 - **Runtime Budget**: Wall-clock time is the primary operational constraint — phase plans must prioritize efficient benchmark design.
 - **Benchmark Scope**: Medium balanced dataset suite — broad enough for external validity without unbounded runtime.
 - **Quality Gate**: All touched-code lint/type/test checks must pass — maintain maintainability while evolving benchmark logic.
@@ -51,7 +51,7 @@ The repository is already a brownfield survival benchmarking toolkit with layere
 | Require both no-HPO and HPO runs for each selected model in v1 | Fair model comparison requires controlling for tuning effects | — Pending |
 | Implement full pairwise + ELO ranking (TabArena-style) in v1 | Ranking layer is a core deliverable, not a nice-to-have | — Pending |
 | Target practitioners as primary user | Output format and reporting should optimize model selection decisions, not only academic exploration | — Pending |
-| Keep v1 Python-only with medium dataset breadth | Balances coverage ambitions with wall-clock constraints | — Pending |
+| Keep benchmark scope exclusively Python packages with medium dataset breadth | Aligns with explicit user scope and controls ecosystem complexity | — Pending |
 
 ## Evolution
 
