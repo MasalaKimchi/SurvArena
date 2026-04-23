@@ -657,6 +657,8 @@ def run_benchmark(
                         run_payload["metrics"]["split_id"] = track_split_id
                         run_payload["metrics"]["robustness_track_id"] = track.track_id
                         run_payload["metrics"]["retry_attempt"] = int(attempt)
+                        run_payload["status"] = str(record.get("status", run_payload["metrics"].get("status", "failed")))
+                        run_payload["retry_attempt"] = int(attempt)
                         hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
                         for trial in list(run_payload.get("hpo_trials", [])):
                             hpo_trial_rows.append(

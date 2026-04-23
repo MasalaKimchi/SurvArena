@@ -4,20 +4,24 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from survarena.evaluation.statistics import (
     aggregate_rank_summary,
     bootstrap_metric_ci,
+    critical_difference_summary,
     elo_ratings,
     failure_summary,
     metric_direction,
     pairwise_win_rate,
+    pairwise_significance,
     summarize_frame,
 )
 from survarena.logging.tracker import write_json, write_jsonl_gz
 
 RUN_LEDGER_SCHEMA_VERSION = "2.0"
+RUN_LEDGER_COMPACT_SCHEMA_VERSION = "1.0"
 MANUSCRIPT_REPORT_SCHEMA_VERSION = "2.0"
 
 CORE_METRIC_COLUMNS = [
@@ -45,6 +49,23 @@ EFFICIENCY_COLUMNS = [
     "peak_memory_mb",
 ]
 BENCHMARK_METRIC_COLUMNS = CORE_METRIC_COLUMNS + MANUSCRIPT_METRIC_COLUMNS + EFFICIENCY_COLUMNS
+
+
+def _expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
+    dynamic_prefixes = (
+        "calibration_slope_",
+        "calibration_intercept_",
+        "net_benefit_",
+        "decision_curve_aunb_",
+        "brier_",
+        "td_auc_",
+    )
+    dynamic = [col for col in frame.columns if any(col.startswith(prefix) for prefix in dynamic_prefixes)]
+    return sorted(set(dynamic))
+
+
+def _unique_in_order(columns: list[str]) -> list[str]:
+    return list(dict.fromkeys(columns))
 
 
 def create_experiment_dir(root: Path) -> Path:
@@ -97,7 +118,7 @@ def export_seed_summary(
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
     by_cols = ["benchmark_id", "dataset_id", "method_id", "seed"]
-    metric_cols = BENCHMARK_METRIC_COLUMNS
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(frame))
     available_metric_cols = [col for col in metric_cols if col in frame.columns]
     seed_summary = frame.groupby(by_cols, as_index=False)[available_metric_cols].mean(numeric_only=True)
     if output_dir is None:
@@ -118,7 +139,7 @@ def export_overall_summary(
     file_prefix: str | None = None,
 ) -> dict:
     by_cols = ["benchmark_id", "dataset_id", "method_id"]
-    metric_cols = BENCHMARK_METRIC_COLUMNS
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(frame))
     summary: dict[str, dict] = {}
 
     for key, sub in frame.groupby(by_cols):
@@ -147,7 +168,7 @@ def export_leaderboard(
     output_dir: Path | None = None,
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
-    metric_cols = BENCHMARK_METRIC_COLUMNS
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(seed_summary))
     available_metric_cols = [col for col in metric_cols if col in seed_summary.columns]
     leaderboard = seed_summary.groupby(["benchmark_id", "dataset_id", "method_id"], as_index=False)[
         available_metric_cols
@@ -190,6 +211,9 @@ def export_manuscript_comparison(
 
     rank_summary = aggregate_rank_summary(leaderboard, metric=primary_metric)
     pairwise = pairwise_win_rate(leaderboard, metric=primary_metric)
+    significance_source = fold_results if fold_results is not None else leaderboard
+    pairwise_sig = pairwise_significance(significance_source, metric=primary_metric, correction="holm")
+    cd_summary = critical_difference_summary(leaderboard, metric=primary_metric)
     ci = bootstrap_metric_ci(leaderboard, metric=primary_metric, n_bootstrap=1000, seed=0)
     elo = elo_ratings(leaderboard, metric=primary_metric)
     failures = failure_summary(fold_results if fold_results is not None else leaderboard)
@@ -207,6 +231,9 @@ def export_manuscript_comparison(
     paths = {
         "rank_summary": str(output_dir / f"{prefix}_rank_summary.csv"),
         "pairwise_win_rate": str(output_dir / f"{prefix}_pairwise_win_rate.csv"),
+        "pairwise_significance": str(output_dir / f"{prefix}_pairwise_significance.csv"),
+        "multiple_comparison_summary": str(output_dir / f"{prefix}_multiple_comparison_summary.csv"),
+        "critical_difference": str(output_dir / f"{prefix}_critical_difference.csv"),
         "bootstrap_ci": str(output_dir / f"{prefix}_bootstrap_ci.csv"),
         "elo_ratings": str(output_dir / f"{prefix}_elo_ratings.csv"),
         "failure_summary": str(output_dir / f"{prefix}_failure_summary.csv"),
@@ -214,6 +241,24 @@ def export_manuscript_comparison(
     }
     rank_summary.to_csv(paths["rank_summary"], index=False)
     pairwise.to_csv(paths["pairwise_win_rate"], index=False)
+    pairwise_sig.to_csv(paths["pairwise_significance"], index=False)
+    if pairwise_sig.empty:
+        multiple_summary = pd.DataFrame(
+            columns=["benchmark_id", "method_id", "n_significant_wins", "n_significant_losses", "correction"]
+        )
+    else:
+        pairwise_sig_flags = pairwise_sig.assign(
+            significant=lambda df: df["p_value_corrected"] < 0.05,
+            positive_effect=lambda df: df["effect_size_mean_delta"] > 0,
+        )
+        pairwise_sig_flags["significant_win"] = pairwise_sig_flags["significant"] & pairwise_sig_flags["positive_effect"]
+        pairwise_sig_flags["significant_loss"] = pairwise_sig_flags["significant"] & (~pairwise_sig_flags["positive_effect"])
+        multiple_summary = pairwise_sig_flags.groupby(["benchmark_id", "method_id", "correction"], as_index=False).agg(
+            n_significant_wins=("significant_win", lambda values: int(np.sum(values))),
+            n_significant_losses=("significant_loss", lambda values: int(np.sum(values))),
+        )
+    multiple_summary.to_csv(paths["multiple_comparison_summary"], index=False)
+    cd_summary.to_csv(paths["critical_difference"], index=False)
     ci.to_csv(paths["bootstrap_ci"], index=False)
     elo.to_csv(paths["elo_ratings"], index=False)
     failures.to_csv(paths["failure_summary"], index=False)
@@ -226,6 +271,7 @@ def export_manuscript_comparison(
             "comparison_files": paths,
             "rank_summary_records": rank_summary.to_dict(orient="records"),
             "elo_rating_records": elo.to_dict(orient="records"),
+            "pairwise_significance_records": pairwise_sig.to_dict(orient="records"),
             "missing_metric_summary": missing.to_dict(orient="records"),
         },
     )
@@ -258,21 +304,63 @@ def export_run_ledger(
     output_dir: Path | None = None,
 ) -> None:
     created_at = datetime.now().isoformat(timespec="seconds")
-    normalized_records = [
-        {
+    normalized_records: list[dict[str, object]] = []
+    for record in run_records:
+        normalized = {
             "schema_version": RUN_LEDGER_SCHEMA_VERSION,
             **record,
         }
-        for record in run_records
-    ]
+        metrics = normalized.get("metrics")
+        status = normalized.get("status")
+        retry_attempt = normalized.get("retry_attempt")
+        if isinstance(metrics, dict):
+            if status is None:
+                status = metrics.get("status")
+            if retry_attempt is None:
+                retry_attempt = metrics.get("retry_attempt")
+        normalized["status"] = status if status is not None else "unknown"
+        try:
+            normalized["retry_attempt"] = int(retry_attempt) if retry_attempt is not None else 0
+        except (TypeError, ValueError):
+            normalized["retry_attempt"] = 0
+        normalized["failure"] = normalized.get("failure")
+        normalized_records.append(normalized)
     if output_dir is None:
         output = root / "results" / "runs" / f"{benchmark_id}_run_records.jsonl.gz"
         index_output = root / "results" / "runs" / f"{benchmark_id}_run_records_index.json"
+        compact_output = root / "results" / "runs" / f"{benchmark_id}_run_records_compact.jsonl.gz"
+        compact_index_output = root / "results" / "runs" / f"{benchmark_id}_run_records_compact_index.json"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
         output = output_dir / f"{benchmark_id}_run_records.jsonl.gz"
         index_output = output_dir / f"{benchmark_id}_run_records_index.json"
+        compact_output = output_dir / f"{benchmark_id}_run_records_compact.jsonl.gz"
+        compact_index_output = output_dir / f"{benchmark_id}_run_records_compact_index.json"
     write_jsonl_gz(output, normalized_records)
+    shared_manifest: dict[str, object] = {}
+    if normalized_records:
+        first_manifest = normalized_records[0].get("manifest")
+        if isinstance(first_manifest, dict):
+            for key, value in first_manifest.items():
+                if all(
+                    isinstance(record.get("manifest"), dict) and record["manifest"].get(key) == value
+                    for record in normalized_records
+                ):
+                    shared_manifest[key] = value
+    compact_records: list[dict[str, object]] = []
+    for record in normalized_records:
+        compact: dict[str, object] = {"schema_version": RUN_LEDGER_COMPACT_SCHEMA_VERSION}
+        for key, value in record.items():
+            if key == "schema_version":
+                continue
+            if key == "manifest" and isinstance(value, dict):
+                unique_manifest = {mk: mv for mk, mv in value.items() if mk not in shared_manifest}
+                if unique_manifest:
+                    compact["manifest"] = unique_manifest
+                continue
+            compact[key] = value
+        compact_records.append(compact)
+    write_jsonl_gz(compact_output, compact_records)
     write_json(
         index_output,
         {
@@ -282,7 +370,37 @@ def export_run_ledger(
             "format": "jsonl.gz",
             "path": str(output),
             "created_at": created_at,
-            "record_sections": ["schema_version", "manifest", "metrics", "backend_metadata", "failure"],
+            "record_sections": [
+                "schema_version",
+                "manifest",
+                "metrics",
+                "backend_metadata",
+                "hpo_metadata",
+                "hpo_trials",
+                "failure",
+            ],
+        },
+    )
+    write_json(
+        compact_index_output,
+        {
+            "schema_version": RUN_LEDGER_COMPACT_SCHEMA_VERSION,
+            "benchmark_id": benchmark_id,
+            "record_count": len(compact_records),
+            "format": "jsonl.gz",
+            "path": str(compact_output),
+            "created_at": created_at,
+            "manifest_shared": shared_manifest,
+            "record_sections": [
+                "schema_version",
+                "manifest_shared",
+                "manifest",
+                "metrics",
+                "backend_metadata",
+                "hpo_metadata",
+                "hpo_trials",
+                "failure",
+            ],
         },
     )
 
@@ -311,12 +429,17 @@ def export_experiment_navigator(
         f"{benchmark_id}_leaderboard.json",
         f"{benchmark_id}_rank_summary.csv",
         f"{benchmark_id}_pairwise_win_rate.csv",
+        f"{benchmark_id}_pairwise_significance.csv",
+        f"{benchmark_id}_multiple_comparison_summary.csv",
+        f"{benchmark_id}_critical_difference.csv",
         f"{benchmark_id}_elo_ratings.csv",
         f"{benchmark_id}_bootstrap_ci.csv",
         f"{benchmark_id}_failure_summary.csv",
         f"{benchmark_id}_missing_metric_summary.csv",
         f"{benchmark_id}_run_records.jsonl.gz",
         f"{benchmark_id}_run_records_index.json",
+        f"{benchmark_id}_run_records_compact.jsonl.gz",
+        f"{benchmark_id}_run_records_compact_index.json",
     ]
     write_json(
         output_dir / "experiment_navigator.json",
@@ -355,3 +478,40 @@ def export_experiment_navigator(
     else:
         lines.append("- No leaderboard rows available.")
     (output_dir / "README.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def export_hpo_trials(
+    root: Path,
+    rows: list[dict],
+    *,
+    benchmark_id: str,
+    output_dir: Path | None = None,
+) -> pd.DataFrame:
+    frame = pd.DataFrame(rows)
+    if output_dir is None:
+        output = root / "results" / "summaries" / f"{benchmark_id}_hpo_trials.csv"
+        summary_output = root / "results" / "summaries" / f"{benchmark_id}_hpo_summary.json"
+        output.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output = output_dir / f"{benchmark_id}_hpo_trials.csv"
+        summary_output = output_dir / f"{benchmark_id}_hpo_summary.json"
+    frame.to_csv(output, index=False)
+    if frame.empty:
+        summary = {"benchmark_id": benchmark_id, "trial_count": 0, "methods": []}
+    else:
+        method_summary = (
+            frame.groupby(["benchmark_id", "method_id"], as_index=False)
+            .agg(
+                trial_count=("trial_number", "count"),
+                best_trial_value=("value", "max"),
+            )
+            .to_dict(orient="records")
+        )
+        summary = {
+            "benchmark_id": benchmark_id,
+            "trial_count": int(len(frame)),
+            "methods": method_summary,
+        }
+    write_json(summary_output, summary)
+    return frame
