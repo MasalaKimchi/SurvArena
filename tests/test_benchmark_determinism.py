@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 
 from survarena.benchmark.runner import validate_benchmark_profile_contract
+from survarena.data.splitters import load_or_create_splits
 
 
 def _base_cfg(profile: str) -> dict[str, object]:
@@ -55,3 +57,92 @@ def test_profile_contract_error_messages_are_actionable() -> None:
     del cfg["seeds"]
     with pytest.raises(ValueError, match="seeds, split_strategy"):
         validate_benchmark_profile_contract(cfg)
+
+
+def _event_labels() -> np.ndarray:
+    return np.asarray([0, 1, 0, 1, 0, 1, 0, 1], dtype=int)
+
+
+def test_manifest_mismatch_raises_by_default(tmp_path) -> None:
+    task_id = "determinism_mismatch_default"
+    event = _event_labels()
+    load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[11],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+
+    with pytest.raises(ValueError, match="manifest payload mismatch"):
+        load_or_create_splits(
+            root=tmp_path,
+            task_id=task_id,
+            split_strategy="repeated_nested_cv",
+            n_samples=event.size,
+            event=event,
+            seeds=[22],
+            outer_folds=2,
+            outer_repeats=1,
+        )
+
+
+def test_manifest_mismatch_allows_explicit_regenerate(tmp_path) -> None:
+    task_id = "determinism_mismatch_regenerate"
+    event = _event_labels()
+    load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[11],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+
+    regenerated = load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[22],
+        outer_folds=2,
+        outer_repeats=1,
+        regenerate_on_mismatch=True,
+    )
+
+    assert regenerated
+    assert all(split.seed == 22 for split in regenerated)
+
+
+def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
+    task_id = "determinism_manifest_reuse"
+    event = _event_labels()
+    created = load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[11],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+
+    reused = load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[11],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+
+    assert [split.split_id for split in reused] == [split.split_id for split in created]
