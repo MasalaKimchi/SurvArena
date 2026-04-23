@@ -6,6 +6,7 @@ outer_repeats: 3
 inner_folds: 3
 seeds: [11, 22, 33, 44, 55]
 primary_metric: uno_c
+profile: manuscript
 secondary_metrics:
   - harrell_c
   - ibs
