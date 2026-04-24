@@ -36,6 +36,8 @@ robustness:
   tracks: [baseline]
   severity_levels: [0.05]
 time_horizons_quantiles: [0.25, 0.5, 0.75]
+exports:
+  manuscript_artifact_layout: compact
 datasets:
   - support
   - metabric

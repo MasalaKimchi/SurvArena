@@ -32,6 +32,9 @@ class _BaseLifelinesMethod(BaseSurvivalMethod, ABC):
             raise ValueError(f"{type(self).__name__} requires at least one observed event in the training data.")
 
         self.model = self._build_model()
+        scipy_method = getattr(self, "_lifelines_scipy_fit_method", None)
+        if scipy_method and hasattr(self.model, "_scipy_fit_method"):
+            self.model._scipy_fit_method = str(scipy_method)
         self.model.fit(train_frame, duration_col="time", event_col="event")
         return self
 
@@ -58,6 +61,8 @@ class _BaseLifelinesMethod(BaseSurvivalMethod, ABC):
 
 
 class WeibullAFTMethod(_BaseLifelinesMethod):
+    _lifelines_scipy_fit_method = "SLSQP"
+
     def __init__(
         self,
         penalizer: float = 0.01,
@@ -86,6 +91,8 @@ class WeibullAFTMethod(_BaseLifelinesMethod):
 
 
 class LogNormalAFTMethod(_BaseLifelinesMethod):
+    _lifelines_scipy_fit_method = "SLSQP"
+
     def __init__(
         self,
         penalizer: float = 0.01,
@@ -114,6 +121,8 @@ class LogNormalAFTMethod(_BaseLifelinesMethod):
 
 
 class LogLogisticAFTMethod(_BaseLifelinesMethod):
+    _lifelines_scipy_fit_method = "SLSQP"
+
     def __init__(
         self,
         penalizer: float = 0.01,

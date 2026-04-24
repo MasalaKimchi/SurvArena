@@ -60,6 +60,30 @@ def test_export_manuscript_comparison_writes_summary_files(tmp_path: Path) -> No
     assert (tmp_path / "bench_elo_ratings.csv").exists()
 
 
+def test_export_manuscript_comparison_compact_writes_report_and_figures(tmp_path: Path) -> None:
+    frame = _leaderboard_frame()
+    fold_results = frame.assign(status=["success", "success", "success", "success"], parity_eligible=[True] * 4)
+
+    paths = export_manuscript_comparison(
+        tmp_path,
+        frame,
+        primary_metric="uno_c",
+        fold_results=fold_results,
+        output_dir=tmp_path,
+        file_prefix="cmp",
+        artifact_layout="compact",
+    )
+
+    assert Path(paths["consolidated_report"]).exists()
+    assert not (tmp_path / "cmp_pairwise_win_rate.csv").exists()
+    assert (tmp_path / "cmp_manuscript_summary.json").exists()
+    assert any("fig_pairwise" in k for k in paths)
+    report = pd.read_csv(paths["consolidated_report"])
+    assert "agg_elo_rating" in report.columns
+    assert "agg_ci95_low_uno_c" in report.columns
+    assert "agg_mean_rank" in report.columns
+
+
 def test_pairwise_significance_produces_corrected_p_values() -> None:
     rows = []
     rng = np.random.default_rng(0)

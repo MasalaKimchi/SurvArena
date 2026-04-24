@@ -798,6 +798,7 @@ def run_benchmark(
         output_dir=experiment_dir,
         file_prefix=benchmark_id,
     )
+    exports_cfg = dict(benchmark_cfg.get("exports") or {})
     export_manuscript_comparison(
         repo_root,
         leaderboard,
@@ -805,6 +806,7 @@ def run_benchmark(
         fold_results=frame,
         output_dir=experiment_dir,
         file_prefix=benchmark_id,
+        artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
     )
     export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
     export_run_ledger(repo_root, run_records, benchmark_id=benchmark_id, output_dir=experiment_dir)

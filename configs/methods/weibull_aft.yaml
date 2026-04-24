@@ -4,7 +4,7 @@ library: lifelines
 search_space:
   penalizer:
     type: float
-    low: 0.00001
+    low: 0.001
     high: 1.0
     log: true
   l1_ratio:
@@ -13,10 +13,10 @@ search_space:
     high: 1.0
   fit_intercept:
     type: categorical
-    choices: [true, false]
+    choices: [true]
   model_ancillary:
     type: categorical
-    choices: [false, true]
+    choices: [false]
 default_params:
   penalizer: 0.01
   l1_ratio: 0.0
