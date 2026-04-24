@@ -13,6 +13,7 @@ from survarena.methods.registry import get_method_class, registered_method_ids
 
 
 _CANONICAL_PROFILES = ("smoke", "standard", "manuscript")
+_DUAL_HPO_MODE_ORDER: tuple[str, str] = ("no_hpo", "hpo")
 _PROFILE_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "smoke": ("outer_repeats",),
     "standard": ("outer_folds", "outer_repeats"),
@@ -125,6 +126,23 @@ def validate_benchmark_profile_contract(benchmark_cfg: dict[str, Any]) -> None:
                 f"Profile '{profile}' requires outer_repeats>=3 for deterministic comparability. "
                 f"Received: {outer_repeats}."
             )
+
+
+def _normalize_hpo_budget_telemetry(
+    *,
+    hpo_metadata: dict[str, Any],
+    hpo_cfg: dict[str, Any],
+) -> dict[str, Any]:
+    normalized = dict(hpo_metadata)
+    realized_trial_count = int(normalized.get("realized_trial_count", normalized.get("trial_count", 0)))
+    normalized["realized_trial_count"] = realized_trial_count
+    normalized["trial_count"] = realized_trial_count
+    normalized["requested_max_trials"] = int(normalized.get("requested_max_trials", hpo_cfg.get("max_trials", 20)))
+    timeout_value = normalized.get("requested_timeout_seconds", hpo_cfg.get("timeout_seconds"))
+    normalized["requested_timeout_seconds"] = None if timeout_value is None else float(timeout_value)
+    normalized["requested_sampler"] = str(normalized.get("requested_sampler", hpo_cfg.get("sampler", "tpe"))).lower()
+    normalized["requested_pruner"] = str(normalized.get("requested_pruner", hpo_cfg.get("pruner", "median"))).lower()
+    return normalized
 
 
 def evaluate_split(
@@ -631,7 +649,7 @@ def run_benchmark(
                         seed=split.seed,
                     )
                     parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
-                    for hpo_mode in ("no_hpo", "hpo"):
+                    for hpo_mode in _DUAL_HPO_MODE_ORDER:
                         key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
                         if key in completed_keys:
                             continue
@@ -667,23 +685,11 @@ def run_benchmark(
                             run_payload["metrics"]["retry_attempt"] = int(attempt)
                             run_payload["status"] = str(record.get("status", run_payload["metrics"].get("status", "failed")))
                             run_payload["retry_attempt"] = int(attempt)
-                            hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
-                            realized_trial_count = int(hpo_metadata.get("realized_trial_count", hpo_metadata.get("trial_count", 0)))
-                            hpo_metadata["realized_trial_count"] = realized_trial_count
-                            hpo_metadata["trial_count"] = realized_trial_count
-                            hpo_metadata["requested_max_trials"] = int(
-                                hpo_metadata.get("requested_max_trials", mode_hpo_cfg.get("max_trials", 20))
+                            hpo_metadata = _normalize_hpo_budget_telemetry(
+                                hpo_metadata=dict(run_payload.get("hpo_metadata", {})),
+                                hpo_cfg=mode_hpo_cfg,
                             )
-                            timeout_value = hpo_metadata.get("requested_timeout_seconds", mode_hpo_cfg.get("timeout_seconds"))
-                            hpo_metadata["requested_timeout_seconds"] = (
-                                None if timeout_value is None else float(timeout_value)
-                            )
-                            hpo_metadata["requested_sampler"] = str(
-                                hpo_metadata.get("requested_sampler", mode_hpo_cfg.get("sampler", "tpe"))
-                            ).lower()
-                            hpo_metadata["requested_pruner"] = str(
-                                hpo_metadata.get("requested_pruner", mode_hpo_cfg.get("pruner", "median"))
-                            ).lower()
+                            realized_trial_count = int(hpo_metadata["realized_trial_count"])
                             run_payload["hpo_metadata"] = hpo_metadata
                             run_payload["metrics"]["requested_max_trials"] = hpo_metadata["requested_max_trials"]
                             run_payload["metrics"]["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]

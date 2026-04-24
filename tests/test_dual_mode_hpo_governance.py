@@ -127,14 +127,17 @@ def test_run_records_include_hpo_mode_and_parity_key(tmp_path: Path, monkeypatch
     run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=tmp_path / "outputs")
 
     assert captured_run_records
-    metrics = captured_run_records[0]["metrics"]
-    assert metrics["hpo_mode"] in {"no_hpo", "hpo"}
-    assert metrics["parity_key"] == "toy_dataset__identity|fixed_split_0__identity|11|coxph"
-    assert metrics["requested_max_trials"] == 5
-    assert metrics["requested_timeout_seconds"] == 30.0
-    assert metrics["requested_sampler"] == "tpe"
-    assert metrics["requested_pruner"] == "median"
-    assert metrics["realized_trial_count"] == 0
+    mode_rows = {row["metrics"]["hpo_mode"]: row for row in captured_run_records}
+    assert set(mode_rows) == {"no_hpo", "hpo"}
+
+    for mode in ("no_hpo", "hpo"):
+        metrics = mode_rows[mode]["metrics"]
+        assert metrics["parity_key"] == "toy_dataset__identity|fixed_split_0__identity|11|coxph"
+        assert metrics["requested_max_trials"] == 5
+        assert metrics["requested_timeout_seconds"] == 30.0
+        assert metrics["requested_sampler"] == "tpe"
+        assert metrics["requested_pruner"] == "median"
+        assert metrics["realized_trial_count"] == 0
 
 
 def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatch) -> None:
