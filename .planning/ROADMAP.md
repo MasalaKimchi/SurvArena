@@ -42,8 +42,8 @@ Plans:
 **Plans**: 3 plans
 Plans:
 - [x] 02-01-PLAN.md — Define dual-mode parity and budget-governance test contracts.
-- [ ] 02-02-PLAN.md — Implement deterministic dual-mode runner and uniform budget telemetry.
-- [ ] 02-03-PLAN.md — Enforce parity-gated comparative exports and canonical governance reporting.
+- [x] 02-02-PLAN.md — Implement deterministic dual-mode runner and uniform budget telemetry.
+- [x] 02-03-PLAN.md — Enforce parity-gated comparative exports and canonical governance reporting.
 
 ### Phase 3: Statistical Inference Pipeline
 **Goal**: Users can make statistically valid comparative claims with corrected pairwise outputs and uncertainty context.
