@@ -16,11 +16,11 @@ A practitioner can trust one benchmark run to produce fair, statistically robust
 - ✓ Multiple survival method adapters can be compared through a unified registry/runner pipeline — existing
 - ✓ Benchmark outputs and summaries are exported to structured artifacts under `results/summary/` — existing
 - ✓ Split generation/reuse and reproducibility-oriented manifests already exist in the current stack — existing
+- ✓ Users can run selected models in both no-HPO and HPO modes with explicit requested-vs-realized budget telemetry — validated in Phase 2
 
 ### Active
 
 - [ ] Deliver a comprehensive Python-only survival benchmark spanning multiple packages and methods across a medium-but-diverse dataset suite.
-- [ ] Run every selected model in both modes: without HPO and with HPO, using controlled and reproducible settings.
 - [ ] Produce manuscript-level statistical robustness outputs (pairwise testing, uncertainty-aware comparisons, and publication-grade summaries).
 - [ ] Generate TabArena-like full pairwise matchup analysis and a global ELO leaderboard.
 - [ ] Persist each experiment collection into a single comprehensive results file that is compact and avoids redundancy.
@@ -48,7 +48,7 @@ The repository is already a brownfield survival benchmarking toolkit with layere
 
 | Decision | Rationale | Outcome |
 |----------|-----------|---------|
-| Require both no-HPO and HPO runs for each selected model in v1 | Fair model comparison requires controlling for tuning effects | — Pending |
+| Require both no-HPO and HPO runs for each selected model in v1 | Fair model comparison requires controlling for tuning effects | Validated in Phase 2 |
 | Implement full pairwise + ELO ranking (TabArena-style) in v1 | Ranking layer is a core deliverable, not a nice-to-have | — Pending |
 | Target practitioners as primary user | Output format and reporting should optimize model selection decisions, not only academic exploration | — Pending |
 | Keep benchmark scope exclusively Python packages with medium dataset breadth | Aligns with explicit user scope and controls ecosystem complexity | — Pending |
@@ -71,4 +71,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-23 after initialization*
+*Last updated: 2026-04-24 after Phase 2 completion*
