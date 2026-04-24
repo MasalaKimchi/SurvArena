@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Callable
 
 
@@ -51,6 +52,57 @@ def prepare_inner_cv_cache(
 def _searchable_default_params(method_cfg: dict[str, Any]) -> dict[str, Any]:
     defaults = dict(method_cfg.get("default_params", {}))
     return {key: value for key, value in defaults.items() if key not in _RUNTIME_ONLY_METHOD_PARAMS}
+
+
+def _metric_direction_for_optimization(primary_metric: str) -> str:
+    if primary_metric in {"harrell_c", "uno_c"}:
+        return "maximize"
+    return "maximize"
+
+
+def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | None) -> dict[str, Any]:
+    base = {
+        "enabled": bool(method_cfg.get("search_space")) and False,
+        "max_trials": 20,
+        "timeout_seconds": None,
+        "sampler": "tpe",
+        "pruner": "median",
+        "n_startup_trials": 8,
+    }
+    cfg = dict(base)
+    if hpo_config:
+        cfg.update({k: v for k, v in hpo_config.items() if v is not None})
+    cfg["enabled"] = bool(cfg.get("enabled", False)) and bool(method_cfg.get("search_space"))
+    cfg["max_trials"] = max(int(cfg.get("max_trials", 20)), 1)
+    cfg["n_startup_trials"] = max(int(cfg.get("n_startup_trials", 8)), 1)
+    timeout_seconds = cfg.get("timeout_seconds")
+    cfg["timeout_seconds"] = None if timeout_seconds is None else max(float(timeout_seconds), 0.0)
+    cfg["sampler"] = str(cfg.get("sampler", "tpe")).lower()
+    cfg["pruner"] = str(cfg.get("pruner", "median")).lower()
+    return cfg
+
+
+def _suggest_param(trial: Any, name: str, spec: dict[str, Any]) -> Any:
+    param_type = str(spec.get("type", "")).lower()
+    if param_type == "categorical":
+        choices = list(spec.get("choices", []))
+        if not choices:
+            raise ValueError(f"Search space for '{name}' has empty categorical choices.")
+        return trial.suggest_categorical(name, choices)
+    if param_type == "int":
+        low = int(spec["low"])
+        high = int(spec["high"])
+        return trial.suggest_int(name, low, high, log=bool(spec.get("log", False)))
+    if param_type == "int_or_none":
+        low = int(spec["low"])
+        high = int(spec["high"])
+        values = [None] + list(range(low, high + 1))
+        return trial.suggest_categorical(name, values)
+    if param_type == "float":
+        low = float(spec["low"])
+        high = float(spec["high"])
+        return trial.suggest_float(name, low, high, log=bool(spec.get("log", False)))
+    raise ValueError(f"Unsupported search space type '{param_type}' for '{name}'.")
 
 
 def _inner_cv_evaluate(
@@ -105,6 +157,7 @@ def select_hyperparameters(
     fold_cache: list[dict[str, Any]],
     primary_metric: str,
     seed: int,
+    hpo_config: dict[str, Any] | None = None,
     quiet: bool = False,
     metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
 ) -> dict[str, Any]:
@@ -121,8 +174,142 @@ def select_hyperparameters(
         )
         default_score = float(default_eval["primary_score"])
         default_metric_rows = default_eval.get("metric_rows")
-        return {
+        resolved_hpo = _parse_hpo_config(method_cfg, hpo_config)
+        default_result = {
             "best_params": defaults,
             "best_score": default_score,
             "best_metric_rows": default_metric_rows,
+            "hpo_metadata": {
+                "enabled": bool(resolved_hpo["enabled"]),
+                "backend": "none",
+                "status": "disabled",
+                "started_at": None,
+                "finished_at": None,
+                "realized_trial_count": 0,
+                "trial_count": 0,
+                "requested_max_trials": int(resolved_hpo["max_trials"]),
+                "requested_timeout_seconds": resolved_hpo["timeout_seconds"],
+                "requested_sampler": str(resolved_hpo["sampler"]),
+                "requested_pruner": str(resolved_hpo["pruner"]),
+                "max_trials": int(resolved_hpo["max_trials"]),
+                "timeout_seconds": resolved_hpo["timeout_seconds"],
+                "sampler": str(resolved_hpo["sampler"]),
+                "pruner": str(resolved_hpo["pruner"]),
+                "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
+            },
+            "hpo_trials": [],
+        }
+        if not resolved_hpo["enabled"]:
+            return default_result
+
+        search_space = dict(method_cfg.get("search_space", {}))
+        if not search_space:
+            return default_result
+
+        try:
+            import optuna
+            from optuna.pruners import MedianPruner, NopPruner
+            from optuna.samplers import RandomSampler, TPESampler
+        except ModuleNotFoundError:
+            default_result["hpo_metadata"]["status"] = "optuna_missing"
+            return default_result
+
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
+        maximize = _metric_direction_for_optimization(primary_metric) == "maximize"
+        sampler_name = str(resolved_hpo["sampler"])
+        if sampler_name == "random":
+            sampler = RandomSampler(seed=seed)
+        else:
+            sampler = TPESampler(seed=seed, n_startup_trials=int(resolved_hpo["n_startup_trials"]))
+        pruner_name = str(resolved_hpo["pruner"])
+        pruner = MedianPruner(n_startup_trials=int(resolved_hpo["n_startup_trials"])) if pruner_name == "median" else NopPruner()
+
+        started_at = datetime.utcnow().isoformat(timespec="seconds")
+
+        def _objective(trial: Any) -> float:
+            sampled_params = dict(defaults)
+            for name, spec in search_space.items():
+                sampled_params[name] = _suggest_param(trial, name, dict(spec))
+            result = _inner_cv_evaluate(
+                method_id=method_id,
+                params=resolve_runtime_method_params(sampled_params, seed=seed),
+                fold_cache=fold_cache,
+                primary_metric=primary_metric,
+                metric_bundle_callback=metric_bundle_callback,
+            )
+            score = float(result["primary_score"])
+            if not score == score:
+                return float("-inf") if maximize else float("inf")
+            return score
+
+        study = optuna.create_study(
+            direction="maximize" if maximize else "minimize",
+            sampler=sampler,
+            pruner=pruner,
+        )
+        study.optimize(
+            _objective,
+            n_trials=int(resolved_hpo["max_trials"]),
+            timeout=resolved_hpo["timeout_seconds"],
+        )
+        finished_at = datetime.utcnow().isoformat(timespec="seconds")
+
+        if study.best_trial is None:
+            default_result["hpo_metadata"] = {
+                **default_result["hpo_metadata"],
+                "backend": "optuna",
+                "status": "no_valid_trial",
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "realized_trial_count": int(len(study.trials)),
+                "trial_count": int(len(study.trials)),
+            }
+            return default_result
+
+        selected = dict(defaults)
+        selected.update(dict(study.best_trial.params))
+        best_eval = _inner_cv_evaluate(
+            method_id=method_id,
+            params=resolve_runtime_method_params(selected, seed=seed),
+            fold_cache=fold_cache,
+            primary_metric=primary_metric,
+            metric_bundle_callback=metric_bundle_callback,
+        )
+        trial_rows: list[dict[str, Any]] = []
+        for trial in study.trials:
+            trial_rows.append(
+                {
+                    "trial_number": int(trial.number),
+                    "state": str(getattr(trial.state, "name", trial.state)),
+                    "value": None if trial.value is None else float(trial.value),
+                    "params": dict(trial.params),
+                    "datetime_start": None if trial.datetime_start is None else trial.datetime_start.isoformat(),
+                    "datetime_complete": None if trial.datetime_complete is None else trial.datetime_complete.isoformat(),
+                }
+            )
+        return {
+            "best_params": selected,
+            "best_score": float(best_eval["primary_score"]),
+            "best_metric_rows": best_eval.get("metric_rows"),
+            "hpo_metadata": {
+                "enabled": True,
+                "backend": "optuna",
+                "status": "success",
+                "started_at": started_at,
+                "finished_at": finished_at,
+                "realized_trial_count": int(len(study.trials)),
+                "trial_count": int(len(study.trials)),
+                "best_trial_number": int(study.best_trial.number),
+                "best_trial_score": float(study.best_value),
+                "requested_max_trials": int(resolved_hpo["max_trials"]),
+                "requested_timeout_seconds": resolved_hpo["timeout_seconds"],
+                "requested_sampler": sampler_name,
+                "requested_pruner": pruner_name,
+                "max_trials": int(resolved_hpo["max_trials"]),
+                "timeout_seconds": resolved_hpo["timeout_seconds"],
+                "sampler": sampler_name,
+                "pruner": pruner_name,
+                "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
+            },
+            "hpo_trials": trial_rows,
         }
