@@ -49,6 +49,11 @@ EFFICIENCY_COLUMNS = [
     "peak_memory_mb",
 ]
 BENCHMARK_METRIC_COLUMNS = CORE_METRIC_COLUMNS + MANUSCRIPT_METRIC_COLUMNS + EFFICIENCY_COLUMNS
+GOVERNANCE_COLUMNS = [
+    "requested_max_trials",
+    "requested_timeout_seconds",
+    "realized_trial_count",
+]
 
 
 def _expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
@@ -66,6 +71,13 @@ def _expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
 
 def _unique_in_order(columns: list[str]) -> list[str]:
     return list(dict.fromkeys(columns))
+
+
+def _parity_gated_frame(frame: pd.DataFrame) -> pd.DataFrame:
+    if "parity_eligible" not in frame.columns:
+        return frame
+    mask = frame["parity_eligible"].fillna(False).astype(bool)
+    return frame.loc[mask].copy()
 
 
 def create_experiment_dir(root: Path) -> Path:
@@ -118,7 +130,7 @@ def export_seed_summary(
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
     by_cols = ["benchmark_id", "dataset_id", "method_id", "seed"]
-    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(frame))
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(frame))
     available_metric_cols = [col for col in metric_cols if col in frame.columns]
     seed_summary = frame.groupby(by_cols, as_index=False)[available_metric_cols].mean(numeric_only=True)
     if output_dir is None:
@@ -139,7 +151,7 @@ def export_overall_summary(
     file_prefix: str | None = None,
 ) -> dict:
     by_cols = ["benchmark_id", "dataset_id", "method_id"]
-    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(frame))
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(frame))
     summary: dict[str, dict] = {}
 
     for key, sub in frame.groupby(by_cols):
@@ -168,7 +180,7 @@ def export_leaderboard(
     output_dir: Path | None = None,
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
-    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + _expand_dynamic_metric_columns(seed_summary))
+    metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(seed_summary))
     available_metric_cols = [col for col in metric_cols if col in seed_summary.columns]
     leaderboard = seed_summary.groupby(["benchmark_id", "dataset_id", "method_id"], as_index=False)[
         available_metric_cols
@@ -209,21 +221,36 @@ def export_manuscript_comparison(
         output_dir = root / "results" / "summaries"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    rank_summary = aggregate_rank_summary(leaderboard, metric=primary_metric)
-    pairwise = pairwise_win_rate(leaderboard, metric=primary_metric)
     significance_source = fold_results if fold_results is not None else leaderboard
+    significance_source = _parity_gated_frame(significance_source)
+    if fold_results is not None:
+        claim_metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(significance_source))
+        available_claim_metric_cols = [col for col in claim_metric_cols if col in significance_source.columns]
+        if significance_source.empty:
+            comparative_leaderboard = leaderboard.iloc[0:0].copy()
+        else:
+            comparative_leaderboard = significance_source.groupby(
+                ["benchmark_id", "dataset_id", "method_id"], as_index=False
+            )[available_claim_metric_cols].mean(numeric_only=True)
+    else:
+        comparative_leaderboard = _parity_gated_frame(leaderboard)
+
+    rank_summary = aggregate_rank_summary(comparative_leaderboard, metric=primary_metric)
+    pairwise = pairwise_win_rate(comparative_leaderboard, metric=primary_metric)
     pairwise_sig = pairwise_significance(significance_source, metric=primary_metric, correction="holm")
-    cd_summary = critical_difference_summary(leaderboard, metric=primary_metric)
-    ci = bootstrap_metric_ci(leaderboard, metric=primary_metric, n_bootstrap=1000, seed=0)
-    elo = elo_ratings(leaderboard, metric=primary_metric)
+    cd_summary = critical_difference_summary(comparative_leaderboard, metric=primary_metric)
+    ci = bootstrap_metric_ci(comparative_leaderboard, metric=primary_metric, n_bootstrap=1000, seed=0)
+    elo = elo_ratings(comparative_leaderboard, metric=primary_metric)
     failures = failure_summary(fold_results if fold_results is not None else leaderboard)
     missing_metric_rows = []
     metric_cols = CORE_METRIC_COLUMNS[1:] + MANUSCRIPT_METRIC_COLUMNS
-    for metric in [col for col in metric_cols if col in leaderboard.columns]:
+    for metric in [col for col in metric_cols if col in comparative_leaderboard.columns]:
         missing_metric_rows.append(
             {
                 "metric": metric,
-                "missing_rate": float(leaderboard[metric].isna().mean()) if len(leaderboard) else float("nan"),
+                "missing_rate": float(comparative_leaderboard[metric].isna().mean())
+                if len(comparative_leaderboard)
+                else float("nan"),
             }
         )
     missing = pd.DataFrame(missing_metric_rows)
@@ -273,6 +300,10 @@ def export_manuscript_comparison(
             "elo_rating_records": elo.to_dict(orient="records"),
             "pairwise_significance_records": pairwise_sig.to_dict(orient="records"),
             "missing_metric_summary": missing.to_dict(orient="records"),
+            "parity_gate": {
+                "applied": "parity_eligible" in significance_source.columns,
+                "comparison_rows": int(len(significance_source)),
+            },
         },
     )
     return paths
