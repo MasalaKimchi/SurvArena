@@ -543,11 +543,18 @@ def run_benchmark(
         return
 
     registered_methods = set(registered_method_ids())
+    unknown_methods = [m for m in methods if m not in registered_methods]
+    if unknown_methods:
+        raise ValueError(
+            f"Unknown method_id(s) {unknown_methods}. Registered: {sorted(registered_methods)}"
+        )
     all_records: list[dict[str, Any]] = []
     run_records: list[dict[str, Any]] = []
     hpo_trial_rows: list[dict[str, Any]] = []
     dataset_curation_rows: list[dict[str, Any]] = []
-    method_cfg_cache = {method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods}
+    method_cfg_cache = {
+        method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods
+    }
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     experiment_dir = output_dir if output_dir is not None else create_experiment_dir(repo_root)
     experiment_dir.mkdir(parents=True, exist_ok=True)
@@ -635,8 +642,6 @@ def run_benchmark(
             seed_pool=seeds,
         )
         for method_id in methods:
-            if method_id not in registered_methods:
-                raise ValueError(f"Unknown method_id '{method_id}'. Registered: {sorted(registered_methods)}")
             method_cfg = method_cfg_cache[method_id]
             for split in filtered_splits:
                 for track in robustness_tracks:

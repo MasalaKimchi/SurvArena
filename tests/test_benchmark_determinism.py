@@ -159,3 +159,42 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     assert smoke_cfg["profile"] == "smoke"
     assert standard_cfg["profile"] == "standard"
     assert manuscript_cfg.get("profile", "manuscript") == "manuscript"
+
+
+def test_event_fingerprint_rejects_non_binary_labels() -> None:
+    from survarena.data.splitters import _event_fingerprint
+
+    with pytest.raises(ValueError, match="binary"):
+        _event_fingerprint(np.array([0, 1, 2], dtype=int))
+
+
+def test_unknown_method_rejected_before_read_yaml(tmp_path, monkeypatch) -> None:
+    from survarena.benchmark import runner as runner_mod
+
+    read_calls: list[int] = []
+
+    def _tracking_read(*_a, **_k) -> dict:
+        read_calls.append(1)
+        return {"method_id": "coxph", "default_params": {}}
+
+    monkeypatch.setattr(runner_mod, "read_yaml", _tracking_read)
+    monkeypatch.setattr(runner_mod, "registered_method_ids", lambda: {"coxph", "aft"})
+    cfg: dict = {
+        "benchmark_id": "t",
+        "profile": "smoke",
+        "datasets": ["d"],
+        "methods": ["not_registered_xyz"],
+        "split_strategy": "repeated_nested_cv",
+        "seeds": [1],
+        "outer_folds": 3,
+        "outer_repeats": 1,
+        "inner_folds": 2,
+    }
+    with pytest.raises(ValueError, match="Unknown method_id"):
+        runner_mod.run_benchmark(
+            repo_root=tmp_path,
+            benchmark_cfg=cfg,
+            output_dir=tmp_path / "out",
+            dry_run=False,
+        )
+    assert read_calls == []

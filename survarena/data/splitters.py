@@ -47,7 +47,11 @@ def _split_manifest_path(root: Path, task_id: str) -> Path:
 
 
 def _event_fingerprint(event: np.ndarray) -> str:
-    encoded = np.asarray(event, dtype=np.int8).tobytes()
+    """Stable hash of event labels; requires strict 0/1 (or bool) to avoid int8 overflow collisions."""
+    arr = np.asarray(event)
+    if not np.isin(arr, [0, 1, False, True]).all():
+        raise ValueError("Event labels must be binary 0/1 (or bool) for deterministic split fingerprinting.")
+    encoded = arr.astype(np.uint8, copy=False).tobytes()
     return sha256(encoded).hexdigest()
 
 
