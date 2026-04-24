@@ -22,6 +22,8 @@ from survarena.logging.export import (
 from survarena.logging.tracker import payload_sha256, write_json
 from survarena.methods.registry import registered_method_ids
 
+_DUAL_HPO_MODE_ORDER: tuple[str, str] = ("no_hpo", "hpo")
+
 
 def _dedupe_preserve_order(values: list[str]) -> list[str]:
     return list(dict.fromkeys(values))
@@ -94,6 +96,8 @@ def compare_survival_models(
     seeds: list[int] | tuple[int, ...] | None = None,
     timeout_seconds: float | None = None,
     autogluon: dict[str, Any] | None = None,
+    hpo: dict[str, Any] | None = None,
+    decision_curve_thresholds: list[float] | tuple[float, ...] | None = None,
     output_dir: str | Path | None = None,
     benchmark_id: str | None = None,
     dry_run: bool = False,
@@ -144,8 +148,10 @@ def compare_survival_models(
         )
 
     autogluon_cfg = dict(autogluon or {})
+    hpo_cfg = dict(hpo or {})
     if timeout_seconds is not None:
         autogluon_cfg.setdefault("time_limit_seconds", float(timeout_seconds))
+    resolved_thresholds = tuple(float(x) for x in (decision_curve_thresholds or [0.2]))
     resolved_benchmark_id = benchmark_id or (
         "user_compare_fixed" if split_strategy == "fixed_split" else "user_compare_cv"
     )
@@ -162,6 +168,8 @@ def compare_survival_models(
         "methods": list(method_ids),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
         "autogluon": autogluon_cfg,
+        "hpo": hpo_cfg,
+        "decision_curve_thresholds": list(resolved_thresholds),
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
     }
@@ -179,6 +187,8 @@ def compare_survival_models(
         "seeds": list(resolved_seeds),
         "timeout_seconds": None if timeout_seconds is None else float(timeout_seconds),
         "autogluon": autogluon_cfg,
+        "hpo": hpo_cfg,
+        "decision_curve_thresholds": list(resolved_thresholds),
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
     }
@@ -222,28 +232,110 @@ def compare_survival_models(
     for method_id in method_ids:
         method_cfg = method_cfg_cache[method_id]
         for split in splits:
-            record = evaluate_split(
-                benchmark_id=resolved_benchmark_id,
-                dataset_id=dataset.metadata.dataset_id,
-                method_id=method_id,
-                split=split,
-                X=dataset.X,
-                time=dataset.time,
-                event=dataset.event,
-                method_cfg=method_cfg,
-                inner_folds=int(inner_folds),
-                timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
-                primary_metric=primary_metric,
-                horizons_quantiles=horizons_quantiles,
-                benchmark_cfg_hash=benchmark_cfg_hash,
-                autogluon_cfg=autogluon_cfg,
-            )
-            run_records.append(record.pop("run_payload"))
-            all_records.append(record)
-            print(
-                f"[{record['status']}] {dataset.metadata.dataset_id}/{method_id}/{split.split_id}/seed{split.seed} "
-                f"{primary_metric}={record.get(primary_metric)}"
-            )
+            parity_key = f"{dataset.metadata.dataset_id}|{split.split_id}|{int(split.seed)}|{method_id}"
+            for hpo_mode in _DUAL_HPO_MODE_ORDER:
+                mode_hpo_cfg = dict(hpo_cfg)
+                mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
+                record = evaluate_split(
+                    benchmark_id=resolved_benchmark_id,
+                    dataset_id=dataset.metadata.dataset_id,
+                    method_id=method_id,
+                    split=split,
+                    X=dataset.X,
+                    time=dataset.time,
+                    event=dataset.event,
+                    method_cfg=method_cfg,
+                    inner_folds=int(inner_folds),
+                    timeout_seconds=None if timeout_seconds is None else float(timeout_seconds),
+                    primary_metric=primary_metric,
+                    horizons_quantiles=horizons_quantiles,
+                    decision_thresholds=resolved_thresholds,
+                    benchmark_cfg_hash=benchmark_cfg_hash,
+                    autogluon_cfg=autogluon_cfg,
+                    hpo_cfg=mode_hpo_cfg,
+                )
+                run_payload = record.pop("run_payload")
+                metrics = run_payload.setdefault("metrics", {})
+                metrics["hpo_mode"] = hpo_mode
+                metrics["parity_key"] = parity_key
+                metrics["parity_eligible"] = True
+                hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
+                realized_trial_count = int(hpo_metadata.get("realized_trial_count", hpo_metadata.get("trial_count", 0)))
+                hpo_metadata["realized_trial_count"] = realized_trial_count
+                hpo_metadata["trial_count"] = realized_trial_count
+                hpo_metadata["requested_max_trials"] = int(hpo_metadata.get("requested_max_trials", mode_hpo_cfg.get("max_trials", 20)))
+                timeout_value = hpo_metadata.get("requested_timeout_seconds", mode_hpo_cfg.get("timeout_seconds"))
+                hpo_metadata["requested_timeout_seconds"] = None if timeout_value is None else float(timeout_value)
+                hpo_metadata["requested_sampler"] = str(
+                    hpo_metadata.get("requested_sampler", mode_hpo_cfg.get("sampler", "tpe"))
+                ).lower()
+                hpo_metadata["requested_pruner"] = str(
+                    hpo_metadata.get("requested_pruner", mode_hpo_cfg.get("pruner", "median"))
+                ).lower()
+                run_payload["hpo_metadata"] = hpo_metadata
+                metrics["requested_max_trials"] = hpo_metadata["requested_max_trials"]
+                metrics["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]
+                metrics["requested_sampler"] = hpo_metadata["requested_sampler"]
+                metrics["requested_pruner"] = hpo_metadata["requested_pruner"]
+                metrics["realized_trial_count"] = realized_trial_count
+                metrics["hpo_trial_count"] = realized_trial_count
+                run_records.append(run_payload)
+
+                record["hpo_mode"] = hpo_mode
+                record["parity_key"] = parity_key
+                record["parity_eligible"] = True
+                record["requested_max_trials"] = hpo_metadata["requested_max_trials"]
+                record["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]
+                record["requested_sampler"] = hpo_metadata["requested_sampler"]
+                record["requested_pruner"] = hpo_metadata["requested_pruner"]
+                record["realized_trial_count"] = realized_trial_count
+                all_records.append(record)
+                print(
+                    f"[{record['status']}] [{hpo_mode}] {dataset.metadata.dataset_id}/{method_id}/{split.split_id}/seed{split.seed} "
+                    f"{primary_metric}={record.get(primary_metric)}"
+                )
+
+    parity_modes: dict[str, set[str]] = {}
+    for run_payload in run_records:
+        metrics = run_payload.get("metrics", {})
+        status = str(run_payload.get("status", metrics.get("status", ""))).lower()
+        parity_key = str(metrics.get("parity_key", ""))
+        hpo_mode = str(metrics.get("hpo_mode", ""))
+        if status == "success" and parity_key and hpo_mode:
+            parity_modes.setdefault(parity_key, set()).add(hpo_mode)
+
+    for run_payload in run_records:
+        metrics = run_payload.get("metrics", {})
+        parity_key = str(metrics.get("parity_key", ""))
+        modes = parity_modes.get(parity_key, set())
+        has_both_modes = "no_hpo" in modes and "hpo" in modes
+        if has_both_modes:
+            metrics["parity_eligible"] = True
+            metrics["comparison_ineligible"] = False
+            metrics["parity_reason"] = None
+            metrics["missing_modes"] = []
+        else:
+            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
+            metrics["parity_eligible"] = False
+            metrics["comparison_ineligible"] = True
+            metrics["parity_reason"] = "missing_counterpart_mode"
+            metrics["missing_modes"] = missing_modes
+
+    for row in all_records:
+        parity_key = str(row.get("parity_key", ""))
+        modes = parity_modes.get(parity_key, set())
+        has_both_modes = "no_hpo" in modes and "hpo" in modes
+        if has_both_modes:
+            row["parity_eligible"] = True
+            row["comparison_ineligible"] = False
+            row["parity_reason"] = None
+            row["missing_modes"] = []
+        else:
+            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
+            row["parity_eligible"] = False
+            row["comparison_ineligible"] = True
+            row["parity_reason"] = "missing_counterpart_mode"
+            row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=resolved_benchmark_id)
     seed_summary = export_seed_summary(
