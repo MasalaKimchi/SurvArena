@@ -169,7 +169,7 @@ def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatc
     assert observed_modes == ["no_hpo", "hpo"]
 
 
-def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch) -> None:
+def test_pairing_unit_remains_eligible_when_both_modes_exist(tmp_path: Path, monkeypatch) -> None:
     captured_run_records: list[dict[str, Any]] = []
     _patch_runner_dependencies(monkeypatch, captured_run_records)
 
@@ -197,5 +197,6 @@ def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch)
     run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=tmp_path / "outputs")
 
     assert captured_run_records
-    row = captured_run_records[0]
-    assert row["metrics"]["parity_eligible"] is False
+    assert len(captured_run_records) == 2
+    assert {row["metrics"]["hpo_mode"] for row in captured_run_records} == {"no_hpo", "hpo"}
+    assert all(row["metrics"]["parity_eligible"] is True for row in captured_run_records)

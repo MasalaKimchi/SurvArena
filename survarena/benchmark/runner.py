@@ -35,7 +35,7 @@ def _resume_completion_key(
     row: dict[str, Any],
     *,
     primary_metric: str,
-) -> tuple[tuple[str, str, str, int] | None, str | None]:
+) -> tuple[tuple[str, str, str, int, str] | None, str | None]:
     if str(row.get("status", "")).lower() != "success":
         return None, "status is not success"
 
@@ -61,6 +61,7 @@ def _resume_completion_key(
             str(row.get("method_id")),
             str(row.get("split_id")),
             seed,
+            str(row.get("hpo_mode", "")),
         ),
         None,
     )
@@ -532,7 +533,7 @@ def run_benchmark(
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     experiment_dir = output_dir if output_dir is not None else create_experiment_dir(repo_root)
     experiment_dir.mkdir(parents=True, exist_ok=True)
-    completed_keys: set[tuple[str, str, str, int]] = set()
+    completed_keys: set[tuple[str, str, str, int, str]] = set()
     if resume:
         existing_fold_results = experiment_dir / f"{benchmark_id}_fold_results.csv"
         if existing_fold_results.exists():
@@ -617,9 +618,6 @@ def run_benchmark(
                 for track in robustness_tracks:
                     track_dataset_id = f"{dataset_id}__{track.track_id}"
                     track_split_id = f"{split.split_id}__{track.track_id}"
-                    key = (track_dataset_id, method_id, track_split_id, int(split.seed))
-                    if key in completed_keys:
-                        continue
                     X_track = apply_robustness_track(
                         dataset.X,
                         track=track,
@@ -632,60 +630,104 @@ def run_benchmark(
                         split=split,
                         seed=split.seed,
                     )
-                    attempt = 0
-                    while True:
-                        record = evaluate_split(
-                            benchmark_id=benchmark_id,
-                            dataset_id=track_dataset_id,
-                            method_id=method_id,
-                            split=split,
-                            X=X_track,
-                            time=dataset.time,
-                            event=event_track,
-                            method_cfg=method_cfg,
-                            inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
-                            timeout_seconds=timeout_seconds,
-                            primary_metric=primary_metric,
-                            horizons_quantiles=horizons_q,  # type: ignore[arg-type]
-                            decision_thresholds=decision_thresholds,
-                            benchmark_cfg_hash=benchmark_cfg_hash,
-                            autogluon_cfg=autogluon_cfg,
-                            hpo_cfg=hpo_cfg,
-                        )
-                        run_payload = record.pop("run_payload")
-                        run_payload["manifest"]["split_id"] = track_split_id
-                        run_payload["metrics"]["split_id"] = track_split_id
-                        run_payload["metrics"]["robustness_track_id"] = track.track_id
-                        run_payload["metrics"]["retry_attempt"] = int(attempt)
-                        run_payload["status"] = str(record.get("status", run_payload["metrics"].get("status", "failed")))
-                        run_payload["retry_attempt"] = int(attempt)
-                        hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
-                        for trial in list(run_payload.get("hpo_trials", [])):
-                            hpo_trial_rows.append(
-                                {
-                                    "benchmark_id": benchmark_id,
-                                    "dataset_id": track_dataset_id,
-                                    "method_id": method_id,
-                                    "split_id": track_split_id,
-                                    "seed": int(split.seed),
-                                    "track_id": track.track_id,
-                                    "hpo_status": hpo_metadata.get("status", "disabled"),
-                                    **trial,
-                                }
+                    parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
+                    for hpo_mode in ("no_hpo", "hpo"):
+                        key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
+                        if key in completed_keys:
+                            continue
+                        mode_hpo_cfg = dict(hpo_cfg)
+                        mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
+                        attempt = 0
+                        while True:
+                            record = evaluate_split(
+                                benchmark_id=benchmark_id,
+                                dataset_id=track_dataset_id,
+                                method_id=method_id,
+                                split=split,
+                                X=X_track,
+                                time=dataset.time,
+                                event=event_track,
+                                method_cfg=method_cfg,
+                                inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
+                                timeout_seconds=timeout_seconds,
+                                primary_metric=primary_metric,
+                                horizons_quantiles=horizons_q,  # type: ignore[arg-type]
+                                decision_thresholds=decision_thresholds,
+                                benchmark_cfg_hash=benchmark_cfg_hash,
+                                autogluon_cfg=autogluon_cfg,
+                                hpo_cfg=mode_hpo_cfg,
                             )
-                        run_records.append(run_payload)
-                        record["dataset_id"] = track_dataset_id
-                        record["split_id"] = track_split_id
-                        record["robustness_track_id"] = track.track_id
-                        record["retry_attempt"] = int(attempt)
-                        all_records.append(record)
-                        if record["status"] == "success" or attempt >= max_retries:
-                            print(
-                                f"[{record['status']}] {track_dataset_id}/{method_id}/{track_split_id}/seed{split.seed} "
-                                f"{primary_metric}={record.get(primary_metric)}"
+                            run_payload = record.pop("run_payload")
+                            run_payload["manifest"]["split_id"] = track_split_id
+                            run_payload["metrics"]["split_id"] = track_split_id
+                            run_payload["metrics"]["robustness_track_id"] = track.track_id
+                            run_payload["metrics"]["hpo_mode"] = hpo_mode
+                            run_payload["metrics"]["parity_key"] = parity_key
+                            run_payload["metrics"]["parity_eligible"] = True
+                            run_payload["metrics"]["retry_attempt"] = int(attempt)
+                            run_payload["status"] = str(record.get("status", run_payload["metrics"].get("status", "failed")))
+                            run_payload["retry_attempt"] = int(attempt)
+                            hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
+                            realized_trial_count = int(hpo_metadata.get("realized_trial_count", hpo_metadata.get("trial_count", 0)))
+                            hpo_metadata["realized_trial_count"] = realized_trial_count
+                            hpo_metadata["trial_count"] = realized_trial_count
+                            hpo_metadata["requested_max_trials"] = int(
+                                hpo_metadata.get("requested_max_trials", mode_hpo_cfg.get("max_trials", 20))
                             )
-                            break
-                        attempt += 1
+                            timeout_value = hpo_metadata.get("requested_timeout_seconds", mode_hpo_cfg.get("timeout_seconds"))
+                            hpo_metadata["requested_timeout_seconds"] = (
+                                None if timeout_value is None else float(timeout_value)
+                            )
+                            hpo_metadata["requested_sampler"] = str(
+                                hpo_metadata.get("requested_sampler", mode_hpo_cfg.get("sampler", "tpe"))
+                            ).lower()
+                            hpo_metadata["requested_pruner"] = str(
+                                hpo_metadata.get("requested_pruner", mode_hpo_cfg.get("pruner", "median"))
+                            ).lower()
+                            run_payload["hpo_metadata"] = hpo_metadata
+                            run_payload["metrics"]["requested_max_trials"] = hpo_metadata["requested_max_trials"]
+                            run_payload["metrics"]["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]
+                            run_payload["metrics"]["requested_sampler"] = hpo_metadata["requested_sampler"]
+                            run_payload["metrics"]["requested_pruner"] = hpo_metadata["requested_pruner"]
+                            run_payload["metrics"]["realized_trial_count"] = realized_trial_count
+                            run_payload["metrics"]["hpo_trial_count"] = realized_trial_count
+                            for trial in list(run_payload.get("hpo_trials", [])):
+                                hpo_trial_rows.append(
+                                    {
+                                        "benchmark_id": benchmark_id,
+                                        "dataset_id": track_dataset_id,
+                                        "method_id": method_id,
+                                        "split_id": track_split_id,
+                                        "seed": int(split.seed),
+                                        "track_id": track.track_id,
+                                        "hpo_mode": hpo_mode,
+                                        "parity_key": parity_key,
+                                        "hpo_status": hpo_metadata.get("status", "disabled"),
+                                        **trial,
+                                    }
+                                )
+                            run_records.append(run_payload)
+                            record["dataset_id"] = track_dataset_id
+                            record["split_id"] = track_split_id
+                            record["hpo_mode"] = hpo_mode
+                            record["parity_key"] = parity_key
+                            record["parity_eligible"] = True
+                            record["robustness_track_id"] = track.track_id
+                            record["retry_attempt"] = int(attempt)
+                            record["requested_max_trials"] = hpo_metadata["requested_max_trials"]
+                            record["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]
+                            record["requested_sampler"] = hpo_metadata["requested_sampler"]
+                            record["requested_pruner"] = hpo_metadata["requested_pruner"]
+                            record["realized_trial_count"] = realized_trial_count
+                            all_records.append(record)
+                            if record["status"] == "success" or attempt >= max_retries:
+                                print(
+                                    f"[{record['status']}] [{hpo_mode}] "
+                                    f"{track_dataset_id}/{method_id}/{track_split_id}/seed{split.seed} "
+                                    f"{primary_metric}={record.get(primary_metric)}"
+                                )
+                                break
+                            attempt += 1
 
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
     seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
