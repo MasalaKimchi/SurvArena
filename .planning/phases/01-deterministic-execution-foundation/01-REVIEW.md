@@ -1,17 +1,16 @@
 ---
 phase: 01-deterministic-execution-foundation
-reviewed: 2026-04-23T23:03:31Z
+reviewed: 2026-04-24T00:00:00Z
 depth: standard
-files_reviewed: 8
+files_reviewed: 7
 files_reviewed_list:
   - survarena/benchmark/runner.py
   - survarena/data/splitters.py
-  - survarena/logging/export.py
   - survarena/run_benchmark.py
+  - survarena/logging/export.py
   - tests/test_benchmark_determinism.py
   - tests/test_benchmark_resume.py
   - configs/benchmark/standard_v1.yaml
-  - configs/benchmark/manuscript_v1.yaml
 findings:
   critical: 0
   warning: 2
@@ -22,51 +21,34 @@ status: issues_found
 
 # Phase 01: Code Review Report
 
-**Reviewed:** 2026-04-23T23:03:31Z  
+**Reviewed:** 2026-04-24T00:00:00Z  
 **Depth:** standard  
-**Files Reviewed:** 8  
+**Files reviewed:** 7 (scoped from `01-01-SUMMARY.md` and `01-02-SUMMARY.md` `key-files`)  
 **Status:** issues_found
 
 ## Summary
 
-Reviewed benchmark orchestration, deterministic split management, export logic, CLI entrypoint, targeted tests, and profile configs for Phase 01 scope. No critical security issues were found, but there are two warning-level correctness risks that can cause confusing failure modes or deterministic-contract drift in edge cases.
+Re-reviewed benchmark orchestration, split governance, CLI entry, export normalization, Phase 01 tests, and `standard_v1` config. **No new issues** since the last Phase 01 report; the two prior warning-level items remain **unresolved** in current `main` and are restated with updated line anchors.
 
 ## Warnings
 
-### WR-01: Unknown method IDs fail before explicit registry validation
+### WR-01: Unknown method IDs fail after method YAML load, not before
 
-**File:** `survarena/benchmark/runner.py:531`  
-**Issue:** Method config files are loaded for all configured methods before checking whether each method is registered (`method_cfg_cache` is created at line 531, while registry validation happens later at lines 613-614). If a method ID is invalid, execution can fail with a file-read/config error instead of the intended clear "Unknown method_id" validation path, which weakens diagnostics and can mask root cause.  
-**Fix:**
-```python
-# Validate method IDs before reading per-method config files.
-registered_methods = set(registered_method_ids())
-unknown_methods = [m for m in methods if m not in registered_methods]
-if unknown_methods:
-    raise ValueError(f"Unknown method_id(s) {unknown_methods}. Registered: {sorted(registered_methods)}")
+**File:** `survarena/benchmark/runner.py` (non–`dry_run` path: `method_cfg_cache` at ~L550, registry check at ~L637–L639)  
+**Issue:** Per-method configs are read for every `method_id` in one dict comprehension before the inner loop validates `method_id in registered_methods`. A typo in `methods` that matches no YAML under `configs/methods/` fails with a file or parse error; a name that is not registered but *does* match a file could proceed until evaluation. The intended `Unknown method_id` `ValueError` is only produced inside the dataset/method loop, after dataset and split work has started.  
+**Remediation:** Build `method_cfg_cache` only after `unknown_methods = [m for m in methods if m not in registered_methods]` and `if unknown_methods: raise ValueError(...)`; then load YAML for known IDs only (or validate registry membership before any `read_yaml`).
 
-method_cfg_cache = {
-    method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml")
-    for method_id in methods
-}
-```
+### WR-02: Event fingerprint can collide when labels are not strict binary 0/1
 
-### WR-02: Split manifest fingerprint can collide for non-binary event labels
+**File:** `survarena/data/splitters.py` — `_event_fingerprint` (~L49–L51)  
+**Issue:** Fingerprinting uses `np.asarray(event, dtype=np.int8).tobytes()`. Values outside the intended binary set can truncate or overflow in ways that make distinct label vectors hash the same, weakening manifest mismatch detection. Survival pipelines typically use {0,1} labels; the risk is mainly contract clarity for non-binary or non-standard encodings.  
+**Remediation:** Assert binary labels (or hash raw bytes at full precision) before hashing; see previous review for a concrete hardening pattern.
 
-**File:** `survarena/data/splitters.py:49-51`  
-**Issue:** `_event_fingerprint()` coerces labels to `np.int8` before hashing. If upstream event values are outside int8 range or not normalized to {0,1}, distinct event arrays can map to the same byte representation after truncation/overflow. That can incorrectly treat changed labels as "same manifest payload", violating deterministic split contract checks in edge cases.  
-**Fix:**
-```python
-def _event_fingerprint(event: np.ndarray) -> str:
-    arr = np.asarray(event)
-    if not np.isin(arr, [0, 1, False, True]).all():
-        raise ValueError("Event labels must be binary (0/1) for deterministic split fingerprinting.")
-    encoded = arr.astype(np.uint8, copy=False).tobytes()
-    return sha256(encoded).hexdigest()
-```
+## Info
+
+None.
 
 ---
 
-_Reviewed: 2026-04-23T23:03:31Z_  
-_Reviewer: Claude (gsd-code-reviewer)_  
-_Depth: standard_
+_Reviewer: GSD code-review workflow (standard depth)_  
+_Scope: SUMMARY `key-files` only (no extra configs)._
