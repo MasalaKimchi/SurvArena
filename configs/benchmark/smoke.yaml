@@ -1,4 +1,4 @@
-benchmark_id: smoke_all_models_no_hpo
+benchmark_id: smoke
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2
@@ -37,6 +37,11 @@ robustness:
   severity_levels: [0.05]
 time_horizons_quantiles: [0.25, 0.5, 0.75]
 datasets:
+  - support
+  - metabric
+  - aids
+  - gbsg2
+  - flchain
   - whas500
 methods:
   - coxph
@@ -62,4 +67,4 @@ methods:
   - deephit_single
   - pchazard
   - cox_time
-notes: Quick no-HPO smoke benchmark that exercises every manuscript default model once on a small built-in dataset.
+notes: Quick no-HPO smoke across all standard built-in datasets; one seed and small folds; exercises every manuscript default model once per dataset.

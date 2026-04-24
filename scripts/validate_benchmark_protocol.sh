@@ -2,7 +2,7 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/smoke_all_models_no_hpo.yaml}"
+BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/smoke.yaml}"
 WORK_DIR="${WORK_DIR:-results/summary/protocol_validation}"
 
 echo "[protocol] Running dry-run config validation"
@@ -21,8 +21,8 @@ echo "[protocol] Running focused benchmark execution"
 
 echo "[protocol] Verifying required artifacts"
 test -f "$WORK_DIR"/experiment_manifest.json
-test -f "$WORK_DIR"/smoke_all_models_no_hpo_fold_results.csv
-test -f "$WORK_DIR"/smoke_all_models_no_hpo_pairwise_significance.csv
-test -f "$WORK_DIR"/smoke_all_models_no_hpo_hpo_summary.json
+test -f "$WORK_DIR"/smoke_fold_results.csv
+test -f "$WORK_DIR"/smoke_pairwise_significance.csv
+test -f "$WORK_DIR"/smoke_hpo_summary.json
 
 echo "[protocol] Artifact validation passed: $WORK_DIR"

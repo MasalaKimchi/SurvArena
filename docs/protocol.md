@@ -77,7 +77,7 @@ Metric computation is backed by `torchsurv`.
 
 `scripts/validate_benchmark_protocol.sh` runs a dry run plus a one-dataset
 one-method execution against a benchmark config (default:
-`configs/benchmark/smoke_all_models_no_hpo.yaml`) and asserts that expected
+`configs/benchmark/smoke.yaml`) and asserts that expected
 summary artifacts exist. Set `BENCHMARK_CONFIG`, `WORK_DIR`, or `PYTHON_BIN` to
 override defaults.
 

@@ -157,7 +157,7 @@ def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
 
 
 def test_profile_contract_configs_use_canonical_tier_intent() -> None:
-    smoke_cfg = read_yaml(Path("configs/benchmark/smoke_all_models_no_hpo.yaml"))
+    smoke_cfg = read_yaml(Path("configs/benchmark/smoke.yaml"))
     standard_cfg = read_yaml(Path("configs/benchmark/standard_v1.yaml"))
     manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_v1.yaml"))
 

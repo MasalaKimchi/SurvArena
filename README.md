@@ -268,8 +268,8 @@ Tracked benchmark configs:
 - `configs/benchmark/cloud_comprehensive_all_models_hpo.yaml`: cloud-scale
   all-datasets (including `kkbox` when available) and full method matrix with
   AutoGluon and native HPO controls
-- `configs/benchmark/smoke_all_models_no_hpo.yaml`: small single-seed smoke
-  benchmark on `whas500` (CI and `scripts/validate_benchmark_protocol.sh`)
+- `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
+  standard built-in datasets (CI and `scripts/validate_benchmark_protocol.sh`)
 
 To evaluate a **single method** (for example one cloud worker per method), use
 `--method` and optionally `--dataset` with `standard_v1.yaml` or
