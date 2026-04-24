@@ -1,3 +1,0 @@
-method_id,validation_score,fit_time_sec,n_trials_completed,status,error,params
-coxph,0.6049301226933798,1.4337195829998564,2,success,,{'alpha': 2.869787477867182e-06}
-rsf,0.582896868387858,1.323540458000025,2,success,,"{'n_estimators': 168, 'max_depth': None, 'min_samples_split': 22, 'min_samples_leaf': 20, 'max_features': 'sqrt'}"
