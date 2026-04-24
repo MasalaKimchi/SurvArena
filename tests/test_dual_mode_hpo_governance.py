@@ -219,4 +219,6 @@ def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch)
     row = captured_run_records[0]
     assert row["metrics"]["hpo_mode"] == "hpo"
     assert row["metrics"]["parity_eligible"] is False
+    assert row["metrics"]["comparison_ineligible"] is True
     assert row["metrics"]["parity_reason"] == "missing_counterpart_mode"
+    assert row["metrics"]["missing_modes"] == ["no_hpo"]

@@ -738,9 +738,10 @@ def run_benchmark(
     parity_modes: dict[str, set[str]] = {}
     for run_payload in run_records:
         metrics = run_payload.get("metrics", {})
+        status = str(run_payload.get("status", metrics.get("status", ""))).lower()
         parity_key = str(metrics.get("parity_key", ""))
         hpo_mode = str(metrics.get("hpo_mode", ""))
-        if parity_key and hpo_mode:
+        if status == "success" and parity_key and hpo_mode:
             parity_modes.setdefault(parity_key, set()).add(hpo_mode)
 
     for run_payload in run_records:
@@ -752,10 +753,13 @@ def run_benchmark(
             metrics["parity_eligible"] = True
             metrics["comparison_ineligible"] = False
             metrics["parity_reason"] = None
+            metrics["missing_modes"] = []
         else:
+            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
             metrics["parity_eligible"] = False
             metrics["comparison_ineligible"] = True
             metrics["parity_reason"] = "missing_counterpart_mode"
+            metrics["missing_modes"] = missing_modes
 
     for row in all_records:
         parity_key = str(row.get("parity_key", ""))
@@ -765,10 +769,13 @@ def run_benchmark(
             row["parity_eligible"] = True
             row["comparison_ineligible"] = False
             row["parity_reason"] = None
+            row["missing_modes"] = []
         else:
+            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
             row["parity_eligible"] = False
             row["comparison_ineligible"] = True
             row["parity_reason"] = "missing_counterpart_mode"
+            row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
     seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
