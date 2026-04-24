@@ -569,7 +569,13 @@ def run_benchmark(
                             f"split_id={row.get('split_id')} seed={row.get('seed')} reason={reason}"
                         )
                     continue
-                completed_keys.add(key)
+                if key[4]:
+                    completed_keys.add(key)
+                else:
+                    # Backward compatibility: pre-dual-mode artifacts had no hpo_mode.
+                    # Treat a successful legacy row as completed for both execution modes.
+                    for legacy_mode in _DUAL_HPO_MODE_ORDER:
+                        completed_keys.add((key[0], key[1], key[2], key[3], legacy_mode))
     write_json(
         experiment_dir / "experiment_manifest.json",
         {
