@@ -169,7 +169,7 @@ def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatc
     assert observed_modes == ["no_hpo", "hpo"]
 
 
-def test_pairing_unit_remains_eligible_when_both_modes_exist(tmp_path: Path, monkeypatch) -> None:
+def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch) -> None:
     captured_run_records: list[dict[str, Any]] = []
     _patch_runner_dependencies(monkeypatch, captured_run_records)
 
@@ -194,9 +194,26 @@ def test_pairing_unit_remains_eligible_when_both_modes_exist(tmp_path: Path, mon
 
     monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", fake_evaluate_split)
 
-    run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=tmp_path / "outputs")
+    output_dir = tmp_path / "outputs"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pd.DataFrame(
+        [
+            {
+                "dataset_id": "toy_dataset__identity",
+                "method_id": "coxph",
+                "split_id": "fixed_split_0__identity",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "harrell_c": 0.78,
+            }
+        ]
+    ).to_csv(output_dir / "dual_mode_contract_fold_results.csv", index=False)
 
-    assert captured_run_records
-    assert len(captured_run_records) == 2
-    assert {row["metrics"]["hpo_mode"] for row in captured_run_records} == {"no_hpo", "hpo"}
-    assert all(row["metrics"]["parity_eligible"] is True for row in captured_run_records)
+    run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=output_dir, resume=True)
+
+    assert len(captured_run_records) == 1
+    row = captured_run_records[0]
+    assert row["metrics"]["hpo_mode"] == "hpo"
+    assert row["metrics"]["parity_eligible"] is False
+    assert row["metrics"]["parity_reason"] == "missing_counterpart_mode"

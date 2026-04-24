@@ -729,6 +729,41 @@ def run_benchmark(
                                 break
                             attempt += 1
 
+    parity_modes: dict[str, set[str]] = {}
+    for run_payload in run_records:
+        metrics = run_payload.get("metrics", {})
+        parity_key = str(metrics.get("parity_key", ""))
+        hpo_mode = str(metrics.get("hpo_mode", ""))
+        if parity_key and hpo_mode:
+            parity_modes.setdefault(parity_key, set()).add(hpo_mode)
+
+    for run_payload in run_records:
+        metrics = run_payload.get("metrics", {})
+        parity_key = str(metrics.get("parity_key", ""))
+        modes = parity_modes.get(parity_key, set())
+        has_both_modes = "no_hpo" in modes and "hpo" in modes
+        if has_both_modes:
+            metrics["parity_eligible"] = True
+            metrics["comparison_ineligible"] = False
+            metrics["parity_reason"] = None
+        else:
+            metrics["parity_eligible"] = False
+            metrics["comparison_ineligible"] = True
+            metrics["parity_reason"] = "missing_counterpart_mode"
+
+    for row in all_records:
+        parity_key = str(row.get("parity_key", ""))
+        modes = parity_modes.get(parity_key, set())
+        has_both_modes = "no_hpo" in modes and "hpo" in modes
+        if has_both_modes:
+            row["parity_eligible"] = True
+            row["comparison_ineligible"] = False
+            row["parity_reason"] = None
+        else:
+            row["parity_eligible"] = False
+            row["comparison_ineligible"] = True
+            row["parity_reason"] = "missing_counterpart_mode"
+
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
     seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
     export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
