@@ -122,6 +122,20 @@ def export_fold_results(
     return frame
 
 
+def _group_keys_with_hpo_mode(frame: pd.DataFrame, base: list[str]) -> list[str]:
+    """Stratify aggregation keys with ``hpo_mode`` when the column is present (dual-mode benchmarks)."""
+    if "hpo_mode" not in frame.columns or "method_id" not in base:
+        return base
+    if "hpo_mode" in base:
+        return base
+    out: list[str] = []
+    for col in base:
+        out.append(col)
+        if col == "method_id":
+            out.append("hpo_mode")
+    return out
+
+
 def export_seed_summary(
     root: Path,
     frame: pd.DataFrame,
@@ -129,7 +143,10 @@ def export_seed_summary(
     output_dir: Path | None = None,
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
-    by_cols = ["benchmark_id", "dataset_id", "method_id", "seed"]
+    by_cols = _group_keys_with_hpo_mode(
+        frame,
+        ["benchmark_id", "dataset_id", "method_id", "seed"],
+    )
     metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(frame))
     available_metric_cols = [col for col in metric_cols if col in frame.columns]
     seed_summary = frame.groupby(by_cols, as_index=False)[available_metric_cols].mean(numeric_only=True)
@@ -182,7 +199,11 @@ def export_leaderboard(
 ) -> pd.DataFrame:
     metric_cols = _unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + _expand_dynamic_metric_columns(seed_summary))
     available_metric_cols = [col for col in metric_cols if col in seed_summary.columns]
-    leaderboard = seed_summary.groupby(["benchmark_id", "dataset_id", "method_id"], as_index=False)[
+    lb_keys = _group_keys_with_hpo_mode(
+        seed_summary,
+        ["benchmark_id", "dataset_id", "method_id"],
+    )
+    leaderboard = seed_summary.groupby(lb_keys, as_index=False)[
         available_metric_cols
     ].mean(numeric_only=True)
     if primary_metric not in leaderboard.columns:
@@ -229,8 +250,12 @@ def export_manuscript_comparison(
         if significance_source.empty:
             comparative_leaderboard = leaderboard.iloc[0:0].copy()
         else:
+            cl_keys = _group_keys_with_hpo_mode(
+                significance_source,
+                ["benchmark_id", "dataset_id", "method_id"],
+            )
             comparative_leaderboard = significance_source.groupby(
-                ["benchmark_id", "dataset_id", "method_id"], as_index=False
+                cl_keys, as_index=False
             )[available_claim_metric_cols].mean(numeric_only=True)
     else:
         comparative_leaderboard = _parity_gated_frame(leaderboard)
@@ -270,9 +295,17 @@ def export_manuscript_comparison(
     pairwise.to_csv(paths["pairwise_win_rate"], index=False)
     pairwise_sig.to_csv(paths["pairwise_significance"], index=False)
     if pairwise_sig.empty:
-        multiple_summary = pd.DataFrame(
-            columns=["benchmark_id", "method_id", "n_significant_wins", "n_significant_losses", "correction"]
-        )
+        mcs_cols = ["benchmark_id", "method_id", "n_significant_wins", "n_significant_losses", "correction"]
+        if "hpo_mode" in significance_source.columns:
+            mcs_cols = [
+                "benchmark_id",
+                "hpo_mode",
+                "method_id",
+                "n_significant_wins",
+                "n_significant_losses",
+                "correction",
+            ]
+        multiple_summary = pd.DataFrame(columns=mcs_cols)
     else:
         pairwise_sig_flags = pairwise_sig.assign(
             significant=lambda df: df["p_value_corrected"] < 0.05,
@@ -280,7 +313,10 @@ def export_manuscript_comparison(
         )
         pairwise_sig_flags["significant_win"] = pairwise_sig_flags["significant"] & pairwise_sig_flags["positive_effect"]
         pairwise_sig_flags["significant_loss"] = pairwise_sig_flags["significant"] & (~pairwise_sig_flags["positive_effect"])
-        multiple_summary = pairwise_sig_flags.groupby(["benchmark_id", "method_id", "correction"], as_index=False).agg(
+        mc_keys = ["benchmark_id", "method_id", "correction"]
+        if "hpo_mode" in pairwise_sig_flags.columns:
+            mc_keys = ["benchmark_id", "hpo_mode", "method_id", "correction"]
+        multiple_summary = pairwise_sig_flags.groupby(mc_keys, as_index=False).agg(
             n_significant_wins=("significant_win", lambda values: int(np.sum(values))),
             n_significant_losses=("significant_loss", lambda values: int(np.sum(values))),
         )

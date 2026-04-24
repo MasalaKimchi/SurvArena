@@ -3,6 +3,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Callable
 
+from survarena.evaluation.statistics import metric_direction
+
 
 _RUNTIME_ONLY_METHOD_PARAMS = {"seed"}
 
@@ -55,9 +57,7 @@ def _searchable_default_params(method_cfg: dict[str, Any]) -> dict[str, Any]:
 
 
 def _metric_direction_for_optimization(primary_metric: str) -> str:
-    if primary_metric in {"harrell_c", "uno_c"}:
-        return "maximize"
-    return "maximize"
+    return metric_direction(primary_metric)
 
 
 def _build_hpo_metadata(
