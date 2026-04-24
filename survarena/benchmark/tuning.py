@@ -60,6 +60,45 @@ def _metric_direction_for_optimization(primary_metric: str) -> str:
     return "maximize"
 
 
+def _build_hpo_metadata(
+    *,
+    resolved_hpo: dict[str, Any],
+    enabled: bool,
+    backend: str,
+    status: str,
+    realized_trial_count: int,
+    started_at: str | None = None,
+    finished_at: str | None = None,
+    best_trial_number: int | None = None,
+    best_trial_score: float | None = None,
+) -> dict[str, Any]:
+    realized = int(realized_trial_count)
+    metadata: dict[str, Any] = {
+        "enabled": bool(enabled),
+        "backend": str(backend),
+        "status": str(status),
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "realized_trial_count": realized,
+        # Backward-compatible alias during transition.
+        "trial_count": realized,
+        "requested_max_trials": int(resolved_hpo["max_trials"]),
+        "requested_timeout_seconds": resolved_hpo["timeout_seconds"],
+        "requested_sampler": str(resolved_hpo["sampler"]),
+        "requested_pruner": str(resolved_hpo["pruner"]),
+        "max_trials": int(resolved_hpo["max_trials"]),
+        "timeout_seconds": resolved_hpo["timeout_seconds"],
+        "sampler": str(resolved_hpo["sampler"]),
+        "pruner": str(resolved_hpo["pruner"]),
+        "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
+    }
+    if best_trial_number is not None:
+        metadata["best_trial_number"] = int(best_trial_number)
+    if best_trial_score is not None:
+        metadata["best_trial_score"] = float(best_trial_score)
+    return metadata
+
+
 def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | None) -> dict[str, Any]:
     base = {
         "enabled": bool(method_cfg.get("search_space")) and False,
@@ -179,24 +218,13 @@ def select_hyperparameters(
             "best_params": defaults,
             "best_score": default_score,
             "best_metric_rows": default_metric_rows,
-            "hpo_metadata": {
-                "enabled": bool(resolved_hpo["enabled"]),
-                "backend": "none",
-                "status": "disabled",
-                "started_at": None,
-                "finished_at": None,
-                "realized_trial_count": 0,
-                "trial_count": 0,
-                "requested_max_trials": int(resolved_hpo["max_trials"]),
-                "requested_timeout_seconds": resolved_hpo["timeout_seconds"],
-                "requested_sampler": str(resolved_hpo["sampler"]),
-                "requested_pruner": str(resolved_hpo["pruner"]),
-                "max_trials": int(resolved_hpo["max_trials"]),
-                "timeout_seconds": resolved_hpo["timeout_seconds"],
-                "sampler": str(resolved_hpo["sampler"]),
-                "pruner": str(resolved_hpo["pruner"]),
-                "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
-            },
+            "hpo_metadata": _build_hpo_metadata(
+                resolved_hpo=resolved_hpo,
+                enabled=bool(resolved_hpo["enabled"]),
+                backend="none",
+                status="disabled",
+                realized_trial_count=0,
+            ),
             "hpo_trials": [],
         }
         if not resolved_hpo["enabled"]:
@@ -255,15 +283,15 @@ def select_hyperparameters(
         finished_at = datetime.utcnow().isoformat(timespec="seconds")
 
         if study.best_trial is None:
-            default_result["hpo_metadata"] = {
-                **default_result["hpo_metadata"],
-                "backend": "optuna",
-                "status": "no_valid_trial",
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "realized_trial_count": int(len(study.trials)),
-                "trial_count": int(len(study.trials)),
-            }
+            default_result["hpo_metadata"] = _build_hpo_metadata(
+                resolved_hpo=resolved_hpo,
+                enabled=True,
+                backend="optuna",
+                status="no_valid_trial",
+                started_at=started_at,
+                finished_at=finished_at,
+                realized_trial_count=int(len(study.trials)),
+            )
             return default_result
 
         selected = dict(defaults)
@@ -291,25 +319,20 @@ def select_hyperparameters(
             "best_params": selected,
             "best_score": float(best_eval["primary_score"]),
             "best_metric_rows": best_eval.get("metric_rows"),
-            "hpo_metadata": {
-                "enabled": True,
-                "backend": "optuna",
-                "status": "success",
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "realized_trial_count": int(len(study.trials)),
-                "trial_count": int(len(study.trials)),
-                "best_trial_number": int(study.best_trial.number),
-                "best_trial_score": float(study.best_value),
-                "requested_max_trials": int(resolved_hpo["max_trials"]),
-                "requested_timeout_seconds": resolved_hpo["timeout_seconds"],
-                "requested_sampler": sampler_name,
-                "requested_pruner": pruner_name,
-                "max_trials": int(resolved_hpo["max_trials"]),
-                "timeout_seconds": resolved_hpo["timeout_seconds"],
-                "sampler": sampler_name,
-                "pruner": pruner_name,
-                "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
-            },
+            "hpo_metadata": _build_hpo_metadata(
+                resolved_hpo={
+                    **resolved_hpo,
+                    "sampler": sampler_name,
+                    "pruner": pruner_name,
+                },
+                enabled=True,
+                backend="optuna",
+                status="success",
+                started_at=started_at,
+                finished_at=finished_at,
+                realized_trial_count=int(len(study.trials)),
+                best_trial_number=int(study.best_trial.number),
+                best_trial_score=float(study.best_value),
+            ),
             "hpo_trials": trial_rows,
         }
