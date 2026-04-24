@@ -130,6 +130,11 @@ def test_run_records_include_hpo_mode_and_parity_key(tmp_path: Path, monkeypatch
     metrics = captured_run_records[0]["metrics"]
     assert metrics["hpo_mode"] in {"no_hpo", "hpo"}
     assert metrics["parity_key"] == "toy_dataset__identity|fixed_split_0__identity|11|coxph"
+    assert metrics["requested_max_trials"] == 5
+    assert metrics["requested_timeout_seconds"] == 30.0
+    assert metrics["requested_sampler"] == "tpe"
+    assert metrics["requested_pruner"] == "median"
+    assert metrics["realized_trial_count"] == 0
 
 
 def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatch) -> None:
