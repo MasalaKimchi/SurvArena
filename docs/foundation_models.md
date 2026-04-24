@@ -1,5 +1,7 @@
 # Foundation Model Roadmap
 
+Living roadmap for optional tabular foundation adapters (not a blocking issue list).
+
 ## Current State
 
 - implemented adapters: `tabpfn_survival`, `mitra_survival`

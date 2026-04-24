@@ -34,6 +34,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         momentum: float = 0.999,
         queue_size: int = 512,
         temperature: float = 1.0,
+        aux_loss_weight: float = 0.0,
     ) -> None:
         super().__init__(
             hidden_layers=hidden_layers,
@@ -52,6 +53,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             momentum=momentum,
             queue_size=queue_size,
             temperature=temperature,
+            aux_loss_weight=aux_loss_weight,
         )
         self.model: Momentum | None = None
         self.device: torch.device | None = None

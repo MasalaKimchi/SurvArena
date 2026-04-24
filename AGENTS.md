@@ -104,7 +104,7 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 
 ## Naming Patterns
 - Use snake_case module names in `survarena/` (for example `survarena/data/user_dataset.py`, `survarena/benchmark/tuning.py`).
-- Use `test_<subject>.py` naming in `tests/` (for example `tests/test_compare_api.py`, `tests/test_statistics_strong.py`).
+- Use `test_<subject>.py` naming in `tests/` (for example `tests/test_compare_api.py`, `tests/test_statistics.py`).
 - Use snake_case function names (`compare_survival_models` in `survarena/api/compare.py`, `load_or_create_splits` in `survarena/data/splitters.py`).
 - Prefix internal helpers with `_` for non-public scope (`_resolve_compare_methods` in `survarena/api/compare.py`).
 - Use descriptive snake_case variables (`benchmark_cfg_hash`, `resolved_thresholds`, `method_cfg_cache`) in `survarena/api/compare.py` and `survarena/benchmark/runner.py`.

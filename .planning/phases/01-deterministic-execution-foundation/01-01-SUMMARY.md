@@ -21,7 +21,7 @@ key-files:
     - survarena/data/splitters.py
     - survarena/run_benchmark.py
     - configs/benchmark/standard_v1.yaml
-    - tests/test_benchmark_determinism.py
+    - tests/test_benchmark_runner.py
 key-decisions:
   - "Canonical benchmark profiles are locked to smoke, standard, and manuscript with strict deterministic field validation."
   - "Split manifest payload mismatch now fails by default and requires explicit --regenerate-splits operator intent."
@@ -63,7 +63,7 @@ Each task was committed atomically:
 - `survarena/data/splitters.py` - Added manifest mismatch hard-fail gate with explicit regeneration bypass option.
 - `survarena/run_benchmark.py` - Added `--regenerate-splits` CLI switch and forwarded runtime control to benchmark runner.
 - `configs/benchmark/standard_v1.yaml` - Updated profile metadata to canonical `standard`.
-- `tests/test_benchmark_determinism.py` - Added deterministic profile-contract, manifest mismatch/regeneration, and canonical profile-intent tests.
+- `tests/test_benchmark_runner.py` - Added deterministic profile-contract, manifest mismatch/regeneration, and canonical profile-intent tests.
 
 ## Decisions Made
 - Enforced canonical profile labels (`smoke`, `standard`, `manuscript`) at runtime instead of tolerating aliases.

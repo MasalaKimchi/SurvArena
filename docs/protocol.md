@@ -6,7 +6,7 @@ artifacts.
 
 ## Standard Benchmark
 
-`configs/benchmark/standard_v1.yaml` defines the default research track:
+`configs/benchmark/standard_v1.yaml` defines the default standard track:
 
 - task: right-censored tabular survival prediction
 - split strategy: repeated nested CV
@@ -14,10 +14,27 @@ artifacts.
 - inner loop: 3 folds
 - seeds: `[11, 22, 33, 44, 55]`
 - primary metric: `uno_c`
-- secondary metrics: `harrell_c`, `ibs`, `td_auc`, `brier`, `calibration`, `net_benefit`
+- secondary metrics: `harrell_c`, `ibs`, `td_auc`
 - default methods: `coxph`, `coxnet`, `rsf`, `deepsurv`
 
-`configs/benchmark/large_v1.yaml` is the fixed-split large-track placeholder for `kkbox`.
+`configs/benchmark/manuscript_v1.yaml` and the smoke suite configs add
+`brier`, `calibration`, and `net_benefit` to `secondary_metrics`, plus the
+usual time-horizon and decision-curve settings for those outputs.
+
+Benchmark profiles (see `validate_benchmark_profile_contract` in
+`survarena/benchmark/runner.py`):
+
+- `smoke`: small folds/repeats/seeds for CI and quick checks, not for statistical claims
+- `standard`: balanced rigor for routine method iteration (outer folds/repeats and multi-seed lists suitable for stable comparisons)
+- `manuscript`: full native method portfolio, extended secondaries, and stricter reporting expectations
+
+Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`,
+`severity_levels`) control optional perturbation tracks; when disabled, only the
+baseline track runs.
+
+The large `kkbox` dataset is included only in
+`configs/benchmark/cloud_comprehensive_all_models_hpo.yaml` when a local loader is
+available; there is no separate large-track-only YAML.
 
 ## User Dataset Comparison
 
@@ -34,6 +51,7 @@ Supported split strategies:
 - every method sees the same split definitions
 - preprocessing is fit on training-side data only
 - hyperparameter search uses the configured inner validation budget
+- native methods can run Optuna-based HPO when `hpo.enabled: true`
 - the selected config is refit before outer-test evaluation
 - seeds are passed through to stochastic methods
 
@@ -44,6 +62,7 @@ Supported split strategies:
 - calibration and utility: median-horizon calibration slope/intercept and median-horizon net benefit
 - efficiency: fit time, inference time, peak memory
 - manuscript comparison: per-dataset ranks, mean/median rank, pairwise win rate, ELO-style ratings, bootstrap confidence intervals, failure rate, missing-metric rate
+- strong inference artifacts: paired significance tests with multiple-comparison correction and critical-difference summaries
 
 Metric computation is backed by `torchsurv`.
 
@@ -53,6 +72,14 @@ Metric computation is backed by `torchsurv`.
 - split manifests guard against stale splits after dataset or config changes
 - benchmark and method config hashes are recorded in run payloads
 - experiment manifests capture run-level metadata
+
+## Automated protocol check
+
+`scripts/validate_benchmark_protocol.sh` runs a dry run plus a one-dataset
+one-method execution against a benchmark config (default:
+`configs/benchmark/smoke_all_models_no_hpo.yaml`) and asserts that expected
+summary artifacts exist. Set `BENCHMARK_CONFIG`, `WORK_DIR`, or `PYTHON_BIN` to
+override defaults.
 
 ## Output Contract
 
@@ -65,6 +92,9 @@ Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 - `<benchmark_id>_leaderboard.json`
 - `<benchmark_id>_rank_summary.csv`
 - `<benchmark_id>_pairwise_win_rate.csv`
+- `<benchmark_id>_pairwise_significance.csv`
+- `<benchmark_id>_multiple_comparison_summary.csv`
+- `<benchmark_id>_critical_difference.csv`
 - `<benchmark_id>_elo_ratings.csv`
 - `<benchmark_id>_bootstrap_ci.csv`
 - `<benchmark_id>_failure_summary.csv`
@@ -73,6 +103,8 @@ Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 - `<benchmark_id>_manuscript_summary.json`
 - `<benchmark_id>_run_records.jsonl.gz`
 - `<benchmark_id>_run_records_index.json`
+- `<benchmark_id>_hpo_trials.csv`
+- `<benchmark_id>_hpo_summary.json`
 - `experiment_manifest.json`
 
 Run ledgers and manuscript summaries include explicit `schema_version` fields.

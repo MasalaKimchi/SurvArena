@@ -259,13 +259,21 @@ benchmark-style evaluation with shared outer and inner splits.
 
 Tracked benchmark configs:
 
-- `configs/benchmark/standard_v1.yaml`: repeated nested CV on `support`,
-  `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`
-- `configs/benchmark/large_v1.yaml`: fixed-split placeholder for `kkbox`
+- `configs/benchmark/standard_v1.yaml`: standard native portfolio (Cox, RSF,
+  DeepSurv) on the six built-in standard datasets, repeated nested CV
+- `configs/benchmark/manuscript_v1.yaml`: full native manuscript portfolio,
+  repeated nested CV
+- `configs/benchmark/manuscript_autogluon_v1.yaml`: AutoGluon-only manuscript
+  track
 - `configs/benchmark/cloud_comprehensive_all_models_hpo.yaml`: cloud-scale
-  all-datasets/all-models run with explicit AutoGluon HPO controls
-- `configs/benchmark/models/`: one-method benchmark configs, including
-  AutoGluon-backed default and tuned variants
+  all-datasets (including `kkbox` when available) and full method matrix with
+  AutoGluon and native HPO controls
+- `configs/benchmark/smoke_all_models_no_hpo.yaml`: small single-seed smoke
+  benchmark on `whas500` (CI and `scripts/validate_benchmark_protocol.sh`)
+
+To evaluate a **single method** (for example one cloud worker per method), use
+`--method` and optionally `--dataset` with `standard_v1.yaml` or
+`manuscript_v1.yaml` instead of maintaining one YAML per model.
 
 Example:
 
@@ -291,6 +299,16 @@ Dry-run a benchmark configuration without fitting models:
 python -m survarena.run_benchmark \
   --benchmark-config configs/benchmark/standard_v1.yaml \
   --dry-run
+```
+
+Resume a partial benchmark run (reusing an output directory):
+
+```bash
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/cloud_comprehensive_all_models_hpo.yaml \
+  --output-dir results/summary/exp_resume_target \
+  --resume \
+  --max-retries 2
 ```
 
 The standard protocol uses shared split definitions, training-side
@@ -347,10 +365,13 @@ Each experiment can include:
 - leaderboards
 - rank summaries
 - pairwise win rates
+- pairwise significance with corrected p-values
 - ELO-style ratings
+- critical-difference summaries
 - bootstrap confidence intervals
 - failure and missing-metric summaries
 - compressed run ledgers
+- HPO trial ledgers and summaries
 - experiment manifests
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
@@ -370,6 +391,7 @@ Common checks:
 python scripts/check_environment.py
 python -m compileall survarena
 python -m survarena.run_benchmark --dry-run
+./scripts/validate_benchmark_protocol.sh
 pytest
 ruff check survarena tests scripts
 ```
@@ -387,7 +409,7 @@ python -m pip install -r requirements.txt
 - [Datasets](docs/datasets.md)
 - [AutoGluon backend](docs/autogluon_backend.md)
 - [AutoGluon comparison notes](docs/autogluon_comparison.md)
-- [Foundation-model TODO](docs/tabular_foundation_models_todo.md)
+- [Foundation models roadmap](docs/foundation_models.md)
 - [Examples](examples/README.md)
 - [Project blueprint](blueprint.md)
 

@@ -29,15 +29,15 @@ overrides_applied: 0
 | Requirement | Description | Status | Evidence |
 | --- | --- | --- | --- |
 | `EXEC-02` | Run every selected model in both no-HPO and HPO modes | ✓ SATISFIED | Dual-mode execution loop and `hpo_mode`/`parity_key` telemetry in runner+compare paths; validated in `tests/test_dual_mode_hpo_governance.py` and `tests/test_compare_api.py`. |
-| `EXEC-03` | Enforce and expose uniform HPO budget policy usage | ✓ SATISFIED | Requested-vs-realized budget fields emitted and tested (`tests/test_hpo_config.py`, `tests/test_compare_api.py`, `tests/test_benchmark_resume.py`). |
+| `EXEC-03` | Enforce and expose uniform HPO budget policy usage | ✓ SATISFIED | Requested-vs-realized budget fields emitted and tested (`tests/test_hpo_config.py`, `tests/test_compare_api.py`, `tests/test_benchmark_runner.py`). |
 
 ### Behavioral Spot-Checks
 
 | Behavior | Command | Result | Status |
 | --- | --- | --- | --- |
 | Compare/export parity and governance behavior | `python -m pytest tests/test_compare_api.py tests/test_dual_mode_hpo_governance.py -x --tb=short` | `6 passed` | ✓ PASS |
-| Resume and retry semantics under dual-mode | `python -m pytest tests/test_benchmark_resume.py -q --tb=short` | `6 passed` | ✓ PASS |
-| Full regression gate after Phase 2 execution | `python -m pytest -x -q --tb=short` | `125 passed, 6 skipped` | ✓ PASS |
+| Resume and retry semantics under dual-mode | `python -m pytest tests/test_benchmark_runner.py -k "exec04" -q --tb=short` | `6 passed` | ✓ PASS |
+| Full regression gate after Phase 2 execution | `python -m pytest -x -q --tb=short` | `127 passed, 6 skipped` (approx.) | ✓ PASS |
 
 ### Human Verification Required
 

@@ -23,6 +23,14 @@ def _parse_int_csv_list(value: str) -> list[int]:
         raise argparse.ArgumentTypeError("Expected a comma-separated list of integers.") from exc
 
 
+def _parse_float_csv_list(value: str) -> list[float]:
+    items = _parse_csv_list(value)
+    try:
+        return [float(item) for item in items]
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Expected a comma-separated list of floats.") from exc
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SurvArena command line interface.")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -140,6 +148,14 @@ def parse_args() -> argparse.Namespace:
         help="Optional comma-separated random seeds. fixed_split expects exactly one seed.",
     )
     compare_parser.add_argument("--timeout-seconds", type=float, default=None)
+    compare_parser.add_argument("--hpo-trials", type=int, default=0, help="Enable native HPO with this many trials.")
+    compare_parser.add_argument("--hpo-timeout-seconds", type=float, default=None, help="Native HPO timeout.")
+    compare_parser.add_argument(
+        "--decision-thresholds",
+        type=_parse_float_csv_list,
+        default=None,
+        help="Comma-separated decision thresholds for net-benefit reporting.",
+    )
     compare_parser.add_argument("--save-path", default=None, help="Optional directory for benchmark outputs.")
     compare_parser.add_argument(
         "--enable-foundation-models",
@@ -218,6 +234,15 @@ def main() -> None:
             inner_folds=args.inner_folds,
             seeds=args.seeds,
             timeout_seconds=args.timeout_seconds,
+            hpo={
+                "enabled": bool(args.hpo_trials and args.hpo_trials > 0),
+                "max_trials": int(args.hpo_trials or 0),
+                "timeout_seconds": args.hpo_timeout_seconds,
+                "sampler": "tpe",
+                "pruner": "median",
+                "n_startup_trials": 8,
+            },
+            decision_curve_thresholds=args.decision_thresholds,
             output_dir=args.save_path,
             dry_run=args.dry_run,
         )

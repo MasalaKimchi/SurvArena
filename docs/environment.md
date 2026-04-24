@@ -60,6 +60,15 @@ python -m survarena.run_benchmark --dry-run
 
 If an optional dependency is missing, `--dry-run` reports it and exits cleanly.
 
+End-to-end protocol spot-check (dry run plus a tiny fit and artifact checks;
+see `docs/protocol.md`):
+
+```bash
+./scripts/validate_benchmark_protocol.sh
+```
+
+Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
+
 ## Output Locations
 
 - splits: `data/splits/<task_id>/`

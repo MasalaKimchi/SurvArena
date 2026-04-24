@@ -9,10 +9,11 @@ SurvArena's external survival evaluation unchanged. Risk predictions come from
 AutoGluon's event probability. Survival curves are calibrated with a Breslow
 baseline estimated from the training data and the fitted risk scores.
 
-Use `configs/benchmark/models/*_default.yaml` to run one native model at a
-time. Use `standard_v1_autogluon_survival_default.yaml` for a no-HPO AutoGluon
-baseline and `standard_v1_autogluon_survival_autogluon.yaml` for an
-AutoGluon-managed preset/HPO/bagging/stacking run.
+To run a **single** native model or `autogluon_survival` on the standard
+six-dataset matrix, use `configs/benchmark/standard_v1.yaml` (or
+`manuscript_v1.yaml`) with `--method` and `--dataset` as needed, or use
+`configs/benchmark/manuscript_autogluon_v1.yaml` for an AutoGluon-managed
+preset, bagging, stacking, and refit run on all standard datasets.
 
 The benchmark ledger records backend-neutral fields including
 `training_backend`, `hpo_backend`, `autogluon_presets`, `autogluon_best_model`,

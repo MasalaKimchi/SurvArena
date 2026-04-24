@@ -2,14 +2,13 @@
 phase: 01-deterministic-execution-foundation
 reviewed: 2026-04-24T12:30:00Z
 depth: standard
-files_reviewed: 7
+files_reviewed: 6
 files_reviewed_list:
   - survarena/benchmark/runner.py
   - survarena/data/splitters.py
   - survarena/run_benchmark.py
   - survarena/logging/export.py
-  - tests/test_benchmark_determinism.py
-  - tests/test_benchmark_resume.py
+  - tests/test_benchmark_runner.py
   - configs/benchmark/standard_v1.yaml
 findings:
   critical: 0

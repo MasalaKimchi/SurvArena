@@ -6,6 +6,7 @@ outer_repeats: 1
 inner_folds: 2
 seeds: [11]
 primary_metric: uno_c
+profile: smoke
 secondary_metrics:
   - harrell_c
   - ibs
@@ -21,6 +22,19 @@ autogluon:
   num_bag_folds: 0
   num_stack_levels: 0
   refit_full: false
+hpo:
+  enabled: false
+  max_trials: 4
+  timeout_seconds: 120
+  sampler: random
+  pruner: none
+  n_startup_trials: 2
+decision_curve:
+  thresholds: [0.2]
+robustness:
+  enabled: false
+  tracks: [baseline]
+  severity_levels: [0.05]
 time_horizons_quantiles: [0.25, 0.5, 0.75]
 datasets:
   - whas500

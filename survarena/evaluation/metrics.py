@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 
@@ -18,9 +18,10 @@ class MetricBundle:
     calibration_slope_50: float = float("nan")
     calibration_intercept_50: float = float("nan")
     net_benefit_50: float = float("nan")
+    extra_metrics: dict[str, float] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, float]:
-        return {
+        payload = {
             "uno_c": float(self.uno_c),
             "harrell_c": float(self.harrell_c),
             "ibs": float(self.ibs),
@@ -34,6 +35,9 @@ class MetricBundle:
             "calibration_intercept_50": float(self.calibration_intercept_50),
             "net_benefit_50": float(self.net_benefit_50),
         }
+        for key, value in self.extra_metrics.items():
+            payload[str(key)] = float(value)
+        return payload
 
 
 def _safe_float(value: float | np.ndarray) -> float:
@@ -62,6 +66,7 @@ def compute_survival_metrics(
     survival_probs: np.ndarray,
     survival_times: np.ndarray,
     horizons: tuple[float, float, float],
+    decision_thresholds: tuple[float, ...] = (0.2,),
 ) -> MetricBundle:
     import torch
     from torchsurv.metrics.auc import Auc
@@ -151,6 +156,31 @@ def compute_survival_metrics(
         threshold=0.2,
     )
 
+    extra_metrics: dict[str, float] = {}
+    horizon_labels = ("25", "50", "75")
+    for idx, label in enumerate(horizon_labels):
+        slope, intercept = _calibration_line(
+            predicted=horizon_event_probs[:, idx],
+            observed=horizon_observed[:, idx],
+            known=horizon_known[:, idx],
+        )
+        extra_metrics[f"calibration_slope_{label}"] = float(slope)
+        extra_metrics[f"calibration_intercept_{label}"] = float(intercept)
+        threshold_scores: list[float] = []
+        for threshold in decision_thresholds:
+            threshold_pct = int(round(float(threshold) * 100))
+            nb = _net_benefit(
+                predicted=horizon_event_probs[:, idx],
+                observed=horizon_observed[:, idx],
+                known=horizon_known[:, idx],
+                threshold=float(threshold),
+            )
+            extra_metrics[f"net_benefit_{label}_t{threshold_pct}"] = float(nb)
+            if np.isfinite(nb):
+                threshold_scores.append(float(nb))
+        extra_metrics[f"net_benefit_{label}"] = float(np.mean(threshold_scores)) if threshold_scores else float("nan")
+        extra_metrics[f"decision_curve_aunb_{label}"] = extra_metrics[f"net_benefit_{label}"]
+
     return MetricBundle(
         uno_c=_safe_float(uno),
         harrell_c=_safe_float(harrell),
@@ -164,6 +194,7 @@ def compute_survival_metrics(
         calibration_slope_50=calibration_slope,
         calibration_intercept_50=calibration_intercept,
         net_benefit_50=net_benefit,
+        extra_metrics=extra_metrics,
     )
 
 

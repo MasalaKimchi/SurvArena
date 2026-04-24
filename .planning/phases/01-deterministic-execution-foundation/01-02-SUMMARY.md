@@ -18,11 +18,11 @@ tech-stack:
     - per-attempt retry metadata persisted at runner and ledger export boundaries
 key-files:
   created:
-    - tests/test_benchmark_resume.py
+    - tests/test_benchmark_runner.py
   modified:
     - survarena/benchmark/runner.py
     - survarena/logging/export.py
-    - tests/test_benchmark_resume.py
+    - tests/test_benchmark_runner.py
 key-decisions:
   - "D-06 enforcement now requires status=success plus identifier and primary-metric integrity before resume skip."
   - "Run ledger records now carry top-level per-attempt status/retry_attempt/failure fields for D-07 auditability."
@@ -49,7 +49,7 @@ completed: 2026-04-23
 ## Accomplishments
 - Added a centralized resume eligibility helper in `runner.py` so completed keys are seeded only from integrity-valid successful rows.
 - Preserved retry attempt lineage by emitting top-level `status`, `retry_attempt`, and `failure` fields in run-record payloads and export normalization.
-- Built deterministic `tests/test_benchmark_resume.py` coverage for EXEC-04 behaviors: interrupted-run resume, retry cap enforcement, and failure record preservation.
+- Built deterministic `tests/test_benchmark_runner.py` coverage for EXEC-04 behaviors: interrupted-run resume, retry cap enforcement, and failure record preservation.
 
 ## Task Commits
 
@@ -62,7 +62,7 @@ Each task was committed atomically:
 ## Files Created/Modified
 - `survarena/benchmark/runner.py` - Added integrity-aware resume completion key validation and explicit per-attempt status metadata on run payloads.
 - `survarena/logging/export.py` - Normalized run ledger records to guarantee structured `status`, `retry_attempt`, and `failure` fields per attempt.
-- `tests/test_benchmark_resume.py` - Added and aligned EXEC-04 tests for resume eligibility, retry budget enforcement, and failed-attempt evidence retention.
+- `tests/test_benchmark_runner.py` - Added and aligned EXEC-04 tests for resume eligibility, retry budget enforcement, and failed-attempt evidence retention.
 
 ## Decisions Made
 - Resume skips are now explicitly tied to D-06 integrity semantics instead of trusting `status=success` alone.

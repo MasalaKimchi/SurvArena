@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 
 import numpy as np
 import pandas as pd

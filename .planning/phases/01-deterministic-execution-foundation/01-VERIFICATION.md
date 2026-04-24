@@ -41,10 +41,9 @@ re_verification:
 | --- | --- | --- | --- |
 | `survarena/run_benchmark.py` | CLI-level strict profile and split-governance control flags | ✓ VERIFIED | Exists, substantive, and wired to runner with explicit `regenerate_splits` forwarding. |
 | `survarena/data/splitters.py` | Manifest mismatch hard-fail and explicit regeneration handling | ✓ VERIFIED | Exists with deterministic payload check and explicit mismatch regeneration gate. |
-| `tests/test_benchmark_determinism.py` | Deterministic profile/split-governance coverage | ✓ VERIFIED | 9 tests pass; includes profile contract and manifest mismatch/regeneration checks. |
+| `tests/test_benchmark_runner.py` | Profile/split-governance and EXEC-04 resume tests | ✓ VERIFIED | 17 tests total: 11 non-`exec04` (profile, manifests, config smoke) and 6 `test_exec04_*` (resume, retry, ledger). |
 | `survarena/benchmark/runner.py` | Resume eligibility validator and retry-aware decisioning | ✓ VERIFIED | Exists with `_resume_completion_key(...)`, retry gating, and run-record emission. |
 | `survarena/logging/export.py` | Persist structured run ledger/failure artifacts with required status fields | ✓ VERIFIED | `export_run_ledger(...)` normalizes required structured attempt fields before export. |
-| `tests/test_benchmark_resume.py` | Automated resume/failure semantics coverage | ✓ VERIFIED | 6 tests pass; covers resume eligibility, retry cap, and failure evidence preservation. |
 
 ### Key Link Verification
 
@@ -67,8 +66,8 @@ re_verification:
 
 | Behavior | Command | Result | Status |
 | --- | --- | --- | --- |
-| Deterministic profile/split-governance tests | `pytest tests/test_benchmark_determinism.py -q` | `9 passed in 1.24s` | ✓ PASS |
-| Resume/retry/failure-preservation tests | `pytest tests/test_benchmark_resume.py -q` | `6 passed in 1.30s` | ✓ PASS |
+| Deterministic profile/split-governance tests | `pytest tests/test_benchmark_runner.py -k "not exec04" -q` | `11 passed` (approx. timing environment-dependent) | ✓ PASS |
+| Resume/retry/failure-preservation tests | `pytest tests/test_benchmark_runner.py -k "exec04" -q` | `6 passed` (approx. timing environment-dependent) | ✓ PASS |
 | Smoke profile runnable under strict contract | `python -m survarena.run_benchmark --benchmark-config configs/benchmark/smoke_all_models_no_hpo.yaml --dry-run` | Dry run succeeds and reports canonical `profile=smoke` | ✓ PASS |
 | Standard profile runnable under strict contract | `python -m survarena.run_benchmark --benchmark-config configs/benchmark/standard_v1.yaml --dry-run` | Dry run succeeds and reports canonical `profile=standard` | ✓ PASS |
 | Manuscript profile runnable under strict contract | `python -m survarena.run_benchmark --benchmark-config configs/benchmark/manuscript_v1.yaml --dry-run` | Dry run succeeds and reports canonical `profile=manuscript` | ✓ PASS |
