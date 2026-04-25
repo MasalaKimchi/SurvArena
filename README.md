@@ -234,23 +234,14 @@ metadata contract.
 
 ## Presets and Models
 
-Built-in presets:
+Preset membership and model adapter availability are defined in code and
+configuration, not duplicated in this README. Use `presets` for the maintained
+default portfolios, or select registered adapters explicitly with
+`included_models` in Python and `--models` on the CLI.
 
-- `fast`: `coxph`, `rsf`
-- `medium`: `coxph`, `coxnet`, `rsf`, `deepsurv`
-- `best`: `medium` plus `deepsurv_moco`
-- `all`: `best` plus eligible foundation adapters
-- `foundation`: `coxph` plus eligible foundation adapters
-- `autogluon`: AutoGluon-backed survival adapter
-
-Registered adapters can also be selected explicitly with `included_models` in
-Python or `--models` on the CLI. Method configs are stored in
-`configs/methods/` and cover classical survival models, tree methods, boosting,
-pycox deep models, XGBoost/CatBoost variants, AutoGluon-backed fitting, and
-experimental foundation-model adapters.
-
-Use `enable_foundation_models=True` or `--enable-foundation-models` to let
-non-foundation presets consider eligible foundation adapters.
+Method configs live in `configs/methods/`. Foundation-model details and runtime
+readiness checks are documented in
+[`docs/foundation_models.md`](docs/foundation_models.md).
 
 ## Compare API
 
