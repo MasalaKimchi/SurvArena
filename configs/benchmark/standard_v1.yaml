@@ -7,6 +7,7 @@ inner_folds: 3
 seeds: [11, 22, 33, 44, 55]
 primary_metric: uno_c
 profile: standard
+comparison_modes: [no_hpo, hpo]
 secondary_metrics:
   - harrell_c
   - ibs

@@ -89,7 +89,7 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert (output_dir / "user_compare_fixed_missing_metric_summary.csv").exists()
     assert (output_dir / "user_compare_fixed_dataset_curation.csv").exists()
     assert (output_dir / "user_compare_fixed_manuscript_summary.json").exists()
-    assert (output_dir / "user_compare_fixed_run_records.jsonl.gz").exists()
+    assert not (output_dir / "user_compare_fixed_run_records.jsonl.gz").exists()
     assert (output_dir / "user_compare_fixed_run_records_compact.jsonl.gz").exists()
     assert (output_dir / "user_compare_fixed_run_records_compact_index.json").exists()
     assert (output_dir / "experiment_navigator.json").exists()

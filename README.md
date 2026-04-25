@@ -313,8 +313,9 @@ python -m survarena.run_benchmark \
 
 The standard protocol uses shared split definitions, training-side
 preprocessing, configured tuning budgets, refit-before-test evaluation, and
-seeded stochastic methods. See [`docs/protocol.md`](docs/protocol.md) for the
-full benchmark contract.
+seeded stochastic methods. Benchmark configs use `comparison_modes` to choose
+`no_hpo`, `hpo`, or both result tracks. See
+[`docs/protocol.md`](docs/protocol.md) for the full benchmark contract.
 
 ## Foundation Models
 
@@ -370,9 +371,14 @@ Each experiment can include:
 - critical-difference summaries
 - bootstrap confidence intervals
 - failure and missing-metric summaries
-- compressed run ledgers
+- compact compressed run ledgers and indexes
 - HPO trial ledgers and summaries
 - experiment manifests
+
+The compact run ledger is the default comprehensive per-run artifact. Benchmark
+configs can set `exports.write_full_run_ledger: true` to additionally emit the
+legacy full run-record JSONL and index when a downstream workflow still needs
+that redundant form.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.

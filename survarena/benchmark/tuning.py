@@ -199,21 +199,26 @@ def select_hyperparameters(
     hpo_config: dict[str, Any] | None = None,
     quiet: bool = False,
     metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
+    evaluate_defaults_when_disabled: bool = True,
 ) -> dict[str, Any]:
     from survarena.utils.quiet import quiet_training_output
 
     with quiet_training_output(enabled=quiet):
         defaults = _searchable_default_params(method_cfg)
-        default_eval = _inner_cv_evaluate(
-            method_id=method_id,
-            params=resolve_runtime_method_params(defaults, seed=seed),
-            fold_cache=fold_cache,
-            primary_metric=primary_metric,
-            metric_bundle_callback=metric_bundle_callback,
-        )
-        default_score = float(default_eval["primary_score"])
-        default_metric_rows = default_eval.get("metric_rows")
         resolved_hpo = _parse_hpo_config(method_cfg, hpo_config)
+        default_score = float("nan")
+        default_metric_rows = None
+        should_evaluate_defaults = bool(resolved_hpo["enabled"]) or bool(evaluate_defaults_when_disabled)
+        if should_evaluate_defaults:
+            default_eval = _inner_cv_evaluate(
+                method_id=method_id,
+                params=resolve_runtime_method_params(defaults, seed=seed),
+                fold_cache=fold_cache,
+                primary_metric=primary_metric,
+                metric_bundle_callback=metric_bundle_callback,
+            )
+            default_score = float(default_eval["primary_score"])
+            default_metric_rows = default_eval.get("metric_rows")
         default_result = {
             "best_params": defaults,
             "best_score": default_score,
@@ -296,13 +301,18 @@ def select_hyperparameters(
 
         selected = dict(defaults)
         selected.update(dict(study.best_trial.params))
-        best_eval = _inner_cv_evaluate(
-            method_id=method_id,
-            params=resolve_runtime_method_params(selected, seed=seed),
-            fold_cache=fold_cache,
-            primary_metric=primary_metric,
-            metric_bundle_callback=metric_bundle_callback,
-        )
+        best_score = float(study.best_value)
+        best_metric_rows = None
+        if metric_bundle_callback is not None:
+            best_eval = _inner_cv_evaluate(
+                method_id=method_id,
+                params=resolve_runtime_method_params(selected, seed=seed),
+                fold_cache=fold_cache,
+                primary_metric=primary_metric,
+                metric_bundle_callback=metric_bundle_callback,
+            )
+            best_score = float(best_eval["primary_score"])
+            best_metric_rows = best_eval.get("metric_rows")
         trial_rows: list[dict[str, Any]] = []
         for trial in study.trials:
             trial_rows.append(
@@ -317,8 +327,8 @@ def select_hyperparameters(
             )
         return {
             "best_params": selected,
-            "best_score": float(best_eval["primary_score"]),
-            "best_metric_rows": best_eval.get("metric_rows"),
+            "best_score": best_score,
+            "best_metric_rows": best_metric_rows,
             "hpo_metadata": _build_hpo_metadata(
                 resolved_hpo={
                     **resolved_hpo,

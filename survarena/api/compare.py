@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from survarena.automl.presets import resolve_preset
-from survarena.benchmark.runner import evaluate_split
+from survarena.benchmark.runner import evaluate_split, normalize_hpo_budget_telemetry
 from survarena.config import read_yaml
 from survarena.data.splitters import load_or_create_splits
 from survarena.data.user_dataset import load_user_dataset
@@ -259,19 +259,11 @@ def compare_survival_models(
                 metrics["hpo_mode"] = hpo_mode
                 metrics["parity_key"] = parity_key
                 metrics["parity_eligible"] = True
-                hpo_metadata = dict(run_payload.get("hpo_metadata", {}))
-                realized_trial_count = int(hpo_metadata.get("realized_trial_count", hpo_metadata.get("trial_count", 0)))
-                hpo_metadata["realized_trial_count"] = realized_trial_count
-                hpo_metadata["trial_count"] = realized_trial_count
-                hpo_metadata["requested_max_trials"] = int(hpo_metadata.get("requested_max_trials", mode_hpo_cfg.get("max_trials", 20)))
-                timeout_value = hpo_metadata.get("requested_timeout_seconds", mode_hpo_cfg.get("timeout_seconds"))
-                hpo_metadata["requested_timeout_seconds"] = None if timeout_value is None else float(timeout_value)
-                hpo_metadata["requested_sampler"] = str(
-                    hpo_metadata.get("requested_sampler", mode_hpo_cfg.get("sampler", "tpe"))
-                ).lower()
-                hpo_metadata["requested_pruner"] = str(
-                    hpo_metadata.get("requested_pruner", mode_hpo_cfg.get("pruner", "median"))
-                ).lower()
+                hpo_metadata = normalize_hpo_budget_telemetry(
+                    hpo_metadata=dict(run_payload.get("hpo_metadata", {})),
+                    hpo_cfg=mode_hpo_cfg,
+                )
+                realized_trial_count = hpo_metadata["realized_trial_count"]
                 run_payload["hpo_metadata"] = hpo_metadata
                 metrics["requested_max_trials"] = hpo_metadata["requested_max_trials"]
                 metrics["requested_timeout_seconds"] = hpo_metadata["requested_timeout_seconds"]

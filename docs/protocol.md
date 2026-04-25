@@ -50,10 +50,16 @@ Supported split strategies:
 
 - every method sees the same split definitions
 - preprocessing is fit on training-side data only
+- no-HPO benchmark mode fits configured defaults directly on each outer-training split
 - hyperparameter search uses the configured inner validation budget
 - native methods can run Optuna-based HPO when `hpo.enabled: true`
+- `comparison_modes` controls whether configs emit `no_hpo`, `hpo`, or both result tracks
 - the selected config is refit before outer-test evaluation
 - seeds are passed through to stochastic methods
+
+See [`training_strategy.md`](training_strategy.md) for the fold geometry,
+no-HPO/HPO training flows, and runtime planning ranges for smoke, standard, and
+manuscript-shaped runs.
 
 ## Metrics
 
@@ -85,6 +91,7 @@ override defaults.
 
 Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 
+- `README.md`
 - `<benchmark_id>_fold_results.csv`
 - `<benchmark_id>_seed_summary.csv`
 - `<benchmark_id>_overall_summary.json`
@@ -101,13 +108,21 @@ Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
 - `<benchmark_id>_missing_metric_summary.csv`
 - `<benchmark_id>_dataset_curation.csv`
 - `<benchmark_id>_manuscript_summary.json`
-- `<benchmark_id>_run_records.jsonl.gz`
-- `<benchmark_id>_run_records_index.json`
+- `<benchmark_id>_run_records_compact.jsonl.gz`
+- `<benchmark_id>_run_records_compact_index.json`
 - `<benchmark_id>_hpo_trials.csv`
 - `<benchmark_id>_hpo_summary.json`
+- `experiment_navigator.json`
 - `experiment_manifest.json`
 
-Run ledgers and manuscript summaries include explicit `schema_version` fields.
+`README.md` and `experiment_navigator.json` are the human and machine entry
+points for each experiment folder. The compact run ledger is the canonical
+comprehensive per-run artifact: shared manifest fields live once in
+`<benchmark_id>_run_records_compact_index.json`, while per-run sections live in
+`<benchmark_id>_run_records_compact.jsonl.gz`.
+Set `exports.write_full_run_ledger: true` in a benchmark config to also emit the
+legacy full `<benchmark_id>_run_records.jsonl.gz` and index. Run ledgers and
+manuscript summaries include explicit `schema_version` fields.
 
 Key per-run fields in fold results:
 

@@ -152,63 +152,116 @@ def pairwise_win_rate(frame: pd.DataFrame, *, metric: str) -> pd.DataFrame:
     )
 
 
+def _rating_from_score(score: float, *, initial_rating: float) -> float:
+    clipped = float(np.clip(score, 1e-6, 1.0 - 1e-6))
+    return float(initial_rating + 400.0 * np.log10(clipped / (1.0 - clipped)))
+
+
+def _paired_rating_rows(
+    frame: pd.DataFrame,
+    *,
+    metric: str,
+    initial_rating: float,
+) -> tuple[dict[str, float], dict[str, int]]:
+    higher_is_better = metric_direction(metric) == "maximize"
+    methods = sorted(frame["method_id"].dropna().astype(str).unique())
+    points = {method: 0.0 for method in methods}
+    match_count = {method: 0 for method in methods}
+    unit_cols = [col for col in ["dataset_id", "split_id", "seed"] if col in frame.columns]
+    if not unit_cols:
+        unit_cols = ["method_id"]
+    for _, sub in frame.groupby(unit_cols, sort=True):
+        values = sub[["method_id", metric]].dropna().copy()
+        values["method_id"] = values["method_id"].astype(str)
+        records = values.to_dict(orient="records")
+        for left_index, left in enumerate(records):
+            for right in records[left_index + 1 :]:
+                left_id = str(left["method_id"])
+                right_id = str(right["method_id"])
+                left_score = float(left[metric])
+                right_score = float(right[metric])
+                if left_score == right_score:
+                    left_points = 0.5
+                else:
+                    left_wins = left_score > right_score if higher_is_better else left_score < right_score
+                    left_points = 1.0 if left_wins else 0.0
+                points[left_id] += left_points
+                points[right_id] += 1.0 - left_points
+                match_count[left_id] += 1
+                match_count[right_id] += 1
+    ratings = {
+        method: _rating_from_score(points[method] / match_count[method], initial_rating=initial_rating)
+        if match_count[method] > 0
+        else float(initial_rating)
+        for method in methods
+    }
+    return ratings, match_count
+
+
 def elo_ratings(
     frame: pd.DataFrame,
     *,
     metric: str,
     initial_rating: float = 1500.0,
     k_factor: float = 32.0,
+    n_bootstrap: int = 200,
+    seed: int = 0,
 ) -> pd.DataFrame:
     if metric not in frame.columns:
         raise ValueError(f"Metric '{metric}' not found in frame.")
-    higher_is_better = metric_direction(metric) == "maximize"
+    if n_bootstrap < 0:
+        raise ValueError("n_bootstrap must be non-negative.")
+    rng = np.random.default_rng(seed)
     rows: list[dict[str, object]] = []
+    stratum_cols = ["benchmark_id"]
     if "hpo_mode" in frame.columns:
-        bench_iter = frame.groupby(["benchmark_id", "hpo_mode"], sort=True)
-    else:
-        bench_iter = ((bid, bframe) for bid, bframe in frame.groupby("benchmark_id", sort=True))
-    for key, benchmark_frame in bench_iter:
-        if "hpo_mode" in frame.columns:
-            benchmark_id, hpo_mode = key[0], key[1]
-        else:
-            benchmark_id, hpo_mode = key, None
-        methods = sorted(benchmark_frame["method_id"].dropna().astype(str).unique())
-        ratings = {method: float(initial_rating) for method in methods}
-        match_count = {method: 0 for method in methods}
-        ordered = benchmark_frame.sort_values(["dataset_id", "method_id"])
-        for _dataset_id, sub in ordered.groupby("dataset_id", sort=True):
-            values = sub[["method_id", metric]].dropna().copy()
-            values["method_id"] = values["method_id"].astype(str)
-            records = values.to_dict(orient="records")
-            for left_index, left in enumerate(records):
-                for right in records[left_index + 1 :]:
-                    left_id = str(left["method_id"])
-                    right_id = str(right["method_id"])
-                    left_score = float(left[metric])
-                    right_score = float(right[metric])
-                    if left_score == right_score:
-                        outcome = 0.5
-                    else:
-                        left_wins = left_score > right_score if higher_is_better else left_score < right_score
-                        outcome = 1.0 if left_wins else 0.0
-                    expected = 1.0 / (1.0 + 10.0 ** ((ratings[right_id] - ratings[left_id]) / 400.0))
-                    delta = float(k_factor) * (outcome - expected)
-                    ratings[left_id] += delta
-                    ratings[right_id] -= delta
-                    match_count[left_id] += 1
-                    match_count[right_id] += 1
+        stratum_cols.append("hpo_mode")
+    for key, benchmark_frame in frame.groupby(stratum_cols, sort=True):
+        key_tuple = key if isinstance(key, tuple) else (key,)
+        stratum = dict(zip(stratum_cols, key_tuple, strict=True))
+        ratings, match_count = _paired_rating_rows(benchmark_frame, metric=metric, initial_rating=initial_rating)
+        bootstrap_draws: dict[str, list[float]] = {method: [] for method in ratings}
+        unit_cols = [col for col in ["dataset_id", "split_id", "seed"] if col in benchmark_frame.columns]
+        if n_bootstrap > 0 and unit_cols:
+            units = list(benchmark_frame.groupby(unit_cols, sort=True).groups)
+            for _ in range(int(n_bootstrap)):
+                sampled_units = [units[int(rng.integers(0, len(units)))] for _ in units]
+                sampled = pd.concat(
+                    [
+                        benchmark_frame[
+                            np.logical_and.reduce(
+                                [
+                                    benchmark_frame[col].eq(value)
+                                    for col, value in zip(unit_cols, unit if isinstance(unit, tuple) else (unit,), strict=True)
+                                ]
+                            )
+                        ]
+                        for unit in sampled_units
+                    ],
+                    ignore_index=True,
+                )
+                sampled_ratings, _sampled_matches = _paired_rating_rows(
+                    sampled,
+                    metric=metric,
+                    initial_rating=initial_rating,
+                )
+                for method_id, rating in sampled_ratings.items():
+                    bootstrap_draws.setdefault(method_id, []).append(rating)
         for method_id, rating in ratings.items():
+            draws = np.asarray(bootstrap_draws.get(method_id, []), dtype=float)
             out_row: dict[str, object] = {
-                "benchmark_id": benchmark_id,
+                **stratum,
                 "method_id": method_id,
                 "elo_rating": float(rating),
                 "elo_matches": int(match_count[method_id]),
+                "elo_rating_ci95_low": float(np.percentile(draws, 2.5)) if draws.size else float("nan"),
+                "elo_rating_ci95_high": float(np.percentile(draws, 97.5)) if draws.size else float("nan"),
                 "metric": metric,
                 "initial_rating": float(initial_rating),
                 "k_factor": float(k_factor),
+                "rating_method": "paired_logit_winrate",
+                "n_bootstrap": int(n_bootstrap),
             }
-            if hpo_mode is not None:
-                out_row["hpo_mode"] = hpo_mode
             rows.append(out_row)
     if not rows:
         cols = [
@@ -216,12 +269,29 @@ def elo_ratings(
             "method_id",
             "elo_rating",
             "elo_matches",
+            "elo_rating_ci95_low",
+            "elo_rating_ci95_high",
             "metric",
             "initial_rating",
             "k_factor",
+            "rating_method",
+            "n_bootstrap",
         ]
         if "hpo_mode" in frame.columns:
-            cols = ["benchmark_id", "hpo_mode", "method_id", "elo_rating", "elo_matches", "metric", "initial_rating", "k_factor"]
+            cols = [
+                "benchmark_id",
+                "hpo_mode",
+                "method_id",
+                "elo_rating",
+                "elo_matches",
+                "elo_rating_ci95_low",
+                "elo_rating_ci95_high",
+                "metric",
+                "initial_rating",
+                "k_factor",
+                "rating_method",
+                "n_bootstrap",
+            ]
         return pd.DataFrame(columns=cols)
     result = pd.DataFrame(rows)
     sort_cols = [c for c in ["benchmark_id", "hpo_mode", "elo_rating", "method_id"] if c in result.columns]
@@ -334,21 +404,25 @@ def pairwise_significance(
         raise ValueError(f"Metric '{metric}' not found in frame.")
     higher_is_better = metric_direction(metric) == "maximize"
     rows: list[dict[str, object]] = []
-    pair_rows: list[dict[str, object]] = []
-    group_cols = [col for col in ["benchmark_id", "dataset_id", "split_id", "seed", "hpo_mode"] if col in frame.columns]
-    if not group_cols:
-        group_cols = [col for col in ["benchmark_id", "dataset_id"] if col in frame.columns]
-    for benchmark_id, benchmark_sub in frame.groupby("benchmark_id"):
-        methods = sorted(benchmark_sub["method_id"].dropna().astype(str).unique())
+    stratum_cols = ["benchmark_id"]
+    if "hpo_mode" in frame.columns:
+        stratum_cols.append("hpo_mode")
+    pair_cols = [col for col in ["dataset_id", "split_id", "seed"] if col in frame.columns]
+    merge_cols = stratum_cols + pair_cols
+    for key, stratum_sub in frame.groupby(stratum_cols):
+        key_tuple = key if isinstance(key, tuple) else (key,)
+        stratum = dict(zip(stratum_cols, key_tuple, strict=True))
+        pair_rows: list[dict[str, object]] = []
+        methods = sorted(stratum_sub["method_id"].dropna().astype(str).unique())
         for left_index, left_method in enumerate(methods):
             for right_method in methods[left_index + 1 :]:
-                left = benchmark_sub[benchmark_sub["method_id"] == left_method][group_cols + [metric]].rename(
+                left = stratum_sub[stratum_sub["method_id"] == left_method][merge_cols + [metric]].rename(
                     columns={metric: "left_metric"}
                 )
-                right = benchmark_sub[benchmark_sub["method_id"] == right_method][group_cols + [metric]].rename(
+                right = stratum_sub[stratum_sub["method_id"] == right_method][merge_cols + [metric]].rename(
                     columns={metric: "right_metric"}
                 )
-                merged = left.merge(right, on=group_cols, how="inner").dropna()
+                merged = left.merge(right, on=merge_cols, how="inner").dropna()
                 if merged.empty:
                     continue
                 delta = (
@@ -366,7 +440,7 @@ def pairwise_significance(
                 effect_size = float(np.mean(delta))
                 pair_rows.append(
                     {
-                        "benchmark_id": benchmark_id,
+                        **stratum,
                         "method_id": left_method,
                         "opponent_method_id": right_method,
                         "metric": metric,
@@ -379,7 +453,7 @@ def pairwise_significance(
                 )
                 pair_rows.append(
                     {
-                        "benchmark_id": benchmark_id,
+                        **stratum,
                         "method_id": right_method,
                         "opponent_method_id": left_method,
                         "metric": metric,
@@ -390,15 +464,14 @@ def pairwise_significance(
                         "ties": int(np.sum(delta == 0)),
                     }
                 )
-        benchmark_pairs = [row for row in pair_rows if row["benchmark_id"] == benchmark_id]
-        p_values = [float(row["p_value"]) for row in benchmark_pairs]
+        p_values = [float(row["p_value"]) for row in pair_rows]
         if not p_values:
             continue
         if correction == "bh":
             corrected = _benjamini_hochberg(p_values)
         else:
             corrected = _holm_correction(p_values)
-        for row, corrected_p in zip(benchmark_pairs, corrected, strict=False):
+        for row, corrected_p in zip(pair_rows, corrected, strict=False):
             rows.append({**row, "p_value_corrected": float(corrected_p), "correction": correction})
     return pd.DataFrame(rows)
 

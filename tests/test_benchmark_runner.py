@@ -310,6 +310,7 @@ def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, 
     monkeypatch.setattr("survarena.logging.export.export_dataset_curation_table", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.logging.export.export_run_ledger", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.logging.export.export_hpo_trials", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("survarena.logging.export.export_experiment_navigator", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.logging.tracker.write_json", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.benchmark.runner.registered_method_ids", lambda: {"coxph"})
 
@@ -407,6 +408,139 @@ def test_exec04_resume_ignores_non_success_completed_keys(tmp_path: Path, monkey
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0)
 
     assert calls["count"] == 2
+
+
+def test_comparison_modes_can_run_only_no_hpo(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    hpo_enabled_values: list[bool] = []
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    def _fake_evaluate_split(**kwargs):
+        calls["count"] += 1
+        hpo_enabled_values.append(bool(kwargs["hpo_cfg"]["enabled"]))
+        return _resume_record(status="success")
+
+    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    assert calls["count"] == 1
+    assert hpo_enabled_values == [False]
+
+
+def test_benchmark_profiling_manifest_and_artifact_emitted(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    writes: dict[str, dict[str, object]] = {}
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    def _capture_write_json(path: Path, payload: dict[str, object]) -> None:
+        writes[path.name] = payload
+
+    monkeypatch.setattr("survarena.logging.tracker.write_json", _capture_write_json)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    manifest = writes["experiment_manifest.json"]
+    profiling = writes["resume_test_profiling.json"]
+    assert calls["count"] == 1
+    assert manifest["profiling"]["artifact"] == "resume_test_profiling.json"
+    assert manifest["profiling"]["schema_version"] == "benchmark_profiling_v1"
+    assert profiling["schema_version"] == "benchmark_profiling_v1"
+    assert profiling["record_count"] == 1
+    assert profiling["run_record_count"] == 1
+    assert profiling["dataset_count"] == 1
+    assert profiling["method_count"] == 1
+    assert profiling["split_count"] == 1
+    assert set(profiling["phase_timings_sec"]) == {"loading", "split_prep", "evaluation", "exports"}
+    assert profiling["total_wall_time_sec"] >= 0.0
+    assert all(value >= 0.0 for value in profiling["phase_timings_sec"].values())
+
+
+def test_comparison_modes_can_run_only_hpo(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    hpo_enabled_values: list[bool] = []
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    def _fake_evaluate_split(**kwargs):
+        calls["count"] += 1
+        hpo_enabled_values.append(bool(kwargs["hpo_cfg"]["enabled"]))
+        return _resume_record(status="success")
+
+    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    assert calls["count"] == 1
+    assert hpo_enabled_values == [True]
+
+
+def test_comparison_modes_reject_unknown_mode() -> None:
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo", "turbo"]
+
+    with pytest.raises(ValueError, match="Invalid comparison mode"):
+        runner._resolve_comparison_modes(cfg)
+
+
+def test_benchmark_execution_defaults_to_serial(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    class RaisingExecutor:
+        def __init__(self, *_args, **_kwargs) -> None:
+            raise AssertionError("ThreadPoolExecutor should not be used for default serial execution")
+
+    monkeypatch.setattr(runner, "ThreadPoolExecutor", RaisingExecutor)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    assert calls["count"] == 1
+
+
+def test_benchmark_execution_uses_configured_n_jobs(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    captured_workers: list[int] = []
+    _install_common_monkeypatches(monkeypatch, calls)
+    monkeypatch.setattr("survarena.data.splitters.load_or_create_splits", lambda **_kwargs: _single_split() * 2)
+
+    class RecordingExecutor:
+        def __init__(self, *, max_workers: int) -> None:
+            captured_workers.append(max_workers)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args) -> None:
+            return None
+
+        def map(self, func, units):
+            return [func(unit) for unit in units]
+
+    monkeypatch.setattr(runner, "ThreadPoolExecutor", RecordingExecutor)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo"]
+    cfg["execution"] = {"n_jobs": 2}
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    assert calls["count"] == 2
+    assert captured_workers == [2]
+
+
+def test_benchmark_execution_rejects_invalid_n_jobs() -> None:
+    cfg = _resume_benchmark_cfg()
+    cfg["execution"] = {"n_jobs": 0}
+
+    with pytest.raises(ValueError, match="execution.n_jobs"):
+        runner._resolve_execution_n_jobs(cfg)
 
 
 def test_exec04_retry_budget_caps_failed_rows(tmp_path: Path, monkeypatch) -> None:

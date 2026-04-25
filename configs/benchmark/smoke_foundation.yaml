@@ -1,4 +1,4 @@
-benchmark_id: smoke
+benchmark_id: smoke_foundation
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2
@@ -7,7 +7,6 @@ inner_folds: 2
 seeds: [11]
 primary_metric: uno_c
 profile: smoke
-comparison_modes: [no_hpo]
 secondary_metrics:
   - harrell_c
   - ibs
@@ -47,27 +46,9 @@ datasets:
   - flchain
   - whas500
 methods:
-  - coxph
-  - coxnet
-  - weibull_aft
-  - lognormal_aft
-  - loglogistic_aft
-  - aalen_additive
-  - fast_survival_svm
-  - rsf
-  - extra_survival_trees
-  - gradient_boosting_survival
-  - componentwise_gradient_boosting
-  - xgboost_cox
-  - xgboost_aft
-  - catboost_cox
-  - catboost_survival_aft
-  - deepsurv
-  - deepsurv_moco
-  - logistic_hazard
-  - pmf
-  - mtlr
-  - deephit_single
-  - pchazard
-  - cox_time
-notes: Quick no-HPO smoke across all standard built-in datasets; one seed and small folds; exercises every manuscript default model once per dataset.
+  - tabpfn_survival
+  - mitra_survival
+notes: >
+  Same budget and data/split contract as smoke.yaml (2×2 nested CV, seed 11, all standard
+  datasets), limited to tabular foundation adapters. Requires optional foundation extras
+  and (for TabPFN) HuggingFace auth if checkpoints are gated.

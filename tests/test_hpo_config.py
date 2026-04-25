@@ -85,3 +85,56 @@ def test_select_hyperparameters_emits_requested_and_realized_budget_metadata(mon
     assert metadata["requested_pruner"] == "nop"
     assert metadata["realized_trial_count"] == 0
     assert metadata["trial_count"] == 0
+
+
+def test_select_hyperparameters_can_skip_default_inner_cv_when_disabled(monkeypatch) -> None:
+    def _raise_inner_cv_evaluate(**_kwargs):
+        raise AssertionError("default inner CV should be skipped")
+
+    monkeypatch.setattr(tuning, "_inner_cv_evaluate", _raise_inner_cv_evaluate)
+
+    result = tuning.select_hyperparameters(
+        method_id="coxph",
+        method_cfg={"default_params": {"alpha": 0.1}},
+        fold_cache=[],
+        primary_metric="harrell_c",
+        seed=11,
+        hpo_config={"enabled": False, "max_trials": 9, "timeout_seconds": 120},
+        evaluate_defaults_when_disabled=False,
+    )
+
+    assert result["best_params"] == {"alpha": 0.1}
+    assert result["best_score"] != result["best_score"]
+    assert result["best_metric_rows"] is None
+    assert result["hpo_metadata"]["status"] == "disabled"
+
+
+def test_select_hyperparameters_reuses_best_trial_score_without_metric_rows(monkeypatch) -> None:
+    import pytest
+
+    pytest.importorskip("optuna")
+
+    calls = {"count": 0}
+
+    def _fake_inner_cv_evaluate(**kwargs):
+        calls["count"] += 1
+        alpha = kwargs["params"]["alpha"]
+        return {"primary_score": float(alpha)}
+
+    monkeypatch.setattr(tuning, "_inner_cv_evaluate", _fake_inner_cv_evaluate)
+
+    result = tuning.select_hyperparameters(
+        method_id="coxph",
+        method_cfg={
+            "default_params": {"alpha": 0.1},
+            "search_space": {"alpha": {"type": "categorical", "choices": [0.2]}},
+        },
+        fold_cache=[{"dummy": True}],
+        primary_metric="harrell_c",
+        seed=11,
+        hpo_config={"enabled": True, "max_trials": 1, "sampler": "random", "pruner": "nop"},
+    )
+
+    assert calls["count"] == 2
+    assert result["best_score"] == 0.2
+    assert result["best_metric_rows"] is None

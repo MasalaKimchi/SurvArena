@@ -77,14 +77,20 @@ Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
 
 Benchmark experiment folders contain:
 
+- `README.md`
+- `experiment_navigator.json`
 - `<benchmark_id>_fold_results.csv`
 - `<benchmark_id>_seed_summary.csv`
 - `<benchmark_id>_overall_summary.json`
 - `<benchmark_id>_leaderboard.csv`
 - `<benchmark_id>_leaderboard.json`
-- `<benchmark_id>_run_records.jsonl.gz`
-- `<benchmark_id>_run_records_index.json`
+- `<benchmark_id>_run_records_compact.jsonl.gz`
+- `<benchmark_id>_run_records_compact_index.json`
 - `experiment_manifest.json`
+
+The compact run ledger is the default comprehensive per-run artifact. Set
+`exports.write_full_run_ledger: true` only when a downstream workflow needs the
+legacy full run ledger.
 
 Treat timestamped benchmark output folders as local run artifacts unless you are
 intentionally publishing curated results.
