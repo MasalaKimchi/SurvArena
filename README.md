@@ -284,6 +284,7 @@ For a first benchmark run, use `configs/benchmark/smoke.yaml` with `--dataset`,
 `--method`, and `--limit-seeds 1` as shown in [First Smoke Run](#first-smoke-run).
 The unscoped smoke config is still small relative to standard/manuscript runs,
 but it covers all six built-in datasets and every manuscript default method.
+For remote execution through Codex, see [Cloud Runs Through Codex](CLOUD_RUN.md).
 
 Tracked benchmark configs:
 
@@ -401,40 +402,39 @@ them in long benchmark runs.
 
 ## Outputs and Artifacts
 
-Predictor runs write to `results/predictor/<dataset_name>/` by default:
+SurvArena writes two main kinds of outputs:
 
-- `leaderboard.csv`
-- `fit_summary.json`
-- `predictor.pkl`
-- `predictor_manifest.json`
-- `kaplan_meier_comparison.png` when requested
+- predictor artifacts for one fitted `SurvivalPredictor`
+- benchmark artifacts for multi-method, multi-split comparisons
 
-`fit_summary.json` includes portfolio notes, dataset diagnostics, retained
-models, per-model test metrics, and the foundation-model catalog.
+Predictor artifacts live under `results/predictor/<dataset_name>/` by default.
+The most useful files are:
 
-Benchmark runs write timestamped experiment folders under `results/summary/`.
-Each experiment can include:
+- `leaderboard.csv`: ranked fitted models and metrics
+- `fit_summary.json`: model portfolio notes, dataset diagnostics, retained
+  models, per-model test metrics, and foundation-model information
+- `predictor.pkl`: reloadable predictor object
+- `predictor_manifest.json`: reproducibility metadata
+- `kaplan_meier_comparison.png`: optional plot when requested
 
-- `README.md` and `experiment_navigator.json` as concise entry points
-- fold results
-- seed summaries
-- overall summaries
-- leaderboards
-- rank summaries
-- pairwise win rates
-- pairwise significance with corrected p-values
-- ELO-style ratings
-- critical-difference summaries
-- bootstrap confidence intervals
-- failure and missing-metric summaries
-- compact compressed run ledgers and indexes
-- HPO trial ledgers and summaries
-- experiment manifests
+Benchmark runs live under timestamped folders in `results/summary/`. Start with
+the generated `README.md` and `experiment_navigator.json`; they point to the
+important summaries for that experiment.
+
+Benchmark folders group outputs by purpose:
+
+- performance tables: fold results, seed summaries, overall summaries, and
+  leaderboards
+- ranking analysis: rank summaries, pairwise win rates, corrected significance
+  tests, ELO-style ratings, critical-difference summaries, and bootstrap
+  confidence intervals
+- run auditing: failure summaries, missing-metric summaries, HPO trial ledgers,
+  compact run ledgers, indexes, and experiment manifests
 
 The compact run ledger is the default comprehensive per-run artifact. Benchmark
 configs can set `exports.write_full_run_ledger: true` to additionally emit the
-legacy full run-record JSONL and index when a downstream workflow still needs
-that redundant form.
+legacy full run-record JSONL and index for downstream workflows that still need
+the redundant format.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.
