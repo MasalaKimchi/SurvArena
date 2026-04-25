@@ -12,9 +12,9 @@
 
 ## What Is Still Missing
 
-- stacking or weighted ensembles
-- adaptive resource scheduling and resumable runs
-- richer explainability and calibration reporting
+- native weighted ensembles
+- adaptive resource scheduling
+- richer explainability and calibration visualization
 - stronger per-model artifact management
 - broader foundation-model search and tuning controls
 

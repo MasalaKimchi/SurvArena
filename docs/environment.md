@@ -58,7 +58,8 @@ python -m compileall survarena
 python -m survarena.run_benchmark --dry-run
 ```
 
-If an optional dependency is missing, `--dry-run` reports it and exits cleanly.
+Use `python scripts/check_environment.py --include-foundation` and
+`survarena foundation-check` for optional foundation dependency readiness.
 
 End-to-end protocol spot-check (dry run plus a tiny fit and artifact checks;
 see `docs/protocol.md`):
@@ -75,18 +76,9 @@ Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
 - predictor artifacts: `results/predictor/<dataset_name>/`
 - benchmark runs: `results/summary/exp_<YYYYMMDD_HHMMSS>/`
 
-Benchmark experiment folders contain:
-
-- `README.md`
-- `experiment_navigator.json`
-- `<benchmark_id>_fold_results.csv`
-- `<benchmark_id>_seed_summary.csv`
-- `<benchmark_id>_overall_summary.json`
-- `<benchmark_id>_leaderboard.csv`
-- `<benchmark_id>_leaderboard.json`
-- `<benchmark_id>_run_records_compact.jsonl.gz`
-- `<benchmark_id>_run_records_compact_index.json`
-- `experiment_manifest.json`
+Benchmark experiment folders contain generated `README.md` and
+`experiment_navigator.json` entry points. Exact artifacts vary by benchmark
+config, enabled comparison modes, HPO settings, and manuscript artifact layout.
 
 The compact run ledger is the default comprehensive per-run artifact. Set
 `exports.write_full_run_ledger: true` only when a downstream workflow needs the

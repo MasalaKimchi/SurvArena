@@ -28,6 +28,6 @@ Each dataset config records:
 
 - dataset id and source
 - `time_col` and `event_col`
-- feature hints
-- recommended split strategy
-- notes and citation metadata
+- coarse `feature_types`
+- recommended split and metric settings
+- notes

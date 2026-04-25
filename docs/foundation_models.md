@@ -19,7 +19,7 @@ TabPFN note:
 
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
-- clearer artifact logging and leaderboard metadata
+- richer foundation-specific artifact fields
 - broader backbone coverage once the adapter contract is stable
 
 Foundation models stay optional members of the same `SurvivalPredictor`

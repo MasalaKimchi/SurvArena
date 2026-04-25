@@ -32,9 +32,8 @@ Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`
 `severity_levels`) control optional perturbation tracks; when disabled, only the
 baseline track runs.
 
-The large `kkbox` dataset is included only in
-`configs/benchmark/cloud_comprehensive_all_models_hpo.yaml` when a local loader is
-available; there is no separate large-track-only YAML.
+The large `kkbox` dataset is config-only today and requires a custom local
+loader before it can participate in benchmark runs.
 
 ## User Dataset Comparison
 
@@ -89,31 +88,17 @@ override defaults.
 
 ## Output Contract
 
-Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`:
+Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`.
+Stable entry points include:
 
 - `README.md`
-- `<benchmark_id>_fold_results.csv`
-- `<benchmark_id>_seed_summary.csv`
-- `<benchmark_id>_overall_summary.json`
-- `<benchmark_id>_leaderboard.csv`
-- `<benchmark_id>_leaderboard.json`
-- `<benchmark_id>_rank_summary.csv`
-- `<benchmark_id>_pairwise_win_rate.csv`
-- `<benchmark_id>_pairwise_significance.csv`
-- `<benchmark_id>_multiple_comparison_summary.csv`
-- `<benchmark_id>_critical_difference.csv`
-- `<benchmark_id>_elo_ratings.csv`
-- `<benchmark_id>_bootstrap_ci.csv`
-- `<benchmark_id>_failure_summary.csv`
-- `<benchmark_id>_missing_metric_summary.csv`
-- `<benchmark_id>_dataset_curation.csv`
-- `<benchmark_id>_manuscript_summary.json`
-- `<benchmark_id>_run_records_compact.jsonl.gz`
-- `<benchmark_id>_run_records_compact_index.json`
-- `<benchmark_id>_hpo_trials.csv`
-- `<benchmark_id>_hpo_summary.json`
 - `experiment_navigator.json`
 - `experiment_manifest.json`
+- fold results, seed summaries, overall summaries, and leaderboards
+- dataset curation, failure, and missing-metric summaries when available
+- compact run ledgers and ledger indexes
+- HPO trial ledgers and summaries when HPO runs
+- manuscript summaries and comparison artifacts
 
 `README.md` and `experiment_navigator.json` are the human and machine entry
 points for each experiment folder. The compact run ledger is the canonical
@@ -124,21 +109,11 @@ Set `exports.write_full_run_ledger: true` in a benchmark config to also emit the
 legacy full `<benchmark_id>_run_records.jsonl.gz` and index. Run ledgers and
 manuscript summaries include explicit `schema_version` fields.
 
-Key per-run fields in fold results:
+Manuscript comparison artifacts depend on the configured artifact layout. The
+compact layout emits a report, figures, and summary metadata; the full layout
+also emits detailed rank, pairwise, significance, ELO, bootstrap, failure, and
+missing-metric CSVs.
 
-- `benchmark_id`
-- `dataset_id`
-- `method_id`
-- `split_id`
-- `seed`
-- `validation_score`
-- `harrell_c`
-- `uno_c`
-- `ibs`
-- `brier_25`, `brier_50`, `brier_75`
-- `calibration_slope_50`, `calibration_intercept_50`
-- `net_benefit_50`
-- `fit_time_sec`
-- `infer_time_sec`
-- `peak_memory_mb`
-- `status`
+Fold-result schemas include identifiers, split and mode fields, core and
+time-horizon metrics, timing and memory telemetry, HPO governance fields,
+robustness/parity fields, retry metadata, and status.

@@ -58,7 +58,7 @@ Fit count:
 1 final fit per outer split
 ```
 
-Examples for one method across all six datasets:
+Examples for one method across all six standard datasets:
 
 | Config shape | Outer evaluations | Approximate no-HPO fits |
 | --- | ---: | ---: |
@@ -164,19 +164,7 @@ locked:
 | Budget study | `comparison_modes: [no_hpo, hpo]`, `max_trials: 10-15`, `timeout_seconds: 600-900` | Learn whether HPO changes results enough to justify final cost |
 | Final | manuscript or standard shape, locked methods/datasets, full repeats | Manuscript-grade reporting |
 
-For a manuscript-style no-HPO/HPO comparison, create a derived YAML from
-`configs/benchmark/manuscript_v1.yaml` with:
-
-```yaml
-comparison_modes: [no_hpo, hpo]
-hpo:
-  enabled: true
-  max_trials: 30
-  timeout_seconds: 1800
-  sampler: tpe
-  pruner: median
-  n_startup_trials: 10
-```
-
-Keep the final YAML immutable once the run starts, and use `--resume` for
-restartable execution.
+The shipped manuscript config is currently a default/no-HPO benchmark.
+Dual-mode no-HPO/HPO comparisons are represented by `standard_v1.yaml` or by a
+new, intentionally added benchmark config. Keep final benchmark YAML immutable
+once a run starts, and use `--resume` for restartable execution.

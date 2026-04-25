@@ -10,7 +10,7 @@ AutoGluon's event probability. Survival curves are calibrated with a Breslow
 baseline estimated from the training data and the fitted risk scores.
 
 To run a **single** native model or `autogluon_survival` on the standard
-six-dataset matrix, use `configs/benchmark/standard_v1.yaml` (or
+benchmark matrix, use `configs/benchmark/standard_v1.yaml` (or
 `manuscript_v1.yaml`) with `--method` and `--dataset` as needed, or use
 `configs/benchmark/manuscript_autogluon_v1.yaml` for an AutoGluon-managed
 preset, bagging, stacking, and refit run on all standard datasets.

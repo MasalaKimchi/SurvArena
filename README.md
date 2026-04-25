@@ -37,7 +37,6 @@ configs/datasets/          Built-in dataset metadata
 configs/methods/           Model adapter configurations
 configs/benchmark/         Benchmark experiment configurations
 docs/                      Environment, protocol, dataset, and backend docs
-examples/                  Notebook and sample predictor artifacts
 scripts/                   Environment setup and validation helpers
 tests/                     Pytest suite
 data/                      Local raw, processed, and split data directories
@@ -232,16 +231,76 @@ Built-in dataset configs live in `configs/datasets/`. See
 [`docs/datasets.md`](docs/datasets.md) for the current benchmark datasets and
 metadata contract.
 
+### Built-in Benchmark Datasets
+
+The standard benchmark suite currently uses the six ready-to-run built-in
+datasets below. Dataset counts are mirrored from the current loader metadata in
+[`docs/datasets.md`](docs/datasets.md); source package names are shown so
+readers can trace each dataset back to the upstream survival-analysis ecosystem.
+
+| Dataset ID | Dataset | Source package | Rows | Features | Event rate | Notes |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `support` | SUPPORT | `pycox` | 8,873 | 14 | 68.03% | Mixed clinical variables with moderate censoring. |
+| `metabric` | METABRIC | `pycox` | 1,904 | 9 | 57.93% | Breast cancer benchmark used in deep survival literature. |
+| `aids` | AIDS | `scikit-survival` | 1,151 | 11 | 91.66% | AIDS Clinical Trial dataset with light censoring. |
+| `gbsg2` | GBSG2 | `scikit-survival` | 686 | 8 | 56.41% | German Breast Cancer Study Group survival dataset. |
+| `flchain` | FLCHAIN | `scikit-survival` | 7,874 | 9 | 27.55% | Serum free light chain dataset with heavier censoring. |
+| `whas500` | WHAS500 | `scikit-survival` | 500 | 14 | 43.00% | Worcester Heart Attack Study 500 benchmark. |
+
+`kkbox` is also present as a large-track dataset config, but it is a
+local-loader placeholder today and is not part of the ready-to-run standard or
+manuscript benchmark suites unless a local KKBox loader is provided.
+
 ## Presets and Models
 
 Preset membership and model adapter availability are defined in code and
-configuration, not duplicated in this README. Use `presets` for the maintained
-default portfolios, or select registered adapters explicitly with
+configuration, with a reader-facing summary below. Use `presets` for the
+maintained default portfolios, or select registered adapters explicitly with
 `included_models` in Python and `--models` on the CLI.
 
 Method configs live in `configs/methods/`. Foundation-model details and runtime
 readiness checks are documented in
 [`docs/foundation_models.md`](docs/foundation_models.md).
+
+### Available Model Adapters
+
+The registered model adapters below are available through `included_models`,
+`--models`, or benchmark YAML `methods`. "Benchmark use" names the maintained
+configs that include each adapter by default; optional foundation adapters
+require their documented extras and readiness checks before long runs.
+
+| Method ID | Model / adapter | Family | Package source | Benchmark use |
+| --- | --- | --- | --- | --- |
+| `coxph` | Cox proportional hazards | Classical | `scikit-survival` | Standard, smoke, manuscript |
+| `coxnet` | Regularized Cox model | Classical | `scikit-survival` | Standard, smoke, manuscript |
+| `weibull_aft` | Weibull accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
+| `lognormal_aft` | Log-normal accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
+| `loglogistic_aft` | Log-logistic accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
+| `aalen_additive` | Aalen additive hazards | Classical | `lifelines` | Smoke, manuscript |
+| `fast_survival_svm` | Fast survival SVM | Classical | `scikit-survival` | Smoke, manuscript |
+| `rsf` | Random survival forest | Tree ensemble | `scikit-survival` | Standard, smoke, manuscript |
+| `extra_survival_trees` | Extra survival trees | Tree ensemble | `scikit-survival` | Smoke, manuscript |
+| `gradient_boosting_survival` | Gradient boosting survival analysis | Boosting | `scikit-survival` | Smoke, manuscript |
+| `componentwise_gradient_boosting` | Componentwise gradient boosting survival analysis | Boosting | `scikit-survival` | Smoke, manuscript |
+| `xgboost_cox` | XGBoost Cox objective adapter | Boosting | `xgboost` | Smoke, manuscript |
+| `xgboost_aft` | XGBoost AFT objective adapter | Boosting | `xgboost` | Smoke, manuscript |
+| `catboost_cox` | CatBoost Cox-style calibrated adapter | Boosting | `catboost` | Smoke, manuscript |
+| `catboost_survival_aft` | CatBoost survival AFT adapter | Boosting | `catboost` | Smoke, manuscript |
+| `deepsurv` | DeepSurv neural Cox model | Deep learning | `torchsurv` | Standard, smoke, manuscript |
+| `deepsurv_moco` | DeepSurv momentum-loss variant | Deep learning | `torchsurv` | Smoke, manuscript |
+| `logistic_hazard` | Logistic hazard neural survival model | Deep learning | `pycox` | Smoke, manuscript |
+| `pmf` | PMF neural discrete-time survival model | Deep learning | `pycox` | Smoke, manuscript |
+| `mtlr` | MTLR neural survival model | Deep learning | `pycox` | Smoke, manuscript |
+| `deephit_single` | DeepHit single-risk model | Deep learning | `pycox` | Smoke, manuscript |
+| `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Smoke, manuscript |
+| `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
+| `autogluon_survival` | AutoGluon event-risk survival adapter | AutoML | `autogluon.tabular` | `manuscript_autogluon_v1` |
+| `tabpfn_survival` | TabPFN embedding survival head | Foundation | `tabpfn` + `scikit-survival` | Optional foundation runs |
+| `mitra_survival` | Mitra-style tabular foundation survival adapter | Foundation | `autogluon.tabular` + `torch` + `torchsurv` | Optional foundation runs |
+
+For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
+metric aggregation, and exported comparison artifacts, see
+[`docs/benchmarking_workflow.md`](docs/benchmarking_workflow.md).
 
 ## Compare API
 
@@ -283,7 +342,8 @@ benchmark-style evaluation with shared outer and inner splits.
 For a first benchmark run, use `configs/benchmark/smoke.yaml` with `--dataset`,
 `--method`, and `--limit-seeds 1` as shown in [First Smoke Run](#first-smoke-run).
 The unscoped smoke config is still small relative to standard/manuscript runs,
-but it covers all six built-in datasets and every manuscript default method.
+but it covers all six standard built-in datasets and every manuscript default
+method.
 For remote execution through Codex, see [Cloud Runs Through Codex](CLOUD_RUN.md).
 
 Tracked benchmark configs:
@@ -294,9 +354,8 @@ Tracked benchmark configs:
   repeated nested CV
 - `configs/benchmark/manuscript_autogluon_v1.yaml`: AutoGluon-only manuscript
   track
-- `configs/benchmark/cloud_comprehensive_all_models_hpo.yaml`: cloud-scale
-  all-datasets (including `kkbox` when available) and full method matrix with
-  AutoGluon and native HPO controls
+- `configs/benchmark/smoke_foundation.yaml`: small foundation-readiness smoke
+  track for optional foundation adapters
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets (CI and `scripts/validate_benchmark_protocol.sh`)
 
@@ -340,14 +399,6 @@ For smoke no-HPO runs, SurvArena fits each method's configured defaults directly
 on each outer-training split. Inner folds are used when HPO is enabled and a
 method has a search space.
 
-Cloud-scale comprehensive run helper:
-
-```bash
-scripts/run_cloud_comprehensive.sh
-# optionally scope a single cloud worker
-DATASET=support METHOD=rsf scripts/run_cloud_comprehensive.sh
-```
-
 Dry-run a benchmark configuration without fitting models:
 
 ```bash
@@ -360,7 +411,7 @@ Resume a partial benchmark run (reusing an output directory):
 
 ```bash
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/cloud_comprehensive_all_models_hpo.yaml \
+  --benchmark-config <same-config-used-for-original-run> \
   --output-dir results/summary/exp_resume_target \
   --resume \
   --max-retries 2
@@ -472,8 +523,8 @@ python -m pip install -r requirements.txt
 - [AutoGluon backend](docs/autogluon_backend.md)
 - [AutoGluon comparison notes](docs/autogluon_comparison.md)
 - [Foundation models roadmap](docs/foundation_models.md)
-- [Examples](examples/README.md)
-- [Project blueprint](blueprint.md)
+- [Benchmarking workflow](docs/benchmarking_workflow.md)
+- [Cloud runs through Codex](CLOUD_RUN.md)
 
 ## License
 

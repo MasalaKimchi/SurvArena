@@ -17,12 +17,12 @@ Run this SurvArena benchmark on a cloud worker, not on my local device.
 
 Repository: SurvArena
 Branch or commit: <branch-or-commit>
-Benchmark config: configs/benchmark/cloud_comprehensive_all_models_hpo.yaml
-Scope: <full run, or dataset/method shard>
+Benchmark config: configs/benchmark/standard_v1.yaml
+Scope: <full config, or dataset/method shard>
 Python: 3.11
 Setup command: PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 Validation command: python scripts/check_environment.py
-Run command: scripts/run_cloud_comprehensive.sh
+Run command: python -m survarena.run_benchmark --benchmark-config <config> <optional shard flags>
 Artifacts to return: results/summary/<experiment_dir> plus terminal logs
 
 Use --dry-run first, then start the real run only if the plan resolves
@@ -69,11 +69,14 @@ survarena foundation-check
 
 ## Dry Run First
 
-Before fitting models, validate the resolved benchmark plan:
+Before fitting models, validate the resolved benchmark plan. Use the same
+benchmark config that the real cloud run will use:
 
 ```bash
 source .venv/bin/activate
-scripts/run_cloud_comprehensive.sh --dry-run
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/standard_v1.yaml \
+  --dry-run
 ```
 
 For a smaller manuscript or standard config dry run:
@@ -89,19 +92,20 @@ comparison modes before any expensive fitting starts.
 
 ## Full Cloud Run
 
-Use the cloud helper for the comprehensive all-models HPO configuration:
+Use a shipped benchmark config directly:
 
 ```bash
 source .venv/bin/activate
-scripts/run_cloud_comprehensive.sh
-```
-
-This executes:
-
-```bash
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/cloud_comprehensive_all_models_hpo.yaml
+  --benchmark-config configs/benchmark/standard_v1.yaml
 ```
+
+Common cloud targets:
+
+- `configs/benchmark/standard_v1.yaml`: standard no-HPO plus HPO comparison
+- `configs/benchmark/manuscript_v1.yaml`: full native no-HPO manuscript run
+- `configs/benchmark/manuscript_autogluon_v1.yaml`: AutoGluon-managed run
+- `configs/benchmark/smoke_foundation.yaml`: optional foundation smoke run
 
 Keep the terminal session attached to the remote job manager or run it through
 the cloud platform's persistent job mechanism. The important contract is that
@@ -112,19 +116,17 @@ the process continues on the remote worker after your local device disconnects.
 For practical cloud execution, prefer one dataset/method shard per worker. This
 reduces wall-clock time and makes retries cheaper.
 
-Environment-variable form:
+Use `--dataset` and `--method` to scope a worker:
 
 ```bash
-DATASET=support METHOD=rsf scripts/run_cloud_comprehensive.sh
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/standard_v1.yaml \
+  --dataset support \
+  --method rsf
 ```
 
-Flag form:
-
-```bash
-scripts/run_cloud_comprehensive.sh --dataset support --method rsf
-```
-
-Direct module form:
+For the full native manuscript portfolio, shard the manuscript config the same
+way:
 
 ```bash
 python -m survarena.run_benchmark \
@@ -143,7 +145,7 @@ directory:
 
 ```bash
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/cloud_comprehensive_all_models_hpo.yaml \
+  --benchmark-config <same-config-used-for-original-run> \
   --output-dir results/summary/<experiment_dir> \
   --resume \
   --max-retries 2

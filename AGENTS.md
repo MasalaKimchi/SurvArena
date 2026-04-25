@@ -17,49 +17,12 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 <!-- GSD:project-end -->
 
 <!-- GSD:stack-start source:codebase/STACK.md -->
-## Technology Stack
-
-## Languages
-- Python (requires `>=3.10`) - all application logic in `survarena/`, tests in `tests/`, and tooling in `scripts/`.
-- YAML - experiment and model configuration in `configs/benchmark/`, `configs/methods/`, and `configs/datasets/`.
-- Markdown - project and protocol documentation in `README.md` and `docs/protocol.md`.
-- Shell - operational scripts in `scripts/setup_env.sh`, `scripts/run_cloud_comprehensive.sh`, and `scripts/validate_benchmark_protocol.sh`.
-## Runtime
-- CPython (preferred 3.11, supported 3.10/3.11/3.12) documented in `README.md` and `requirements.txt`.
-- `pip` with editable install from `pyproject.toml`.
-- Lockfile: missing (`requirements.txt` installs `-e ".[dev]"`; no resolved lock artifact detected).
-## Frameworks
-- Tabular ML stack: `numpy`, `pandas`, `scipy`, and `scikit-learn` in `survarena/data/preprocess.py`, `survarena/data/splitters.py`, and `survarena/automl/validation.py`.
-- Survival modeling stack: `scikit-survival`, `lifelines`, `pycox`, `torch`, and `torchsurv` in `survarena/methods/` and `survarena/evaluation/metrics.py`.
-- `pytest` configured in `pyproject.toml` (`[tool.pytest.ini_options]`) with test modules under `tests/`.
-- `setuptools.build_meta` package build backend in `pyproject.toml`.
-- `ruff` linting configured in `pyproject.toml` (`line-length = 120`, `target-version = "py310"`).
-## Key Dependencies
-- `numpy==1.26.4` and `pandas==2.2.2` - dataframe and array core in `survarena/api/predictor.py` and `survarena/benchmark/runner.py`.
-- `scikit-learn==1.6.1` - split and preprocessing primitives in `survarena/data/preprocess.py` and `survarena/data/splitters.py`.
-- `torch==2.2.2` and `torchsurv==0.1.5` - deep model and metric runtime in `survarena/methods/deep/` and `survarena/evaluation/metrics.py`.
-- `PyYAML==6.0.2` - YAML configuration loading in `survarena/config.py` and `survarena/data/loaders.py`.
-- `autogluon.tabular==1.5.0` - AutoML backend in `survarena/automl/autogluon_backend.py`.
-- `xgboost==3.2.0` and `catboost==1.2.10` - boosting adapters in `survarena/methods/boosting/tabular_boosting.py`.
-- `psutil==5.9.8` - runtime telemetry in `survarena/logging/tracker.py` and `survarena/utils/env.py`.
-- `matplotlib==3.9.2` and `seaborn==0.13.2` - plotting/report support from `survarena/api/predictor.py` and docs/examples.
-## Configuration
-- Packaging, dependency pins, script entry points, pytest, and ruff are defined in `pyproject.toml`.
-- Runtime benchmark and method controls are defined in `configs/benchmark/*.yaml` and `configs/methods/*.yaml`.
-- Dataset metadata contracts are defined in `configs/datasets/*.yaml`.
-- Build metadata uses `setuptools` via `pyproject.toml`.
-- Console script entry point is `survarena = "survarena.cli:main"` in `pyproject.toml`.
-## Platform Requirements
-- Repo-local virtual environment workflow via `scripts/setup_env.sh` and verification via `scripts/check_environment.py`.
-- Writable local filesystem for split cache and outputs in `data/splits/`, `results/predictor/`, and `results/summary/`.
-- CLI/batch execution model using `survarena/cli.py` and `survarena/run_benchmark.py`.
-- No service container, web server, or orchestrator contract is defined in repository code.
 # Technology Stack
 ## Languages
 - Python 3.10+ - Core package, CLI entrypoints, benchmark pipeline, method adapters, and exports in `survarena/` (`pyproject.toml`, `survarena/cli.py`, `survarena/run_benchmark.py`).
 - YAML - Config-driven benchmark, method, and dataset definitions in `configs/benchmark/`, `configs/methods/`, and `configs/datasets/`.
 - Markdown - User/dev protocol and environment documentation in `README.md` and `docs/`.
-- Shell (Bash) - Environment/bootstrap and benchmark execution wrappers in `scripts/setup_env.sh`, `scripts/run_cloud_comprehensive.sh`, and `scripts/validate_benchmark_protocol.sh`.
+- Shell (Bash) - Environment/bootstrap and benchmark validation wrappers in `scripts/setup_env.sh` and `scripts/validate_benchmark_protocol.sh`.
 ## Runtime
 - CPython runtime with 3.11 preferred and 3.10/3.12 supported (`README.md`, `docs/environment.md`, `scripts/setup_env.sh`).
 - Package metadata requires Python >=3.10 (`pyproject.toml`).
@@ -87,7 +50,7 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 ## Configuration
 - Project dependency and tool configuration is centralized in `pyproject.toml`.
 - Benchmark behavior is configured through YAML files in `configs/benchmark/*.yaml`, plus dataset/method metadata in `configs/datasets/*.yaml` and `configs/methods/*.yaml`.
-- Script-level environment controls include `PYTHON_BIN`, `VENV_DIR`, `INSTALL_EXTRAS`, `PYTHONUNBUFFERED`, `DATASET`, and `METHOD` (`scripts/setup_env.sh`, `scripts/run_cloud_comprehensive.sh`).
+- Script-level environment controls include `PYTHON_BIN`, `VENV_DIR`, `INSTALL_EXTRAS`, and `PYTHONUNBUFFERED` (`scripts/setup_env.sh`, benchmark CLI commands).
 - Foundation-model authentication uses `HF_TOKEN` or `HUGGINGFACE_HUB_TOKEN` when gated TabPFN weights are needed (`survarena/methods/foundation/readiness.py`, `README.md`).
 - Packaging/build metadata and entry points are in `pyproject.toml` (`survarena = "survarena.cli:main"`).
 - No container build descriptors detected (no `Dockerfile*` / `docker-compose*.yml` in repository root).
@@ -96,38 +59,12 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 - Writable local filesystem for split cache and experiment artifacts in `data/splits/` and `results/` (`docs/environment.md`, `survarena/logging/export.py`).
 - CPU-based tabular/deep ML dependencies installed in the active environment (`pyproject.toml`, `README.md`).
 - CLI/batch execution target, not a long-running web service (`survarena/cli.py`, `survarena/run_benchmark.py`).
-- “Cloud” runs are remote worker CLI jobs launched with the same Python module entrypoint (`scripts/run_cloud_comprehensive.sh`).
+- “Cloud” runs are remote worker CLI jobs launched with `python -m survarena.run_benchmark`.
 <!-- GSD:stack-end -->
 
 <!-- GSD:conventions-start source:CONVENTIONS.md -->
 ## Conventions
 
-## Naming Patterns
-- Use snake_case module names in `survarena/` (for example `survarena/data/user_dataset.py`, `survarena/benchmark/tuning.py`).
-- Use `test_<subject>.py` naming in `tests/` (for example `tests/test_compare_api.py`, `tests/test_statistics.py`).
-- Use snake_case function names (`compare_survival_models` in `survarena/api/compare.py`, `load_or_create_splits` in `survarena/data/splitters.py`).
-- Prefix internal helpers with `_` for non-public scope (`_resolve_compare_methods` in `survarena/api/compare.py`).
-- Use descriptive snake_case variables (`benchmark_cfg_hash`, `resolved_thresholds`, `method_cfg_cache`) in `survarena/api/compare.py` and `survarena/benchmark/runner.py`.
-- Use `PascalCase` for dataclasses and core classes (`SurvivalPredictor`, `PredictorModelResult`, `SplitDefinition`, `RunManifest`).
-## Code Style
-- Style follows `ruff` settings in `pyproject.toml` (`line-length = 120`, `target-version = "py310"`).
-- Use `from __future__ import annotations` consistently in runtime and test modules (`survarena/api/predictor.py`, `tests/test_metrics_and_tuning.py`).
-- `ruff` is the configured linter in `pyproject.toml`.
-- Code uses strict explicit exceptions and type hints in public function signatures (`survarena/cli.py`, `survarena/data/user_dataset.py`).
-## Import Organization
-- Not used; imports are package-qualified (`from survarena.benchmark.runner import run_benchmark`).
-## Error Handling
-- Validate arguments early and raise `ValueError`/`TypeError` with explicit messages (`survarena/api/predictor.py`, `survarena/data/splitters.py`).
-- Catch broad exceptions at split-run boundary and downgrade to structured failed records (`survarena/benchmark/runner.py`).
-## Logging
-- Use `write_json` and `write_jsonl_gz` from `survarena/logging/tracker.py`.
-- Store run status/metrics in `run_payload` objects from `survarena/benchmark/runner.py`.
-## Comments
-- Add short rationale comments only where behavior is non-obvious (for example scikit-survival target field note in `survarena/data/loaders.py`).
-- Not applicable (Python codebase).
-- Python docstrings are sparse; readability comes primarily from typed signatures and clear naming.
-## Function Design
-## Module Design
 ## Naming Patterns
 - Use `snake_case.py` file names across source and tests (examples: `survarena/api/predictor.py`, `survarena/evaluation/statistics.py`, `tests/test_predictor_registry.py`).
 - Prefix tests with `test_` and keep one responsibility area per file (examples: `tests/test_cli.py`, `tests/test_hpo_config.py`).
@@ -156,72 +93,12 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 ## Comments
 - Add concise comments only when algorithmic intent is not obvious (example: conservative Nemenyi approximation note in `survarena/evaluation/statistics.py`).
 - Keep most code self-explanatory via naming and type hints; comment density is intentionally low across `survarena/`.
-- Not applicable for this Python codebase.
 - Python docstrings are minimal; rely on typed signatures and tests for behavioral specification (examples in `survarena/` and `tests/`).
-## Function Design
-## Module Design
 <!-- GSD:conventions-end -->
 
 <!-- GSD:architecture-start source:ARCHITECTURE.md -->
 ## Architecture
 
-## Pattern Overview
-- Keep entry points thin: parse flags and delegate (`survarena/cli.py`, `survarena/run_benchmark.py`).
-- Centralize orchestration in service modules (`survarena/api/predictor.py`, `survarena/api/compare.py`, `survarena/benchmark/runner.py`).
-- Resolve model backends indirectly by `method_id` via `survarena/methods/registry.py`.
-## Layers
-- Purpose: expose CLI and importable API contracts.
-- Location: `survarena/cli.py`, `survarena/run_benchmark.py`, `survarena/__init__.py`, `survarena/api/__init__.py`
-- Contains: argument parsing, command dispatch, public symbol exports.
-- Depends on: `survarena.api`, `survarena.benchmark.runner`, `survarena.config`.
-- Used by: local CLI runs and Python consumers.
-- Purpose: execute fit/compare/benchmark workflows.
-- Location: `survarena/api/predictor.py`, `survarena/api/compare.py`, `survarena/benchmark/runner.py`, `survarena/benchmark/tuning.py`
-- Contains: validation planning, fold evaluation loops, HPO orchestration, retry/resume logic.
-- Depends on: data, methods, evaluation, logging layers.
-- Used by: interface layer only.
-- Purpose: load datasets, normalize schema, preprocess features, and persist reusable splits.
-- Location: `survarena/data/`
-- Contains: dataset loaders (`loaders.py`), user ingestion (`user_dataset.py`), split manifesting (`splitters.py`), perturbation tracks (`robustness.py`), tabular preprocessing (`preprocess.py`).
-- Depends on: `numpy`, `pandas`, `scikit-learn`, YAML.
-- Used by: predictor and benchmark application services.
-- Purpose: provide unified `fit/predict_risk/predict_survival` behavior over heterogeneous libraries.
-- Location: `survarena/methods/`
-- Contains: base contract (`base.py`), adapter families (`classical/`, `tree/`, `boosting/`, `deep/`, `foundation/`, `automl/`), and registry map (`registry.py`).
-- Depends on: selected model libraries plus `survarena/methods/preprocessing.py`.
-- Used by: `survarena/benchmark/runner.py` and `survarena/api/predictor.py`.
-- Purpose: compute metrics/statistics and write benchmark outputs.
-- Location: `survarena/evaluation/` and `survarena/logging/`
-- Contains: metric bundles (`metrics.py`), statistical summaries (`statistics.py`), manifest/ledger/export writers (`manifest.py`, `tracker.py`, `export.py`).
-- Depends on: SciPy/Pandas/NumPy and filesystem I/O.
-- Used by: benchmark and compare workflows.
-## Data Flow
-- Runtime state is in-memory in orchestrator objects (notably `SurvivalPredictor` in `survarena/api/predictor.py`) and persisted to files for reproducibility.
-## Key Abstractions
-- Purpose: enforce shared adapter API.
-- Examples: `survarena/methods/base.py`, implementations in `survarena/methods/classical/`, `survarena/methods/deep/`, `survarena/methods/foundation/`.
-- Pattern: abstract base class + polymorphic adapters.
-- Purpose: map `method_id` to adapter class.
-- Examples: `_REGISTRY_TARGETS` and `get_method_class()` in `survarena/methods/registry.py`.
-- Pattern: lazy import with memoization.
-- Purpose: capture hash-linked run metadata and status.
-- Examples: `RunManifest` in `survarena/logging/manifest.py` and payload serialization in `survarena/logging/tracker.py`.
-- Pattern: append-only JSON/JSONL export contract.
-## Entry Points
-- Location: `survarena/cli.py` (registered in `pyproject.toml`).
-- Triggers: `survarena fit`, `survarena compare`, `survarena foundation-check`.
-- Responsibilities: parse arguments, call API, print JSON outputs.
-- Location: `survarena/run_benchmark.py`.
-- Triggers: `python -m survarena.run_benchmark`.
-- Responsibilities: load benchmark config, run benchmark, support dry-run/resume/retries.
-- Location: `survarena/__init__.py`.
-- Triggers: `from survarena import SurvivalPredictor, compare_survival_models`.
-- Responsibilities: stable import surface for external callers.
-## Error Handling
-- Input and config validation with explicit `ValueError`/`RuntimeError` in `survarena/api/compare.py`, `survarena/data/user_dataset.py`, and `survarena/api/predictor.py`.
-- Exception capture and failure payload emission in `survarena/benchmark/runner.py` (`status = "failed"` records).
-- Split-integrity and stratification checks before split reuse in `survarena/data/splitters.py`.
-## Cross-Cutting Concerns
 ## Pattern Overview
 - Keep entry points thin: parse arguments and delegate (`survarena/cli.py`, `survarena/run_benchmark.py`, `survarena/__init__.py`).
 - Route all training/evaluation orchestration through service modules (`survarena/api/predictor.py`, `survarena/api/compare.py`, `survarena/benchmark/runner.py`).
@@ -281,7 +158,6 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 - Defensive input/config checks with `ValueError` and `RuntimeError` in `survarena/api/compare.py`, `survarena/data/user_dataset.py`, and `survarena/benchmark/runner.py`.
 - Failure capture with traceback and status payloads in `survarena/benchmark/runner.py` instead of aborting whole benchmark.
 - Split integrity and stratification validation before reuse in `survarena/data/splitters.py`.
-## Cross-Cutting Concerns
 <!-- GSD:architecture-end -->
 
 <!-- GSD:skills-start source:skills/ -->
