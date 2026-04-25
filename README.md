@@ -61,6 +61,7 @@ strongly recommended.
 ```bash
 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 source .venv/bin/activate
+python scripts/check_environment.py
 ```
 
 The setup script creates `.venv`, upgrades `pip`, installs SurvArena in editable
@@ -118,6 +119,37 @@ survarena foundation-check
 The environment check reports the active Python executable, virtual environment
 status, core imports, optional foundation imports, foundation runtime readiness,
 and smoke checks for the `torchsurv` metrics used by SurvArena.
+
+### First Smoke Run
+
+After setup, start with commands that check the benchmark wiring before running
+many model fits:
+
+```bash
+source .venv/bin/activate
+
+# Confirm imports and metric backends.
+python scripts/check_environment.py
+
+# Inspect the smoke benchmark plan without fitting models.
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/smoke.yaml \
+  --dry-run
+
+# Run the smallest practical built-in benchmark: one dataset, one method,
+# one seed/repeat, and the smoke fold geometry.
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/smoke.yaml \
+  --dataset whas500 \
+  --method coxph \
+  --limit-seeds 1
+```
+
+The one-dataset smoke run writes a timestamped folder under `results/summary/`
+with fold results, a leaderboard, compact run records, and an experiment
+manifest. Once this passes, broaden gradually: add more methods, then more
+datasets, then move from `smoke.yaml` to `standard_v1.yaml` or a derived
+manuscript config.
 
 ## Quick Start
 
@@ -257,6 +289,11 @@ benchmark-style evaluation with shared outer and inner splits.
 
 ## Benchmark Runner
 
+For a first benchmark run, use `configs/benchmark/smoke.yaml` with `--dataset`,
+`--method`, and `--limit-seeds 1` as shown in [First Smoke Run](#first-smoke-run).
+The unscoped smoke config is still small relative to standard/manuscript runs,
+but it covers all six built-in datasets and every manuscript default method.
+
 Tracked benchmark configs:
 
 - `configs/benchmark/standard_v1.yaml`: standard native portfolio (Cox, RSF,
@@ -284,6 +321,32 @@ python -m survarena.run_benchmark \
   --method coxph \
   --limit-seeds 1
 ```
+
+Simple smoke examples:
+
+```bash
+# Dry run only: parse config and print resolved datasets/methods/modes.
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/smoke.yaml \
+  --dry-run
+
+# Tiny end-to-end run.
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/smoke.yaml \
+  --dataset whas500 \
+  --method coxph \
+  --limit-seeds 1
+
+# Slightly broader smoke on one dataset and all smoke methods.
+python -m survarena.run_benchmark \
+  --benchmark-config configs/benchmark/smoke.yaml \
+  --dataset whas500 \
+  --limit-seeds 1
+```
+
+For smoke no-HPO runs, SurvArena fits each method's configured defaults directly
+on each outer-training split. Inner folds are used when HPO is enabled and a
+method has a search space.
 
 Cloud-scale comprehensive run helper:
 
@@ -315,7 +378,9 @@ The standard protocol uses shared split definitions, training-side
 preprocessing, configured tuning budgets, refit-before-test evaluation, and
 seeded stochastic methods. Benchmark configs use `comparison_modes` to choose
 `no_hpo`, `hpo`, or both result tracks. See
-[`docs/protocol.md`](docs/protocol.md) for the full benchmark contract.
+[`docs/protocol.md`](docs/protocol.md) for the full benchmark contract and
+[`docs/training_strategy.md`](docs/training_strategy.md) for fold geometry and
+runtime planning.
 
 ## Foundation Models
 
