@@ -106,6 +106,8 @@ Common cloud targets:
 - `configs/benchmark/manuscript_v1.yaml`: full native no-HPO manuscript run
 - `configs/benchmark/manuscript_autogluon_v1.yaml`: AutoGluon-managed run
 - `configs/benchmark/smoke_foundation.yaml`: optional foundation smoke run
+- `configs/benchmark/smoke_aft.yaml`: AFT-only no-HPO plus minimal-HPO smoke
+  run for Weibull, LogNormal, LogLogistic, XGBoost AFT, and CatBoost AFT
 
 Keep the terminal session attached to the remote job manager or run it through
 the cloud platform's persistent job mechanism. The important contract is that

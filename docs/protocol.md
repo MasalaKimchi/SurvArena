@@ -20,6 +20,9 @@ artifacts.
 `configs/benchmark/manuscript_v1.yaml` and the smoke suite configs add
 `brier`, `calibration`, and `net_benefit` to `secondary_metrics`, plus the
 usual time-horizon and decision-curve settings for those outputs.
+`configs/benchmark/smoke_aft.yaml` is the targeted AFT adapter stability smoke:
+it runs Weibull, LogNormal, LogLogistic, XGBoost AFT, and CatBoost AFT across
+all standard built-in datasets with paired no-HPO and one-trial HPO modes.
 
 Benchmark profiles (see `validate_benchmark_profile_contract` in
 `survarena/benchmark/runner.py`):
@@ -52,6 +55,9 @@ Supported split strategies:
 - no-HPO benchmark mode fits configured defaults directly on each outer-training split
 - hyperparameter search uses the configured inner validation budget
 - native methods can run Optuna-based HPO when `hpo.enabled: true`
+- failed or non-finite Optuna candidates are recorded as invalid trial results,
+  and selection keeps the best valid incumbent, including defaults when no
+  sampled candidate improves them
 - `comparison_modes` controls whether configs emit `no_hpo`, `hpo`, or both result tracks
 - the selected config is refit before outer-test evaluation
 - seeds are passed through to stochastic methods

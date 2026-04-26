@@ -358,6 +358,9 @@ Tracked benchmark configs:
   track for optional foundation adapters
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets (CI and `scripts/validate_benchmark_protocol.sh`)
+- `configs/benchmark/smoke_aft.yaml`: AFT-only smoke across all standard
+  built-in datasets with paired no-HPO and minimal HPO tracks; use
+  `scripts/run_smoke_aft_all_datasets.sh` when checking AFT adapter stability
 
 To evaluate a **single method** (for example one cloud worker per method), use
 `--method` and optionally `--dataset` with `standard_v1.yaml` or

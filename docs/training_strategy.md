@@ -24,6 +24,7 @@ test rows.
 | Config | Profile | Datasets | Outer folds | Outer repeats | Inner folds | Seeds used by default | Comparison modes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | `configs/benchmark/smoke.yaml` | `smoke` | 6 | 2 | 1 | 2 | 1 | `no_hpo` |
+| `configs/benchmark/smoke_aft.yaml` | `smoke` | 6 | 2 | 1 | 2 | 1 | `no_hpo`, `hpo` |
 | `configs/benchmark/standard_v1.yaml` | `standard` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo`, `hpo` |
 | `configs/benchmark/manuscript_v1.yaml` | `manuscript` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo` |
 
@@ -108,6 +109,11 @@ Approximate HPO fit count for one method across all six standard datasets:
 
 If a method has no `search_space`, HPO is marked disabled for that method and
 the benchmark falls back to the default parameters.
+
+If an Optuna trial samples parameters that fail to train or produce a non-finite
+selection metric, that candidate is recorded as invalid and the selector keeps a
+valid incumbent. When no sampled candidate improves on the default validation
+score, the HPO-mode final fit uses the method defaults.
 
 ## Dual-Mode Runs
 
