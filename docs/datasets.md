@@ -31,3 +31,7 @@ Each dataset config records:
 - coarse `feature_types`
 - recommended split and metric settings
 - notes
+
+## Contributing
+
+- Adding new built-in or local-only datasets: `docs/contributing_datasets.md`

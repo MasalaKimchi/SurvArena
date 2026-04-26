@@ -35,4 +35,4 @@ datasets:
   - whas500
 methods:
   - autogluon_survival
-notes: Manuscript-level AutoGluon event-risk adapter benchmark with AutoGluon-managed HPO, bagging, stacking, and refit.
+notes: Appendix AutoGluon event-risk adapter benchmark with AutoGluon-managed HPO, bagging, stacking, and refit; separated from the main-paper native no-HPO benchmark.

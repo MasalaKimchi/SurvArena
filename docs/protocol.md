@@ -31,6 +31,20 @@ Benchmark profiles (see `validate_benchmark_profile_contract` in
 - `standard`: balanced rigor for routine method iteration (outer folds/repeats and multi-seed lists suitable for stable comparisons)
 - `manuscript`: full native method portfolio, extended secondaries, and stricter reporting expectations
 
+## Manuscript Scope
+
+The main-paper benchmark scope is `configs/benchmark/manuscript_v1.yaml`: native
+Python survival adapters, shared repeated nested CV, and no-HPO/default-policy
+comparison. Paired no-HPO/HPO analysis is a budget/sensitivity track represented
+by `configs/benchmark/standard_v1.yaml` or by an explicitly named future config,
+not by the main manuscript config.
+
+`configs/benchmark/manuscript_autogluon_v1.yaml` is an appendix AutoGluon track
+with AutoGluon-managed HPO, bagging, stacking, and refit. Foundation adapters are
+exploratory readiness checks under `configs/benchmark/smoke_foundation.yaml` and
+do not support main-paper claims until a separate manuscript-grade foundation
+config and evidence bundle are created.
+
 Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`,
 `severity_levels`) control optional perturbation tracks; when disabled, only the
 baseline track runs.

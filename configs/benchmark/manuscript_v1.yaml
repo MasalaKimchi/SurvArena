@@ -55,4 +55,4 @@ methods:
   - deephit_single
   - pchazard
   - cox_time
-notes: Manuscript-level default/no-HPO benchmark across balanced survival model families. Run foundation and AutoGluon variants separately when gated dependencies/auth are available.
+notes: Main-paper native default/no-HPO benchmark across balanced survival model families. Treat HPO, AutoGluon, and foundation variants as separate sensitivity, appendix, or exploratory tracks unless explicitly promoted.

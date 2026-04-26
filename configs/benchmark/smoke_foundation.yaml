@@ -49,6 +49,7 @@ methods:
   - tabpfn_survival
   - mitra_survival
 notes: >
-  Same budget and data/split contract as smoke.yaml (2×2 nested CV, seed 11, all standard
-  datasets), limited to tabular foundation adapters. Requires optional foundation extras
-  and (for TabPFN) HuggingFace auth if checkpoints are gated.
+  Exploratory readiness smoke with the same budget and data/split contract as smoke.yaml
+  (2×2 nested CV, seed 11, all standard datasets), limited to tabular foundation adapters.
+  Requires optional foundation extras and (for TabPFN) HuggingFace auth if checkpoints are gated.
+  Not part of main-paper claims unless promoted to a separate manuscript-grade foundation config.

@@ -170,7 +170,12 @@ locked:
 | Budget study | `comparison_modes: [no_hpo, hpo]`, `max_trials: 10-15`, `timeout_seconds: 600-900` | Learn whether HPO changes results enough to justify final cost |
 | Final | manuscript or standard shape, locked methods/datasets, full repeats | Manuscript-grade reporting |
 
-The shipped manuscript config is currently a default/no-HPO benchmark.
+The shipped manuscript config is the main-paper native default/no-HPO benchmark.
 Dual-mode no-HPO/HPO comparisons are represented by `standard_v1.yaml` or by a
-new, intentionally added benchmark config. Keep final benchmark YAML immutable
-once a run starts, and use `--resume` for restartable execution.
+new, intentionally added benchmark config and should be treated as sensitivity
+or budget-analysis evidence unless explicitly promoted. AutoGluon is separated
+into an appendix track via `manuscript_autogluon_v1.yaml`; foundation adapters
+remain exploratory under `smoke_foundation.yaml`.
+
+Keep final benchmark YAML immutable once a run starts, and use `--resume` for
+restartable execution.

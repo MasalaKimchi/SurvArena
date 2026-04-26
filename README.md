@@ -42,6 +42,11 @@ tests/                     Pytest suite
 data/                      Local raw, processed, and split data directories
 ```
 
+## Contributing
+
+- Adding method adapters: `docs/contributing_method_adapters.md`
+- Adding datasets: `docs/contributing_datasets.md`
+
 ## Python Environment
 
 SurvArena is tested for modern CPython environments:
@@ -350,12 +355,13 @@ Tracked benchmark configs:
 
 - `configs/benchmark/standard_v1.yaml`: standard native portfolio (Cox, RSF,
   DeepSurv) on the six built-in standard datasets, repeated nested CV
-- `configs/benchmark/manuscript_v1.yaml`: full native manuscript portfolio,
-  repeated nested CV
-- `configs/benchmark/manuscript_autogluon_v1.yaml`: AutoGluon-only manuscript
-  track
+- `configs/benchmark/manuscript_v1.yaml`: main-paper native manuscript
+  portfolio, repeated nested CV, no-HPO/default-policy only
+- `configs/benchmark/manuscript_autogluon_v1.yaml`: appendix AutoGluon track
+  with AutoGluon-managed HPO, bagging, stacking, and refit
 - `configs/benchmark/smoke_foundation.yaml`: small foundation-readiness smoke
-  track for optional foundation adapters
+  track for exploratory optional foundation adapters; not part of main-paper
+  claims unless separately promoted
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets (CI and `scripts/validate_benchmark_protocol.sh`)
 - `configs/benchmark/smoke_aft.yaml`: AFT-only smoke across all standard
