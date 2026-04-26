@@ -92,6 +92,11 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     X = pd.DataFrame(X).reset_index(drop=True)
     time = np.asarray(time, dtype=float)
     event = np.asarray(event, dtype=int)
+    if np.any(time <= 0):
+        positive = time[time > 0]
+        reference = float(np.nanmin(positive)) if positive.size else 1.0
+        eps = max(1e-8, reference * 1e-6)
+        time = np.where(time <= 0, eps, time)
     feature_metadata = infer_feature_metadata(X)
     diagnostics = build_dataset_diagnostics(
         X,

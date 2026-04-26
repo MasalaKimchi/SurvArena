@@ -60,6 +60,14 @@ def _metric_direction_for_optimization(primary_metric: str) -> str:
     return metric_direction(primary_metric)
 
 
+def _is_better_score(candidate: float, incumbent: float, *, maximize: bool) -> bool:
+    if not candidate == candidate:
+        return False
+    if not incumbent == incumbent:
+        return True
+    return candidate > incumbent if maximize else candidate < incumbent
+
+
 def _build_hpo_metadata(
     *,
     resolved_hpo: dict[str, Any],
@@ -263,13 +271,18 @@ def select_hyperparameters(
             sampled_params = dict(defaults)
             for name, spec in search_space.items():
                 sampled_params[name] = _suggest_param(trial, name, dict(spec))
-            result = _inner_cv_evaluate(
-                method_id=method_id,
-                params=resolve_runtime_method_params(sampled_params, seed=seed),
-                fold_cache=fold_cache,
-                primary_metric=primary_metric,
-                metric_bundle_callback=metric_bundle_callback,
-            )
+            try:
+                result = _inner_cv_evaluate(
+                    method_id=method_id,
+                    params=resolve_runtime_method_params(sampled_params, seed=seed),
+                    fold_cache=fold_cache,
+                    primary_metric=primary_metric,
+                    metric_bundle_callback=metric_bundle_callback,
+                )
+            except Exception as exc:  # noqa: BLE001
+                trial.set_user_attr("failure_type", type(exc).__name__)
+                trial.set_user_attr("failure_message", str(exc))
+                return float("-inf") if maximize else float("inf")
             score = float(result["primary_score"])
             if not score == score:
                 return float("-inf") if maximize else float("inf")
@@ -299,9 +312,14 @@ def select_hyperparameters(
             )
             return default_result
 
-        selected = dict(defaults)
-        selected.update(dict(study.best_trial.params))
-        best_score = float(study.best_value)
+        trial_score = float(study.best_value)
+        if _is_better_score(trial_score, default_score, maximize=maximize):
+            selected = dict(defaults)
+            selected.update(dict(study.best_trial.params))
+            best_score = trial_score
+        else:
+            selected = dict(defaults)
+            best_score = default_score
         best_metric_rows = None
         if metric_bundle_callback is not None:
             best_eval = _inner_cv_evaluate(
@@ -321,6 +339,7 @@ def select_hyperparameters(
                     "state": str(getattr(trial.state, "name", trial.state)),
                     "value": None if trial.value is None else float(trial.value),
                     "params": dict(trial.params),
+                    "user_attrs": dict(trial.user_attrs),
                     "datetime_start": None if trial.datetime_start is None else trial.datetime_start.isoformat(),
                     "datetime_complete": None if trial.datetime_complete is None else trial.datetime_complete.isoformat(),
                 }

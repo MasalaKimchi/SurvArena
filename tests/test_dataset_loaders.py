@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 from survarena.data.loaders import load_dataset
@@ -27,5 +28,6 @@ def test_load_sksurv_dataset_matches_documented_event_counts(
     assert dataset.metadata.source == "scikit-survival"
     assert dataset.X.shape == shape
     assert dataset.time.shape == (shape[0],)
+    assert np.all(dataset.time > 0.0)
     assert dataset.event.shape == (shape[0],)
     assert int(dataset.event.sum()) == event_sum

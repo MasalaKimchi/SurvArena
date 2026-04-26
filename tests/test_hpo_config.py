@@ -138,3 +138,32 @@ def test_select_hyperparameters_reuses_best_trial_score_without_metric_rows(monk
     assert calls["count"] == 2
     assert result["best_score"] == 0.2
     assert result["best_metric_rows"] is None
+
+
+def test_select_hyperparameters_falls_back_to_defaults_when_trial_fails(monkeypatch) -> None:
+    import pytest
+
+    pytest.importorskip("optuna")
+
+    def _fake_inner_cv_evaluate(**kwargs):
+        if kwargs["params"]["alpha"] == 0.2:
+            raise RuntimeError("fit failed")
+        return {"primary_score": 0.5}
+
+    monkeypatch.setattr(tuning, "_inner_cv_evaluate", _fake_inner_cv_evaluate)
+
+    result = tuning.select_hyperparameters(
+        method_id="coxph",
+        method_cfg={
+            "default_params": {"alpha": 0.1},
+            "search_space": {"alpha": {"type": "categorical", "choices": [0.2]}},
+        },
+        fold_cache=[{"dummy": True}],
+        primary_metric="harrell_c",
+        seed=11,
+        hpo_config={"enabled": True, "max_trials": 1, "sampler": "random", "pruner": "nop"},
+    )
+
+    assert result["best_params"] == {"alpha": 0.1}
+    assert result["best_score"] == 0.5
+    assert result["hpo_trials"][0]["user_attrs"]["failure_type"] == "RuntimeError"

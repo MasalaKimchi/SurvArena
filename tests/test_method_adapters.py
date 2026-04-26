@@ -11,6 +11,7 @@ import pandas as pd
 import pytest
 
 from survarena.methods.registry import get_method_class, registered_method_ids
+from survarena.methods.survival_utils import predict_aft_survival, risk_from_survival_frame
 
 
 def _toy_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -86,6 +87,43 @@ def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params
     assert np.isfinite(survival).all()
     assert np.all((survival >= 0.0) & (survival <= 1.0))
     assert np.all(np.diff(survival, axis=1) <= 1e-8)
+
+
+def test_aft_survival_uses_location_as_log_time() -> None:
+    survival = predict_aft_survival(
+        location_scores=np.asarray([0.0, 1.0], dtype=np.float64),
+        times=np.asarray([0.5, 1.0, 2.0, 4.0], dtype=np.float64),
+        distribution="normal",
+        scale=1.0,
+    )
+
+    assert np.all(survival[1] >= survival[0])
+    assert np.all(np.diff(survival, axis=1) <= 1e-8)
+
+
+def test_aft_boosting_risk_inverts_predicted_log_time() -> None:
+    X = np.zeros((2, 1), dtype=np.float64)
+    for method_id in ("xgboost_aft", "catboost_survival_aft"):
+        model = get_method_class(method_id)()
+        model._predict_location = lambda X: np.asarray([0.0, 1.0], dtype=np.float64)  # type: ignore[method-assign]
+
+        risk = model.predict_risk(X)
+
+        assert risk.tolist() == [0.0, -1.0]
+
+
+def test_lifelines_curve_risk_orders_shorter_survival_as_higher_risk() -> None:
+    survival_frame = pd.DataFrame(
+        {
+            "short": [0.9, 0.4, 0.1],
+            "long": [0.99, 0.9, 0.8],
+        },
+        index=[1.0, 2.0, 3.0],
+    )
+
+    risk = risk_from_survival_frame(survival_frame)
+
+    assert risk[0] > risk[1]
 
 
 def test_catboost_cox_accepts_native_categorical_dataframe() -> None:
