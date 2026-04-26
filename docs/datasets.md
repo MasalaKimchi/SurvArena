@@ -10,7 +10,7 @@ User datasets can also be passed directly to `SurvivalPredictor.fit(...)` or
 | --- | --- | ---: | ---: | ---: | --- | --- |
 | `support` | Standard | 8,873 | 14 | 68.03% | pycox | Large mixed clinical cohort. |
 | `metabric` | Standard | 1,904 | 9 | 57.93% | pycox | Breast cancer benchmark. |
-| `aids` | Standard | 1,151 | 11 | 91.66% | scikit-survival | Light censoring, mixed covariates. |
+| `aids` | Standard | 1,151 | 11 | 8.34% | scikit-survival | Heavy censoring, mixed covariates. |
 | `gbsg2` | Standard | 686 | 8 | 56.41% | scikit-survival | Compact clinical benchmark. |
 | `flchain` | Standard | 7,874 | 9 | 27.55% | scikit-survival | Heavy censoring. |
 | `whas500` | Standard | 500 | 14 | 43.00% | scikit-survival | Small cardiovascular cohort. |

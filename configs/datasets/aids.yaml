@@ -13,4 +13,4 @@ primary_metric: harrell_c
 split_strategy: stratified_event
 recommended_split_strategy: repeated_nested_cv
 recommended_primary_metric: harrell_c
-notes: AIDS Clinical Trial dataset with light censoring.
+notes: AIDS Clinical Trial dataset with heavy censoring.
