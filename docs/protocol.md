@@ -41,9 +41,11 @@ not by the main manuscript config.
 
 `configs/benchmark/manuscript_autogluon_v1.yaml` is an appendix AutoGluon track
 with AutoGluon-managed HPO, bagging, stacking, and refit. Foundation adapters are
-exploratory readiness checks under `configs/benchmark/smoke_foundation.yaml` and
-do not support main-paper claims until a separate manuscript-grade foundation
-config and evidence bundle are created.
+exploratory readiness checks in `configs/benchmark/smoke.yaml` and can be
+isolated with `configs/benchmark/smoke_foundation.yaml`. They run as frozen
+pretrained tabular feature extractors plus lightweight survival heads by
+default, and do not support main-paper claims until a separate manuscript-grade
+foundation config and evidence bundle are created.
 
 Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`,
 `severity_levels`) control optional perturbation tracks; when disabled, only the
@@ -109,30 +111,20 @@ override defaults.
 ## Output Contract
 
 Benchmark-style runs write to `results/summary/exp_<YYYYMMDD_HHMMSS>/`.
-Stable entry points include:
+The default output profile is `exports.profile: core_csv`, which keeps each run
+folder intentionally small. It writes three CSV tables plus the manifest:
 
-- `README.md`
-- `experiment_navigator.json`
-- `experiment_manifest.json`
-- fold results, seed summaries, overall summaries, and leaderboards
-- dataset curation, failure, and missing-metric summaries when available
-- compact run ledgers and ledger indexes
-- HPO trial ledgers and summaries when HPO runs
-- manuscript summaries and comparison artifacts
+- `<benchmark_id>_fold_results.csv`: atomic split/method rows with metrics,
+  runtime, HPO governance, robustness, retry, and status fields
+- `<benchmark_id>_leaderboard.csv`: per-dataset method aggregates ranked by the
+  primary metric
+- `<benchmark_id>_run_diagnostics.csv`: dataset curation, run/failure summaries,
+  and HPO trial rows in one auditable table
 
-`README.md` and `experiment_navigator.json` are the human and machine entry
-points for each experiment folder. The compact run ledger is the canonical
-comprehensive per-run artifact: shared manifest fields live once in
-`<benchmark_id>_run_records_compact_index.json`, while per-run sections live in
-`<benchmark_id>_run_records_compact.jsonl.gz`.
-Set `exports.write_full_run_ledger: true` in a benchmark config to also emit the
-legacy full `<benchmark_id>_run_records.jsonl.gz` and index. Run ledgers and
-manuscript summaries include explicit `schema_version` fields.
-
-Manuscript comparison artifacts depend on the configured artifact layout. The
-compact layout emits a report, figures, and summary metadata; the full layout
-also emits detailed rank, pairwise, significance, ELO, bootstrap, failure, and
-missing-metric CSVs.
+Set `exports.profile: full` to also emit legacy seed summaries, JSON summaries,
+run ledgers, navigator files, HPO ledgers, and manuscript comparison artifacts.
+Set `exports.write_full_run_ledger: true` with the full profile to additionally
+emit the redundant full run-record JSONL and index.
 
 Fold-result schemas include identifiers, split and mode fields, core and
 time-horizon metrics, timing and memory telemetry, HPO governance fields,

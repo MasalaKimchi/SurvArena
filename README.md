@@ -359,11 +359,12 @@ Tracked benchmark configs:
   portfolio, repeated nested CV, no-HPO/default-policy only
 - `configs/benchmark/manuscript_autogluon_v1.yaml`: appendix AutoGluon track
   with AutoGluon-managed HPO, bagging, stacking, and refit
-- `configs/benchmark/smoke_foundation.yaml`: small foundation-readiness smoke
+- `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
+  standard built-in datasets, including optional frozen-backbone foundation
+  adapters (CI and `scripts/validate_benchmark_protocol.sh`)
+- `configs/benchmark/smoke_foundation.yaml`: isolated foundation-readiness smoke
   track for exploratory optional foundation adapters; not part of main-paper
   claims unless separately promoted
-- `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
-  standard built-in datasets (CI and `scripts/validate_benchmark_protocol.sh`)
 - `configs/benchmark/smoke_aft.yaml`: AFT-only smoke across all standard
   built-in datasets with paired no-HPO and minimal HPO tracks; use
   `scripts/run_smoke_aft_all_datasets.sh` when checking AFT adapter stability
@@ -457,8 +458,9 @@ TabPFN requires access to the gated model on Hugging Face:
 - authenticate with `hf auth login` or set `HF_TOKEN` /
   `HUGGINGFACE_HUB_TOKEN`
 
-Foundation adapters are experimental. Check runtime readiness before including
-them in long benchmark runs.
+Foundation adapters are experimental. Smoke defaults keep pretrained backbones
+frozen and train only lightweight survival heads; check runtime readiness before
+including them in long benchmark runs.
 
 ## Outputs and Artifacts
 
@@ -477,24 +479,11 @@ The most useful files are:
 - `predictor_manifest.json`: reproducibility metadata
 - `kaplan_meier_comparison.png`: optional plot when requested
 
-Benchmark runs live under timestamped folders in `results/summary/`. Start with
-the generated `README.md` and `experiment_navigator.json`; they point to the
-important summaries for that experiment.
-
-Benchmark folders group outputs by purpose:
-
-- performance tables: fold results, seed summaries, overall summaries, and
-  leaderboards
-- ranking analysis: rank summaries, pairwise win rates, corrected significance
-  tests, ELO-style ratings, critical-difference summaries, and bootstrap
-  confidence intervals
-- run auditing: failure summaries, missing-metric summaries, HPO trial ledgers,
-  compact run ledgers, indexes, and experiment manifests
-
-The compact run ledger is the default comprehensive per-run artifact. Benchmark
-configs can set `exports.write_full_run_ledger: true` to additionally emit the
-legacy full run-record JSONL and index for downstream workflows that still need
-the redundant format.
+Benchmark runs live under timestamped folders in `results/summary/`. The default
+`exports.profile: core_csv` keeps outputs compact: `<benchmark_id>_fold_results.csv`,
+`<benchmark_id>_leaderboard.csv`, and `<benchmark_id>_run_diagnostics.csv`, plus
+`experiment_manifest.json`. Set `exports.profile: full` to emit legacy JSON
+summaries, ledgers, navigator files, and manuscript comparison artifacts.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.

@@ -445,19 +445,12 @@ def test_benchmark_profiling_manifest_and_artifact_emitted(tmp_path: Path, monke
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
 
     manifest = writes["experiment_manifest.json"]
-    profiling = writes["resume_test_profiling.json"]
     assert calls["count"] == 1
-    assert manifest["profiling"]["artifact"] == "resume_test_profiling.json"
     assert manifest["profiling"]["schema_version"] == "benchmark_profiling_v1"
-    assert profiling["schema_version"] == "benchmark_profiling_v1"
-    assert profiling["record_count"] == 1
-    assert profiling["run_record_count"] == 1
-    assert profiling["dataset_count"] == 1
-    assert profiling["method_count"] == 1
-    assert profiling["split_count"] == 1
-    assert set(profiling["phase_timings_sec"]) == {"loading", "split_prep", "evaluation", "exports"}
-    assert profiling["total_wall_time_sec"] >= 0.0
-    assert all(value >= 0.0 for value in profiling["phase_timings_sec"].values())
+    assert "artifact" not in manifest["profiling"]
+    assert set(manifest["profiling"]["phase_timings_sec"]) == {"loading", "split_prep", "evaluation", "exports"}
+    assert manifest["profiling"]["total_wall_time_sec"] >= 0.0
+    assert all(value >= 0.0 for value in manifest["profiling"]["phase_timings_sec"].values())
 
 
 def test_comparison_modes_can_run_only_hpo(tmp_path: Path, monkeypatch) -> None:

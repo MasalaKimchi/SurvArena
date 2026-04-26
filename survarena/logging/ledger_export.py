@@ -13,6 +13,7 @@ def export_run_ledger(
     *,
     benchmark_id: str,
     output_dir: Path | None = None,
+    write_compact_ledger: bool = True,
     write_full_ledger: bool = False,
 ) -> None:
     created_at = datetime.now().isoformat(timespec="seconds")
@@ -71,29 +72,30 @@ def export_run_ledger(
                 continue
             compact[key] = value
         compact_records.append(compact)
-    write_jsonl_gz(compact_output, compact_records)
-    write_json(
-        compact_index_output,
-        {
-            "schema_version": RUN_LEDGER_COMPACT_SCHEMA_VERSION,
-            "benchmark_id": benchmark_id,
-            "record_count": len(compact_records),
-            "format": "jsonl.gz",
-            "path": str(compact_output),
-            "created_at": created_at,
-            "manifest_shared": shared_manifest,
-            "record_sections": [
-                "schema_version",
-                "manifest_shared",
-                "manifest",
-                "metrics",
-                "backend_metadata",
-                "hpo_metadata",
-                "hpo_trials",
-                "failure",
-            ],
-        },
-    )
+    if write_compact_ledger:
+        write_jsonl_gz(compact_output, compact_records)
+        write_json(
+            compact_index_output,
+            {
+                "schema_version": RUN_LEDGER_COMPACT_SCHEMA_VERSION,
+                "benchmark_id": benchmark_id,
+                "record_count": len(compact_records),
+                "format": "jsonl.gz",
+                "path": str(compact_output),
+                "created_at": created_at,
+                "manifest_shared": shared_manifest,
+                "record_sections": [
+                    "schema_version",
+                    "manifest_shared",
+                    "manifest",
+                    "metrics",
+                    "backend_metadata",
+                    "hpo_metadata",
+                    "hpo_trials",
+                    "failure",
+                ],
+            },
+        )
     if write_full_ledger:
         write_jsonl_gz(output, normalized_records)
         write_json(

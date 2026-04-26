@@ -37,6 +37,7 @@ robustness:
   severity_levels: [0.05]
 time_horizons_quantiles: [0.25, 0.5, 0.75]
 exports:
+  profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
   - support
@@ -52,4 +53,5 @@ notes: >
   Exploratory readiness smoke with the same budget and data/split contract as smoke.yaml
   (2×2 nested CV, seed 11, all standard datasets), limited to tabular foundation adapters.
   Requires optional foundation extras and (for TabPFN) HuggingFace auth if checkpoints are gated.
+  Defaults keep foundation backbones frozen and train only lightweight survival heads.
   Not part of main-paper claims unless promoted to a separate manuscript-grade foundation config.

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from survarena.evaluation.statistics import metric_direction, summarize_frame
+from survarena.evaluation.statistics import failure_summary, metric_direction, summarize_frame
 from survarena.logging.export_shared import (
     BENCHMARK_METRIC_COLUMNS,
     CORE_METRIC_COLUMNS,
@@ -44,6 +44,7 @@ __all__ = [
     "export_leaderboard",
     "export_manuscript_comparison",
     "export_overall_summary",
+    "export_run_diagnostics",
     "export_run_ledger",
     "export_seed_summary",
 ]
@@ -95,6 +96,7 @@ def export_seed_summary(
     *,
     output_dir: Path | None = None,
     file_prefix: str | None = None,
+    write_file: bool = True,
 ) -> pd.DataFrame:
     by_cols = group_keys_with_hpo_mode(
         frame,
@@ -103,6 +105,8 @@ def export_seed_summary(
     metric_cols = unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(frame))
     available_metric_cols = [col for col in metric_cols if col in frame.columns]
     seed_summary = frame.groupby(by_cols, as_index=False)[available_metric_cols].mean(numeric_only=True)
+    if not write_file:
+        return seed_summary
     if output_dir is None:
         output = root / "results" / "summaries" / "seed_summary.csv"
     else:
@@ -149,6 +153,7 @@ def export_leaderboard(
     *,
     output_dir: Path | None = None,
     file_prefix: str | None = None,
+    write_json_output: bool = True,
 ) -> pd.DataFrame:
     metric_cols = unique_in_order(
         BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(seed_summary)
@@ -177,7 +182,8 @@ def export_leaderboard(
         csv_path = output_dir / f"{prefix}_leaderboard.csv"
         json_path = output_dir / f"{prefix}_leaderboard.json"
     leaderboard.to_csv(csv_path, index=False)
-    leaderboard.to_json(json_path, orient="records", indent=2)
+    if write_json_output:
+        leaderboard.to_json(json_path, orient="records", indent=2)
     return leaderboard
 
 
@@ -233,4 +239,54 @@ def export_hpo_trials(
             "methods": method_summary,
         }
     write_json(summary_output, summary)
+    return frame
+
+
+def export_run_diagnostics(
+    root: Path,
+    *,
+    benchmark_id: str,
+    fold_results: pd.DataFrame,
+    dataset_curation_rows: list[dict],
+    hpo_trial_rows: list[dict],
+    output_dir: Path | None = None,
+) -> pd.DataFrame:
+    rows: list[dict[str, object]] = []
+    if not fold_results.empty:
+        failure_keys = group_keys_with_hpo_mode(
+            fold_results,
+            ["benchmark_id", "dataset_id", "method_id"],
+        )
+        failure_keys = [key for key in failure_keys if key in fold_results.columns]
+        for row in failure_summary(fold_results).to_dict(orient="records"):
+            rows.append({"record_type": "failure_summary", **row})
+        if failure_keys and "status" in fold_results.columns:
+            for row in (
+                fold_results.groupby(failure_keys, as_index=False)
+                .agg(n_runs=("status", "count"), n_success=("status", lambda values: int((values == "success").sum())))
+                .to_dict(orient="records")
+            ):
+                n_runs = int(row.get("n_runs", 0) or 0)
+                n_success = int(row.get("n_success", 0) or 0)
+                rows.append(
+                    {
+                        "record_type": "run_summary",
+                        **row,
+                        "n_failed": n_runs - n_success,
+                        "failure_rate": float((n_runs - n_success) / max(n_runs, 1)),
+                    }
+                )
+    for row in dataset_curation_rows:
+        rows.append({"record_type": "dataset_curation", "benchmark_id": benchmark_id, **row})
+    for row in hpo_trial_rows:
+        rows.append({"record_type": "hpo_trial", **row})
+
+    frame = pd.DataFrame(rows)
+    if output_dir is None:
+        output = root / "results" / "summaries" / f"{benchmark_id}_run_diagnostics.csv"
+        output.parent.mkdir(parents=True, exist_ok=True)
+    else:
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output = output_dir / f"{benchmark_id}_run_diagnostics.csv"
+    frame.to_csv(output, index=False)
     return frame

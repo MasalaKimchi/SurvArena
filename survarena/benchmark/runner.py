@@ -620,6 +620,7 @@ def run_benchmark(
         export_leaderboard,
         export_manuscript_comparison,
         export_overall_summary,
+        export_run_diagnostics,
         export_run_ledger,
         export_seed_summary,
     )
@@ -674,6 +675,10 @@ def run_benchmark(
     decision_thresholds = tuple(
         float(x) for x in benchmark_cfg.get("decision_curve", {}).get("thresholds", [0.2])
     )
+    exports_cfg = dict(benchmark_cfg.get("exports") or {})
+    export_profile = str(exports_cfg.get("profile", "core_csv")).lower()
+    if export_profile not in {"core_csv", "full"}:
+        raise ValueError("exports.profile must be one of: core_csv, full")
 
     if dry_run:
         print("Dry run complete.")
@@ -690,6 +695,7 @@ def run_benchmark(
         print(f"execution_n_jobs={execution_n_jobs}")
         print(f"decision_thresholds={list(decision_thresholds)}")
         print(f"primary_metric={primary_metric}")
+        print(f"exports.profile={export_profile}")
         return
 
     registered_methods = set(registered_method_ids())
@@ -752,6 +758,7 @@ def run_benchmark(
         "comparison_modes": list(comparison_modes),
         "decision_curve_thresholds": list(decision_thresholds),
         "primary_metric": primary_metric,
+        "exports": {"profile": export_profile, **exports_cfg},
         "benchmark_config_hash": benchmark_cfg_hash,
         "output_dir": str(experiment_dir),
         "resume": bool(resume),
@@ -870,42 +877,58 @@ def run_benchmark(
 
     phase_started_at = perf_counter()
     frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
-    seed_summary = export_seed_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
-    export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
+    seed_summary = export_seed_summary(
+        repo_root,
+        frame,
+        output_dir=experiment_dir,
+        file_prefix=benchmark_id,
+        write_file=export_profile == "full",
+    )
     leaderboard = export_leaderboard(
         repo_root,
         seed_summary,
         primary_metric=primary_metric,
         output_dir=experiment_dir,
         file_prefix=benchmark_id,
+        write_json_output=export_profile == "full",
     )
-    exports_cfg = dict(benchmark_cfg.get("exports") or {})
-    export_manuscript_comparison(
+    export_run_diagnostics(
         repo_root,
-        leaderboard,
-        primary_metric=primary_metric,
+        benchmark_id=benchmark_id,
         fold_results=frame,
+        dataset_curation_rows=dataset_curation_rows,
+        hpo_trial_rows=hpo_trial_rows,
         output_dir=experiment_dir,
-        file_prefix=benchmark_id,
-        artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
     )
-    export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
     export_run_ledger(
         repo_root,
         run_records,
         benchmark_id=benchmark_id,
         output_dir=experiment_dir,
-        write_full_ledger=bool(exports_cfg.get("write_full_run_ledger", False)),
+        write_compact_ledger=export_profile == "full",
+        write_full_ledger=export_profile == "full" and bool(exports_cfg.get("write_full_run_ledger", False)),
     )
-    export_hpo_trials(repo_root, hpo_trial_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
-    export_experiment_navigator(
-        experiment_dir,
-        benchmark_id=benchmark_id,
-        primary_metric=primary_metric,
-        split_count=len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in all_records}),
-        method_count=len(methods),
-        leaderboard=leaderboard,
-    )
+    if export_profile == "full":
+        export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
+        export_manuscript_comparison(
+            repo_root,
+            leaderboard,
+            primary_metric=primary_metric,
+            fold_results=frame,
+            output_dir=experiment_dir,
+            file_prefix=benchmark_id,
+            artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
+        )
+        export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
+        export_hpo_trials(repo_root, hpo_trial_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
+        export_experiment_navigator(
+            experiment_dir,
+            benchmark_id=benchmark_id,
+            primary_metric=primary_metric,
+            split_count=len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in all_records}),
+            method_count=len(methods),
+            leaderboard=leaderboard,
+        )
     phase_timings_sec["exports"] += perf_counter() - phase_started_at
     total_wall_time_sec = perf_counter() - benchmark_started_at
     profiling_payload = {
@@ -919,13 +942,15 @@ def run_benchmark(
         "method_count": len(methods),
         "split_count": len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in all_records}),
     }
-    profiling_artifact = f"{benchmark_id}_profiling.json"
-    write_json(experiment_dir / profiling_artifact, profiling_payload)
-    manifest_payload["profiling"] = {
+    profiling_manifest = {
         "schema_version": profiling_payload["schema_version"],
-        "artifact": profiling_artifact,
         "total_wall_time_sec": total_wall_time_sec,
         "phase_timings_sec": phase_timings_sec,
     }
+    if export_profile == "full":
+        profiling_artifact = f"{benchmark_id}_profiling.json"
+        write_json(experiment_dir / profiling_artifact, profiling_payload)
+        profiling_manifest["artifact"] = profiling_artifact
+    manifest_payload["profiling"] = profiling_manifest
     write_json(experiment_dir / "experiment_manifest.json", manifest_payload)
     print(f"Benchmark run complete. Outputs saved to: {experiment_dir}")
