@@ -57,9 +57,26 @@ _parity_gated_frame = parity_gated_frame
 _unique_in_order = unique_in_order
 
 
-def create_experiment_dir(root: Path) -> Path:
+def _slugify_component(value: str, *, fallback: str) -> str:
+    normalized = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in str(value).strip())
+    normalized = normalized.strip("_")
+    return normalized or fallback
+
+
+def create_experiment_dir(
+    root: Path,
+    *,
+    benchmark_id: str | None = None,
+    model_name: str | None = None,
+) -> Path:
     stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = root / "results" / "summary" / f"exp_{stamp}"
+    if benchmark_id is None and model_name is None:
+        folder_name = f"exp_{stamp}"
+    else:
+        benchmark_component = _slugify_component(benchmark_id or "benchmark", fallback="benchmark")
+        model_component = _slugify_component(model_name or "model", fallback="model")
+        folder_name = f"{benchmark_component}_{model_component}_{stamp}"
+    output_dir = root / "results" / "summary" / folder_name
     output_dir.mkdir(parents=True, exist_ok=False)
     return output_dir
 
@@ -84,8 +101,7 @@ def export_fold_results(
         output.parent.mkdir(parents=True, exist_ok=True)
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = file_prefix or benchmark_label(frame)
-        output = output_dir / f"{prefix}_fold_results.csv"
+        output = output_dir / "fold_results.csv"
     frame.to_csv(output, index=False)
     return frame
 

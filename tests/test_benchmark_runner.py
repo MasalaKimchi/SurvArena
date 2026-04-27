@@ -353,7 +353,7 @@ def test_exec04_resume_preserves_successful_outputs(tmp_path: Path, monkeypatch)
             }
         ]
     )
-    fold_results.to_csv(tmp_path / "resume_test_fold_results.csv", index=False)
+    fold_results.to_csv(tmp_path / "fold_results.csv", index=False)
 
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
@@ -376,7 +376,7 @@ def test_exec04_resume_reruns_incomplete_success_outputs(tmp_path: Path, monkeyp
             }
         ]
     )
-    fold_results.to_csv(tmp_path / "resume_test_fold_results.csv", index=False)
+    fold_results.to_csv(tmp_path / "fold_results.csv", index=False)
 
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
@@ -400,7 +400,7 @@ def test_exec04_resume_ignores_non_success_completed_keys(tmp_path: Path, monkey
             }
         ]
     )
-    fold_results.to_csv(tmp_path / "resume_test_fold_results.csv", index=False)
+    fold_results.to_csv(tmp_path / "fold_results.csv", index=False)
 
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)

@@ -210,7 +210,12 @@ def compare_survival_models(
         outer_repeats=int(outer_repeats),
     )
 
-    resolved_output_dir = create_experiment_dir(repo_root) if output_dir is None else Path(output_dir)
+    model_name = method_ids[0] if len(method_ids) == 1 else "multi_model"
+    resolved_output_dir = (
+        create_experiment_dir(repo_root, benchmark_id=resolved_benchmark_id, model_name=model_name)
+        if output_dir is None
+        else Path(output_dir)
+    )
     resolved_output_dir.mkdir(parents=True, exist_ok=True)
     write_json(
         resolved_output_dir / "experiment_manifest.json",

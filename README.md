@@ -422,7 +422,7 @@ Resume a partial benchmark run (reusing an output directory):
 ```bash
 python -m survarena.run_benchmark \
   --benchmark-config <same-config-used-for-original-run> \
-  --output-dir results/summary/exp_resume_target \
+  --output-dir results/summary/smoke_wo_HPO_coxph_resume_target \
   --resume \
   --max-retries 2
 ```
@@ -478,11 +478,12 @@ The most useful files are:
 - `predictor_manifest.json`: reproducibility metadata
 - `kaplan_meier_comparison.png`: optional plot when requested
 
-Benchmark runs live under timestamped folders in `results/summary/`. The default
-`exports.profile: core_csv` keeps outputs compact: `<benchmark_id>_fold_results.csv`,
-`<benchmark_id>_leaderboard.csv`, and `<benchmark_id>_run_diagnostics.csv`, plus
-`experiment_manifest.json`. Set `exports.profile: full` to emit legacy JSON
-summaries, ledgers, navigator files, and manuscript comparison artifacts.
+Benchmark runs live under timestamped folders in `results/summary/` with the
+default naming pattern `<benchmark_id>_<model_name>_<YYYYMMDD_HHMMSS>`. The
+default `exports.profile: core_csv` keeps outputs compact: `fold_results.csv`,
+`<benchmark_id>_leaderboard.csv`, and `<benchmark_id>_run_diagnostics.csv`,
+plus `experiment_manifest.json`. Set `exports.profile: full` to emit legacy
+JSON summaries, ledgers, navigator files, and manuscript comparison artifacts.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.

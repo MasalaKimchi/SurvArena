@@ -786,11 +786,16 @@ def run_benchmark(
         method_id: read_yaml(repo_root / "configs" / "methods" / f"{method_id}.yaml") for method_id in methods
     }
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
-    experiment_dir = output_dir if output_dir is not None else create_experiment_dir(repo_root)
+    model_name = methods[0] if len(methods) == 1 else "multi_model"
+    experiment_dir = (
+        output_dir
+        if output_dir is not None
+        else create_experiment_dir(repo_root, benchmark_id=benchmark_id, model_name=model_name)
+    )
     experiment_dir.mkdir(parents=True, exist_ok=True)
     completed_keys: set[tuple[str, str, str, int, str]] = set()
     if resume:
-        existing_fold_results = experiment_dir / f"{benchmark_id}_fold_results.csv"
+        existing_fold_results = experiment_dir / "fold_results.csv"
         completed_keys = completed_resume_keys(
             existing_fold_results,
             primary_metric=primary_metric,

@@ -1,4 +1,4 @@
-benchmark_id: smoke_all_models_30min
+benchmark_id: smoke_wo_HPO
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2

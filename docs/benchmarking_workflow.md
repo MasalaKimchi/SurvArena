@@ -57,7 +57,8 @@ evaluation.
 
 ## Output Flow
 
-Benchmark results are written under `results/summary/exp_<timestamp>/`. The
+Benchmark results are written under
+`results/summary/<benchmark_id>_<model_name>_<timestamp>/`. The
 human entry point is the generated experiment `README.md`; the machine entry
 point is `experiment_navigator.json`.
 

@@ -31,7 +31,7 @@ def export_experiment_navigator(
         "experiment_manifest.json",
     ]
     detailed_candidates = [
-        f"{benchmark_id}_fold_results.csv",
+        "fold_results.csv",
         f"{benchmark_id}_seed_summary.csv",
         f"{benchmark_id}_leaderboard.json",
         f"{benchmark_id}_report.csv",

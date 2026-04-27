@@ -211,7 +211,7 @@ def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch)
                 "harrell_c": 0.78,
             }
         ]
-    ).to_csv(output_dir / "dual_mode_contract_fold_results.csv", index=False)
+    ).to_csv(output_dir / "fold_results.csv", index=False)
 
     run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=output_dir, resume=True)
 

@@ -95,7 +95,7 @@ def _xgboost_sklearn_params(params: dict[str, Any]) -> dict[str, Any]:
         **_xgboost_common_tree_params(params),
         "reg_lambda": float(params["reg_lambda"]),
         "reg_alpha": float(params["reg_alpha"]),
-        "n_jobs": -1,
+        "n_jobs": 1,
         "random_state": _seed_param(params),
         "verbosity": 0,
     }
@@ -108,7 +108,7 @@ def _xgboost_train_params(params: dict[str, Any]) -> dict[str, Any]:
         "alpha": float(params["reg_alpha"]),
         "verbosity": 0,
         "seed": _seed_param(params),
-        "nthread": -1,
+        "nthread": 1,
     }
 
 

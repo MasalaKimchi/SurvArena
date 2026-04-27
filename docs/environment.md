@@ -73,7 +73,7 @@ Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
 
 - splits: `data/splits/<task_id>/`
 - predictor artifacts: `results/predictor/<dataset_name>/`
-- benchmark runs: `results/summary/exp_<YYYYMMDD_HHMMSS>/`
+- benchmark runs: `results/summary/<benchmark_id>_<model_name>_<YYYYMMDD_HHMMSS>/`
 
 Benchmark experiment folders contain generated `README.md` and
 `experiment_navigator.json` entry points. Exact artifacts vary by benchmark
