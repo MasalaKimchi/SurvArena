@@ -1,12 +1,6 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pandas as pd
-
-RUN_LEDGER_SCHEMA_VERSION = "2.0"
-RUN_LEDGER_COMPACT_SCHEMA_VERSION = "1.0"
-MANUSCRIPT_REPORT_SCHEMA_VERSION = "2.0"
 
 CORE_METRIC_COLUMNS = [
     "validation_score",
@@ -55,15 +49,6 @@ def expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
 
 def unique_in_order(columns: list[str]) -> list[str]:
     return list(dict.fromkeys(columns))
-
-
-def parity_gated_frame(frame: pd.DataFrame) -> pd.DataFrame:
-    if "parity_eligible" not in frame.columns:
-        return frame
-    mask = frame["parity_eligible"].fillna(False).astype(bool)
-    return frame.loc[mask].copy()
-
-
 def benchmark_label(frame: pd.DataFrame, fallback: str = "benchmark") -> str:
     if "benchmark_id" not in frame.columns or frame.empty:
         return fallback
@@ -85,12 +70,3 @@ def group_keys_with_hpo_mode(frame: pd.DataFrame, base: list[str]) -> list[str]:
         if col == "method_id":
             out.append("hpo_mode")
     return out
-
-
-def output_path(root: Path, output_dir: Path | None, default_parts: tuple[str, ...], filename: str) -> Path:
-    if output_dir is None:
-        output = root.joinpath(*default_parts, filename)
-        output.parent.mkdir(parents=True, exist_ok=True)
-        return output
-    output_dir.mkdir(parents=True, exist_ok=True)
-    return output_dir / filename

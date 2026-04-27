@@ -15,7 +15,6 @@ from survarena.logging.export_shared import (
     benchmark_label,
     expand_dynamic_metric_columns,
     group_keys_with_hpo_mode,
-    parity_gated_frame,
     unique_in_order,
 )
 
@@ -30,14 +29,6 @@ __all__ = [
     "export_leaderboard",
     "export_run_diagnostics",
 ]
-
-# Backward-compatible private helper aliases for callers/tests that imported them from this module.
-_benchmark_label = benchmark_label
-_expand_dynamic_metric_columns = expand_dynamic_metric_columns
-_group_keys_with_hpo_mode = group_keys_with_hpo_mode
-_parity_gated_frame = parity_gated_frame
-_unique_in_order = unique_in_order
-
 
 def _slugify_component(value: str, *, fallback: str) -> str:
     normalized = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "_" for ch in str(value).strip())
@@ -55,9 +46,8 @@ def create_experiment_dir(
     dataset_id: str | None = None,
     benchmark_id: str | None = None,
     model_name: str | None = None,
-    run_stamp: str | None = None,
 ) -> Path:
-    stamp = run_stamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if dataset_id is None or benchmark_id is None or model_name is None:
         folder_name = f"exp_{stamp}"
         output_dir = root / "results" / "summary" / folder_name

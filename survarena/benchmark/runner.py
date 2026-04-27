@@ -741,8 +741,6 @@ def run_benchmark(
     decision_thresholds = tuple(
         float(x) for x in benchmark_cfg.get("decision_curve", {}).get("thresholds", [0.2])
     )
-    exports_cfg = dict(benchmark_cfg.get("exports") or {})
-
     if dry_run:
         print("Dry run complete.")
         print(f"benchmark_id={benchmark_id}")
@@ -826,7 +824,7 @@ def run_benchmark(
         "comparison_modes": list(comparison_modes),
         "decision_curve_thresholds": list(decision_thresholds),
         "primary_metric": primary_metric,
-        "exports": {**exports_cfg, "profile": "core_csv"},
+        "exports": {"profile": "core_csv"},
         "benchmark_config_hash": benchmark_cfg_hash,
         "resume": bool(resume),
         "max_retries": int(max_retries),
