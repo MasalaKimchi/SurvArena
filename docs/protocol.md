@@ -111,15 +111,15 @@ override defaults.
 ## Output Contract
 
 Benchmark-style runs write to
-`results/summary/<benchmark_id>_<model_name>_<YYYYMMDD_HHMMSS>/`.
+`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/`.
 The default output profile is `exports.profile: core_csv`, which keeps each run
 folder intentionally small. It writes three CSV tables plus the manifest:
 
-- `fold_results.csv`: atomic split/method rows with metrics,
+- `<model_name>_fold_results.csv`: atomic split/method rows with metrics,
   runtime, HPO governance, robustness, retry, and status fields
-- `<benchmark_id>_leaderboard.csv`: per-dataset method aggregates ranked by the
+- `<model_name>_leaderboard.csv`: per-dataset method aggregates ranked by the
   primary metric
-- `<benchmark_id>_run_diagnostics.csv`: dataset curation, run/failure summaries,
+- `<model_name>_run_diagnostics.csv`: dataset curation, run/failure summaries,
   and HPO trial rows in one auditable table
 
 Set `exports.profile: full` to also emit legacy seed summaries, JSON summaries,

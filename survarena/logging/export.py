@@ -63,20 +63,25 @@ def _slugify_component(value: str, *, fallback: str) -> str:
     return normalized or fallback
 
 
+def _artifact_prefix(file_prefix: str | None, fallback: str) -> str:
+    return _slugify_component(file_prefix or fallback, fallback=fallback)
+
+
 def create_experiment_dir(
     root: Path,
     *,
+    dataset_id: str | None = None,
     benchmark_id: str | None = None,
-    model_name: str | None = None,
+    run_stamp: str | None = None,
 ) -> Path:
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    if benchmark_id is None and model_name is None:
+    stamp = run_stamp or datetime.now().strftime("%Y%m%d_%H%M%S")
+    if dataset_id is None or benchmark_id is None:
         folder_name = f"exp_{stamp}"
+        output_dir = root / "results" / "summary" / folder_name
     else:
+        dataset_component = _slugify_component(dataset_id, fallback="dataset")
         benchmark_component = _slugify_component(benchmark_id or "benchmark", fallback="benchmark")
-        model_component = _slugify_component(model_name or "model", fallback="model")
-        folder_name = f"{benchmark_component}_{model_component}_{stamp}"
-    output_dir = root / "results" / "summary" / folder_name
+        output_dir = root / "results" / "summary" / dataset_component / benchmark_component / stamp
     output_dir.mkdir(parents=True, exist_ok=False)
     return output_dir
 
@@ -101,7 +106,8 @@ def export_fold_results(
         output.parent.mkdir(parents=True, exist_ok=True)
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output_dir / "fold_results.csv"
+        prefix = _artifact_prefix(file_prefix, fallback="benchmark")
+        output = output_dir / f"{prefix}_fold_results.csv"
     frame.to_csv(output, index=False)
     return frame
 
@@ -127,7 +133,7 @@ def export_seed_summary(
         output = root / "results" / "summaries" / "seed_summary.csv"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = file_prefix or benchmark_label(frame)
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(frame))
         output = output_dir / f"{prefix}_seed_summary.csv"
     seed_summary.to_csv(output, index=False)
     return seed_summary
@@ -155,7 +161,7 @@ def export_overall_summary(
         output = root / "results" / "summaries" / "overall_summary.json"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = file_prefix or benchmark_label(frame)
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(frame))
         output = output_dir / f"{prefix}_overall_summary.json"
     with output.open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)
@@ -194,7 +200,7 @@ def export_leaderboard(
         json_path = root / "results" / "summaries" / "leaderboard.json"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = file_prefix or benchmark_label(seed_summary)
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(seed_summary))
         csv_path = output_dir / f"{prefix}_leaderboard.csv"
         json_path = output_dir / f"{prefix}_leaderboard.json"
     leaderboard.to_csv(csv_path, index=False)
@@ -209,6 +215,7 @@ def export_dataset_curation_table(
     *,
     benchmark_id: str,
     output_dir: Path | None = None,
+    file_prefix: str | None = None,
 ) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     if output_dir is None:
@@ -216,7 +223,8 @@ def export_dataset_curation_table(
         output.parent.mkdir(parents=True, exist_ok=True)
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output_dir / f"{benchmark_id}_dataset_curation.csv"
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
+        output = output_dir / f"{prefix}_dataset_curation.csv"
     frame.to_csv(output, index=False)
     return frame
 
@@ -227,6 +235,7 @@ def export_hpo_trials(
     *,
     benchmark_id: str,
     output_dir: Path | None = None,
+    file_prefix: str | None = None,
 ) -> pd.DataFrame:
     frame = pd.DataFrame(rows)
     if output_dir is None:
@@ -235,8 +244,9 @@ def export_hpo_trials(
         output.parent.mkdir(parents=True, exist_ok=True)
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output_dir / f"{benchmark_id}_hpo_trials.csv"
-        summary_output = output_dir / f"{benchmark_id}_hpo_summary.json"
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
+        output = output_dir / f"{prefix}_hpo_trials.csv"
+        summary_output = output_dir / f"{prefix}_hpo_summary.json"
     frame.to_csv(output, index=False)
     if frame.empty:
         summary = {"benchmark_id": benchmark_id, "trial_count": 0, "methods": []}
@@ -266,6 +276,7 @@ def export_run_diagnostics(
     dataset_curation_rows: list[dict],
     hpo_trial_rows: list[dict],
     output_dir: Path | None = None,
+    file_prefix: str | None = None,
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if not fold_results.empty:
@@ -303,6 +314,7 @@ def export_run_diagnostics(
         output.parent.mkdir(parents=True, exist_ok=True)
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        output = output_dir / f"{benchmark_id}_run_diagnostics.csv"
+        prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
+        output = output_dir / f"{prefix}_run_diagnostics.csv"
     frame.to_csv(output, index=False)
     return frame

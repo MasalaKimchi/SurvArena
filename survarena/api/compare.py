@@ -212,7 +212,11 @@ def compare_survival_models(
 
     model_name = method_ids[0] if len(method_ids) == 1 else "multi_model"
     resolved_output_dir = (
-        create_experiment_dir(repo_root, benchmark_id=resolved_benchmark_id, model_name=model_name)
+        create_experiment_dir(
+            repo_root,
+            dataset_id=dataset.metadata.dataset_id,
+            benchmark_id=resolved_benchmark_id,
+        )
         if output_dir is None
         else Path(output_dir)
     )
@@ -334,20 +338,20 @@ def compare_survival_models(
             row["parity_reason"] = "missing_counterpart_mode"
             row["missing_modes"] = missing_modes
 
-    frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=resolved_benchmark_id)
+    frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
     seed_summary = export_seed_summary(
         repo_root,
         frame,
         output_dir=resolved_output_dir,
-        file_prefix=resolved_benchmark_id,
+        file_prefix=model_name,
     )
-    export_overall_summary(repo_root, frame, output_dir=resolved_output_dir, file_prefix=resolved_benchmark_id)
+    export_overall_summary(repo_root, frame, output_dir=resolved_output_dir, file_prefix=model_name)
     leaderboard = export_leaderboard(
         repo_root,
         seed_summary,
         primary_metric=primary_metric,
         output_dir=resolved_output_dir,
-        file_prefix=resolved_benchmark_id,
+        file_prefix=model_name,
     )
     export_manuscript_comparison(
         repo_root,
@@ -355,7 +359,7 @@ def compare_survival_models(
         primary_metric=primary_metric,
         fold_results=frame,
         output_dir=resolved_output_dir,
-        file_prefix=resolved_benchmark_id,
+        file_prefix=model_name,
     )
     export_dataset_curation_table(
         repo_root,
@@ -373,11 +377,19 @@ def compare_survival_models(
         ],
         benchmark_id=resolved_benchmark_id,
         output_dir=resolved_output_dir,
+        file_prefix=model_name,
     )
-    export_run_ledger(repo_root, run_records, benchmark_id=resolved_benchmark_id, output_dir=resolved_output_dir)
+    export_run_ledger(
+        repo_root,
+        run_records,
+        benchmark_id=resolved_benchmark_id,
+        output_dir=resolved_output_dir,
+        file_prefix=model_name,
+    )
     export_experiment_navigator(
         resolved_output_dir,
         benchmark_id=resolved_benchmark_id,
+        file_prefix=model_name,
         primary_metric=primary_metric,
         split_count=len(splits),
         method_count=len(method_ids),

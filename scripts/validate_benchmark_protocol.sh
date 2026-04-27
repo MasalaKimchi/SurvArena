@@ -21,8 +21,8 @@ echo "[protocol] Running focused benchmark execution"
 
 echo "[protocol] Verifying required artifacts"
 test -f "$WORK_DIR"/experiment_manifest.json
-test -f "$WORK_DIR"/fold_results.csv
-test -f "$WORK_DIR"/smoke_leaderboard.csv
-test -f "$WORK_DIR"/smoke_run_diagnostics.csv
+test -f "$WORK_DIR"/coxph_fold_results.csv
+test -f "$WORK_DIR"/coxph_leaderboard.csv
+test -f "$WORK_DIR"/coxph_run_diagnostics.csv
 
 echo "[protocol] Artifact validation passed: $WORK_DIR"

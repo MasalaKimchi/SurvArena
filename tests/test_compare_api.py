@@ -76,22 +76,22 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert summary["split_count"] == 1
     assert summary["output_dir"] == str(output_dir)
     assert (output_dir / "experiment_manifest.json").exists()
-    assert (output_dir / "fold_results.csv").exists()
-    assert (output_dir / "user_compare_fixed_seed_summary.csv").exists()
-    assert (output_dir / "user_compare_fixed_overall_summary.json").exists()
-    assert (output_dir / "user_compare_fixed_leaderboard.csv").exists()
-    assert (output_dir / "user_compare_fixed_leaderboard.json").exists()
-    assert (output_dir / "user_compare_fixed_rank_summary.csv").exists()
-    assert (output_dir / "user_compare_fixed_pairwise_win_rate.csv").exists()
-    assert (output_dir / "user_compare_fixed_bootstrap_ci.csv").exists()
-    assert (output_dir / "user_compare_fixed_elo_ratings.csv").exists()
-    assert (output_dir / "user_compare_fixed_failure_summary.csv").exists()
-    assert (output_dir / "user_compare_fixed_missing_metric_summary.csv").exists()
-    assert (output_dir / "user_compare_fixed_dataset_curation.csv").exists()
-    assert (output_dir / "user_compare_fixed_manuscript_summary.json").exists()
-    assert not (output_dir / "user_compare_fixed_run_records.jsonl.gz").exists()
-    assert (output_dir / "user_compare_fixed_run_records_compact.jsonl.gz").exists()
-    assert (output_dir / "user_compare_fixed_run_records_compact_index.json").exists()
+    assert (output_dir / "coxph_fold_results.csv").exists()
+    assert (output_dir / "coxph_seed_summary.csv").exists()
+    assert (output_dir / "coxph_overall_summary.json").exists()
+    assert (output_dir / "coxph_leaderboard.csv").exists()
+    assert (output_dir / "coxph_leaderboard.json").exists()
+    assert (output_dir / "coxph_rank_summary.csv").exists()
+    assert (output_dir / "coxph_pairwise_win_rate.csv").exists()
+    assert (output_dir / "coxph_bootstrap_ci.csv").exists()
+    assert (output_dir / "coxph_elo_ratings.csv").exists()
+    assert (output_dir / "coxph_failure_summary.csv").exists()
+    assert (output_dir / "coxph_missing_metric_summary.csv").exists()
+    assert (output_dir / "coxph_dataset_curation.csv").exists()
+    assert (output_dir / "coxph_manuscript_summary.json").exists()
+    assert not (output_dir / "coxph_run_records.jsonl.gz").exists()
+    assert (output_dir / "coxph_run_records_compact.jsonl.gz").exists()
+    assert (output_dir / "coxph_run_records_compact_index.json").exists()
     assert (output_dir / "experiment_navigator.json").exists()
     assert (output_dir / "README.md").exists()
 
@@ -160,14 +160,14 @@ def test_compare_exports_exclude_parity_ineligible_rows(tmp_path: Path, monkeypa
         output_dir=output_dir,
     )
 
-    fold_results = pd.read_csv(output_dir / "fold_results.csv")
+    fold_results = pd.read_csv(output_dir / "coxph_fold_results.csv")
     assert "parity_eligible" in fold_results.columns
     assert not fold_results["parity_eligible"].any()
 
-    rank_summary = pd.read_csv(output_dir / "user_compare_fixed_rank_summary.csv")
-    pairwise = pd.read_csv(output_dir / "user_compare_fixed_pairwise_win_rate.csv")
+    rank_summary = pd.read_csv(output_dir / "coxph_rank_summary.csv")
+    pairwise = pd.read_csv(output_dir / "coxph_pairwise_win_rate.csv")
     try:
-        pairwise_sig = pd.read_csv(output_dir / "user_compare_fixed_pairwise_significance.csv")
+        pairwise_sig = pd.read_csv(output_dir / "coxph_pairwise_significance.csv")
     except EmptyDataError:
         pairwise_sig = pd.DataFrame()
     assert rank_summary.empty
@@ -240,7 +240,7 @@ def test_compare_summary_includes_requested_vs_realized_budget_fields(tmp_path: 
         hpo={"max_trials": 7, "timeout_seconds": 123.0, "sampler": "tpe", "pruner": "median"},
     )
 
-    fold_results = pd.read_csv(output_dir / "fold_results.csv")
+    fold_results = pd.read_csv(output_dir / "coxph_fold_results.csv")
     for required in ("hpo_mode", "requested_max_trials", "requested_timeout_seconds", "realized_trial_count"):
         assert required in fold_results.columns
     assert set(fold_results["hpo_mode"]) == {"no_hpo", "hpo"}

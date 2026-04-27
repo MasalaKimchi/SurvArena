@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -472,6 +473,8 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
             hpo_cfg=unit.mode_hpo_cfg,
         )
         run_payload = record.pop("run_payload")
+        run_payload["dataset_id"] = unit.track_dataset_id
+        run_payload["method_id"] = unit.method_id
         run_payload["manifest"]["split_id"] = unit.track_split_id
         run_payload["metrics"]["split_id"] = unit.track_split_id
         run_payload["metrics"]["robustness_track_id"] = unit.track_id
@@ -787,21 +790,39 @@ def run_benchmark(
     }
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     model_name = methods[0] if len(methods) == 1 else "multi_model"
-    experiment_dir = (
-        output_dir
-        if output_dir is not None
-        else create_experiment_dir(repo_root, benchmark_id=benchmark_id, model_name=model_name)
-    )
-    experiment_dir.mkdir(parents=True, exist_ok=True)
+    run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    if resume and output_dir is None:
+        raise ValueError("Resume requires --output-dir to target an existing run directory.")
+    if output_dir is not None:
+        base_output_dir = Path(output_dir)
+        if len(datasets) == 1:
+            dataset_output_dirs = {datasets[0]: base_output_dir}
+        else:
+            dataset_output_dirs = {dataset_id: base_output_dir / dataset_id for dataset_id in datasets}
+        for resolved_output_dir in dataset_output_dirs.values():
+            resolved_output_dir.mkdir(parents=True, exist_ok=True)
+    else:
+        dataset_output_dirs = {
+            dataset_id: create_experiment_dir(
+                repo_root,
+                dataset_id=dataset_id,
+                benchmark_id=benchmark_id,
+                run_stamp=run_stamp,
+            )
+            for dataset_id in datasets
+        }
     completed_keys: set[tuple[str, str, str, int, str]] = set()
     if resume:
-        existing_fold_results = experiment_dir / "fold_results.csv"
-        completed_keys = completed_resume_keys(
-            existing_fold_results,
-            primary_metric=primary_metric,
-            comparison_modes=comparison_modes,
-        )
-    manifest_payload = {
+        for dataset_id in datasets:
+            existing_fold_results = dataset_output_dirs[dataset_id] / f"{model_name}_fold_results.csv"
+            completed_keys.update(
+                completed_resume_keys(
+                    existing_fold_results,
+                    primary_metric=primary_metric,
+                    comparison_modes=comparison_modes,
+                )
+            )
+    manifest_template = {
         "benchmark_id": benchmark_id,
         "profile": profile,
         "datasets": datasets,
@@ -815,12 +836,11 @@ def run_benchmark(
         "primary_metric": primary_metric,
         "exports": {"profile": export_profile, **exports_cfg},
         "benchmark_config_hash": benchmark_cfg_hash,
-        "output_dir": str(experiment_dir),
         "resume": bool(resume),
         "max_retries": int(max_retries),
         "execution": {"n_jobs": execution_n_jobs},
+        "model_name": model_name,
     }
-    write_json(experiment_dir / "experiment_manifest.json", manifest_payload)
 
     for dataset_id in datasets:
         curation_row, run_units, dataset_timings_sec = _build_dataset_run_units(
@@ -863,81 +883,121 @@ def run_benchmark(
     )
 
     phase_started_at = perf_counter()
-    frame = export_fold_results(repo_root, all_records, output_dir=experiment_dir, file_prefix=benchmark_id)
-    seed_summary = export_seed_summary(
-        repo_root,
-        frame,
-        output_dir=experiment_dir,
-        file_prefix=benchmark_id,
-        write_file=export_profile == "full",
-    )
-    leaderboard = export_leaderboard(
-        repo_root,
-        seed_summary,
-        primary_metric=primary_metric,
-        output_dir=experiment_dir,
-        file_prefix=benchmark_id,
-        write_json_output=export_profile == "full",
-    )
-    export_run_diagnostics(
-        repo_root,
-        benchmark_id=benchmark_id,
-        fold_results=frame,
-        dataset_curation_rows=dataset_curation_rows,
-        hpo_trial_rows=hpo_trial_rows,
-        output_dir=experiment_dir,
-    )
-    export_run_ledger(
-        repo_root,
-        run_records,
-        benchmark_id=benchmark_id,
-        output_dir=experiment_dir,
-        write_compact_ledger=export_profile == "full",
-        write_full_ledger=export_profile == "full" and bool(exports_cfg.get("write_full_run_ledger", False)),
-    )
-    if export_profile == "full":
-        export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=benchmark_id)
-        export_manuscript_comparison(
-            repo_root,
-            leaderboard,
-            primary_metric=primary_metric,
-            fold_results=frame,
-            output_dir=experiment_dir,
-            file_prefix=benchmark_id,
-            artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
-        )
-        export_dataset_curation_table(repo_root, dataset_curation_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
-        export_hpo_trials(repo_root, hpo_trial_rows, benchmark_id=benchmark_id, output_dir=experiment_dir)
-        export_experiment_navigator(
-            experiment_dir,
-            benchmark_id=benchmark_id,
-            primary_metric=primary_metric,
-            split_count=len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in all_records}),
-            method_count=len(methods),
-            leaderboard=leaderboard,
-        )
-    phase_timings_sec["exports"] += perf_counter() - phase_started_at
     total_wall_time_sec = perf_counter() - benchmark_started_at
-    profiling_payload = {
-        "benchmark_id": benchmark_id,
-        "schema_version": "benchmark_profiling_v1",
-        "total_wall_time_sec": total_wall_time_sec,
-        "phase_timings_sec": phase_timings_sec,
-        "record_count": len(all_records),
-        "run_record_count": len(run_records),
-        "dataset_count": len(datasets),
-        "method_count": len(methods),
-        "split_count": len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in all_records}),
-    }
-    profiling_manifest = {
-        "schema_version": profiling_payload["schema_version"],
-        "total_wall_time_sec": total_wall_time_sec,
-        "phase_timings_sec": phase_timings_sec,
-    }
-    if export_profile == "full":
-        profiling_artifact = f"{benchmark_id}_profiling.json"
-        write_json(experiment_dir / profiling_artifact, profiling_payload)
-        profiling_manifest["artifact"] = profiling_artifact
-    manifest_payload["profiling"] = profiling_manifest
-    write_json(experiment_dir / "experiment_manifest.json", manifest_payload)
-    print(f"Benchmark run complete. Outputs saved to: {experiment_dir}")
+    for dataset_id in datasets:
+        experiment_dir = dataset_output_dirs[dataset_id]
+        dataset_records = [row for row in all_records if str(row.get("dataset_id")) == dataset_id]
+        dataset_run_records = [
+            row for row in run_records if str((row.get("manifest") or {}).get("dataset_id", row.get("dataset_id"))) == dataset_id
+        ]
+        if not dataset_run_records and run_records:
+            dataset_run_records = list(run_records)
+        dataset_hpo_trials = [row for row in hpo_trial_rows if str(row.get("dataset_id")) == dataset_id]
+        dataset_curation = [row for row in dataset_curation_rows if str(row.get("dataset_id")) == dataset_id]
+        frame = export_fold_results(
+            repo_root,
+            dataset_records,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+        )
+        seed_summary = export_seed_summary(
+            repo_root,
+            frame,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+            write_file=export_profile == "full",
+        )
+        leaderboard = export_leaderboard(
+            repo_root,
+            seed_summary,
+            primary_metric=primary_metric,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+            write_json_output=export_profile == "full",
+        )
+        export_run_diagnostics(
+            repo_root,
+            benchmark_id=benchmark_id,
+            fold_results=frame,
+            dataset_curation_rows=dataset_curation,
+            hpo_trial_rows=dataset_hpo_trials,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+        )
+        export_run_ledger(
+            repo_root,
+            dataset_run_records,
+            benchmark_id=benchmark_id,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+            write_compact_ledger=export_profile == "full",
+            write_full_ledger=export_profile == "full" and bool(exports_cfg.get("write_full_run_ledger", False)),
+        )
+        if export_profile == "full":
+            export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=model_name)
+            export_manuscript_comparison(
+                repo_root,
+                leaderboard,
+                primary_metric=primary_metric,
+                fold_results=frame,
+                output_dir=experiment_dir,
+                file_prefix=model_name,
+                artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
+            )
+            export_dataset_curation_table(
+                repo_root,
+                dataset_curation,
+                benchmark_id=benchmark_id,
+                output_dir=experiment_dir,
+                file_prefix=model_name,
+            )
+            export_hpo_trials(
+                repo_root,
+                dataset_hpo_trials,
+                benchmark_id=benchmark_id,
+                output_dir=experiment_dir,
+                file_prefix=model_name,
+            )
+            export_experiment_navigator(
+                experiment_dir,
+                benchmark_id=benchmark_id,
+                file_prefix=model_name,
+                primary_metric=primary_metric,
+                split_count=len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in dataset_records}),
+                method_count=len(methods),
+                leaderboard=leaderboard,
+            )
+        profiling_payload = {
+            "benchmark_id": benchmark_id,
+            "schema_version": "benchmark_profiling_v1",
+            "total_wall_time_sec": total_wall_time_sec,
+            "phase_timings_sec": phase_timings_sec,
+            "record_count": len(dataset_records),
+            "run_record_count": len(dataset_run_records),
+            "dataset_count": 1,
+            "method_count": len(methods),
+            "split_count": len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in dataset_records}),
+        }
+        profiling_manifest = {
+            "schema_version": profiling_payload["schema_version"],
+            "total_wall_time_sec": total_wall_time_sec,
+            "phase_timings_sec": phase_timings_sec,
+        }
+        if export_profile == "full":
+            profiling_artifact = f"{model_name}_profiling.json"
+            write_json(experiment_dir / profiling_artifact, profiling_payload)
+            profiling_manifest["artifact"] = profiling_artifact
+        dataset_manifest = {
+            **manifest_template,
+            "datasets": [dataset_id],
+            "output_dir": str(experiment_dir),
+            "profiling": profiling_manifest,
+        }
+        write_json(experiment_dir / "experiment_manifest.json", dataset_manifest)
+    phase_timings_sec["exports"] += perf_counter() - phase_started_at
+    if len(datasets) == 1:
+        print(f"Benchmark run complete. Outputs saved to: {dataset_output_dirs[datasets[0]]}")
+    else:
+        print("Benchmark run complete. Outputs saved to:")
+        for dataset_id in datasets:
+            print(f"- {dataset_id}: {dataset_output_dirs[dataset_id]}")

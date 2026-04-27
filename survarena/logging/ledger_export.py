@@ -109,6 +109,7 @@ def export_run_ledger(
     *,
     benchmark_id: str,
     output_dir: Path | None = None,
+    file_prefix: str | None = None,
     write_compact_ledger: bool = True,
     write_full_ledger: bool = False,
 ) -> None:
@@ -121,10 +122,11 @@ def export_run_ledger(
         index_output = root / "results" / "runs" / f"{benchmark_id}_run_records_index.json"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
-        compact_output = output_dir / f"{benchmark_id}_run_records_compact.jsonl.gz"
-        compact_index_output = output_dir / f"{benchmark_id}_run_records_compact_index.json"
-        output = output_dir / f"{benchmark_id}_run_records.jsonl.gz"
-        index_output = output_dir / f"{benchmark_id}_run_records_index.json"
+        prefix = str(file_prefix or benchmark_id)
+        compact_output = output_dir / f"{prefix}_run_records_compact.jsonl.gz"
+        compact_index_output = output_dir / f"{prefix}_run_records_compact_index.json"
+        output = output_dir / f"{prefix}_run_records.jsonl.gz"
+        index_output = output_dir / f"{prefix}_run_records_index.json"
     shared_manifest = _shared_manifest(normalized_records)
     compact_records = _compact_run_records(normalized_records, shared_manifest=shared_manifest)
     if write_compact_ledger:

@@ -147,11 +147,12 @@ python -m survarena.run_benchmark \
   --limit-seeds 1
 ```
 
-The one-dataset smoke run writes a timestamped folder under `results/summary/`
-with fold results, a leaderboard, compact run records, and an experiment
-manifest. Once this passes, broaden gradually: add more methods, then more
-datasets, then move from `smoke.yaml` to `standard_v1.yaml` or a derived
-manuscript config.
+The one-dataset smoke run writes a timestamped folder under
+`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/` with
+model-prefixed artifacts such as `coxph_fold_results.csv`,
+`coxph_leaderboard.csv`, compact run records, and an experiment manifest. Once
+this passes, broaden gradually: add more methods, then more datasets, then move
+from `smoke.yaml` to `standard_v1.yaml` or a derived manuscript config.
 
 ## Quick Start
 
@@ -478,12 +479,13 @@ The most useful files are:
 - `predictor_manifest.json`: reproducibility metadata
 - `kaplan_meier_comparison.png`: optional plot when requested
 
-Benchmark runs live under timestamped folders in `results/summary/` with the
-default naming pattern `<benchmark_id>_<model_name>_<YYYYMMDD_HHMMSS>`. The
-default `exports.profile: core_csv` keeps outputs compact: `fold_results.csv`,
-`<benchmark_id>_leaderboard.csv`, and `<benchmark_id>_run_diagnostics.csv`,
-plus `experiment_manifest.json`. Set `exports.profile: full` to emit legacy
-JSON summaries, ledgers, navigator files, and manuscript comparison artifacts.
+Benchmark runs live under
+`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/`. The default
+`exports.profile: core_csv` keeps outputs compact with model-prefixed filenames
+such as `<model_name>_fold_results.csv`, `<model_name>_leaderboard.csv`, and
+`<model_name>_run_diagnostics.csv`, plus `experiment_manifest.json`. Set
+`exports.profile: full` to emit legacy JSON summaries, ledgers, navigator
+files, and manuscript comparison artifacts.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.
