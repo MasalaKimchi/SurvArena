@@ -63,8 +63,95 @@ def _xgboost_aft_matrix(
     return matrix
 
 
+def _cox_training_target(time: np.ndarray, event: np.ndarray) -> np.ndarray:
+    return _cox_signed_target(np.asarray(time, dtype=np.float64), np.asarray(event, dtype=np.int32))
+
+
+def _seed_param(params: dict[str, Any]) -> int | None:
+    return None if params.get("seed") is None else int(params["seed"])
+
+
+def _early_stopping_rounds(params: dict[str, Any], *, has_validation: bool) -> int | None:
+    if not has_validation or params.get("early_stopping_rounds") is None:
+        return None
+    return int(params["early_stopping_rounds"])
+
+
+def _xgboost_common_tree_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "learning_rate": float(params["learning_rate"]),
+        "max_depth": int(params["max_depth"]),
+        "min_child_weight": float(params["min_child_weight"]),
+        "subsample": float(params["subsample"]),
+        "colsample_bytree": float(params["colsample_bytree"]),
+        "max_bin": int(params["max_bin"]),
+        "tree_method": str(params["tree_method"]),
+        "device": str(params["device"]),
+    }
+
+
+def _xgboost_sklearn_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **_xgboost_common_tree_params(params),
+        "reg_lambda": float(params["reg_lambda"]),
+        "reg_alpha": float(params["reg_alpha"]),
+        "n_jobs": -1,
+        "random_state": _seed_param(params),
+        "verbosity": 0,
+    }
+
+
+def _xgboost_train_params(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        **_xgboost_common_tree_params(params),
+        "lambda": float(params["reg_lambda"]),
+        "alpha": float(params["reg_alpha"]),
+        "verbosity": 0,
+        "seed": _seed_param(params),
+        "nthread": -1,
+    }
+
+
+def _catboost_regressor_params(params: dict[str, Any], *, loss_function: str, eval_metric: str) -> dict[str, Any]:
+    return {
+        "loss_function": loss_function,
+        "eval_metric": eval_metric,
+        "learning_rate": float(params["learning_rate"]),
+        "iterations": int(params["iterations"]),
+        "depth": int(params["depth"]),
+        "l2_leaf_reg": float(params["l2_leaf_reg"]),
+        "random_strength": float(params["random_strength"]),
+        "rsm": float(params["rsm"]),
+        "bootstrap_type": "Bernoulli",
+        "subsample": float(params["subsample"]),
+        "min_data_in_leaf": int(params["min_data_in_leaf"]),
+        "thread_count": -1,
+        "random_seed": _seed_param(params),
+        "verbose": False,
+        "allow_writing_files": False,
+    }
+
+
+def _catboost_fit_kwargs(
+    params: dict[str, Any],
+    *,
+    has_validation: bool,
+    eval_set: tuple[np.ndarray | pd.DataFrame | None, np.ndarray] | None,
+    cat_features: list[str] | list[int],
+) -> dict[str, Any]:
+    fit_kwargs: dict[str, Any] = {"use_best_model": has_validation}
+    if has_validation:
+        fit_kwargs["eval_set"] = eval_set
+        early_stopping_rounds = _early_stopping_rounds(params, has_validation=has_validation)
+        if early_stopping_rounds is not None:
+            fit_kwargs["early_stopping_rounds"] = early_stopping_rounds
+    if cat_features:
+        fit_kwargs["cat_features"] = cat_features
+    return fit_kwargs
+
+
 def _has_validation_data(
-    X_val: np.ndarray | None,
+    X_val: np.ndarray | pd.DataFrame | None,
     time_val: np.ndarray | None,
     event_val: np.ndarray | None,
 ) -> bool:
@@ -100,6 +187,29 @@ class _BaseCalibratedCoxBoostingMethod(BaseSurvivalMethod):
             times=np.asarray(times, dtype=np.float64),
             baseline_event_times=self.baseline_event_times_,
             baseline_survival=self.baseline_survival_,
+        )
+
+
+class _BaseAFTBoostingMethod(BaseSurvivalMethod):
+    _distribution_param: str
+    _scale_param: str
+
+    def __init__(self, **params: Any) -> None:
+        super().__init__(**params)
+        self.model = None
+
+    def _predict_location(self, X: np.ndarray | pd.DataFrame) -> np.ndarray:
+        raise NotImplementedError
+
+    def predict_risk(self, X: np.ndarray) -> np.ndarray:
+        return -self._predict_location(X)
+
+    def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
+        return predict_aft_survival(
+            location_scores=self._predict_location(X),
+            times=np.asarray(times, dtype=np.float64),
+            distribution=str(self.params[self._distribution_param]),
+            scale=float(self.params[self._scale_param]),
         )
 
 
@@ -151,25 +261,9 @@ class XGBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
         self.model = xgb.XGBRegressor(
             objective="survival:cox",
             eval_metric="cox-nloglik",
-            learning_rate=float(self.params["learning_rate"]),
+            **_xgboost_sklearn_params(self.params),
             n_estimators=int(self.params["n_estimators"]),
-            max_depth=int(self.params["max_depth"]),
-            min_child_weight=float(self.params["min_child_weight"]),
-            subsample=float(self.params["subsample"]),
-            colsample_bytree=float(self.params["colsample_bytree"]),
-            reg_lambda=float(self.params["reg_lambda"]),
-            reg_alpha=float(self.params["reg_alpha"]),
-            max_bin=int(self.params["max_bin"]),
-            tree_method=str(self.params["tree_method"]),
-            device=str(self.params["device"]),
-            early_stopping_rounds=(
-                None
-                if not has_validation or self.params.get("early_stopping_rounds") is None
-                else int(self.params["early_stopping_rounds"])
-            ),
-            n_jobs=-1,
-            random_state=None if self.params.get("seed") is None else int(self.params["seed"]),
-            verbosity=0,
+            early_stopping_rounds=_early_stopping_rounds(self.params, has_validation=has_validation),
         )
 
         fit_kwargs: dict[str, Any] = {"verbose": False}
@@ -177,13 +271,13 @@ class XGBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
             fit_kwargs["eval_set"] = [
                 (
                     _as_float32_array(X_val),
-                    _cox_signed_target(np.asarray(time_val, dtype=np.float64), np.asarray(event_val, dtype=np.int32)),
+                    _cox_training_target(time_val, event_val),
                 )
             ]
 
         self.model.fit(
             _as_float32_array(X_train),
-            _cox_signed_target(np.asarray(time_train, dtype=np.float64), np.asarray(event_train, dtype=np.int32)),
+            _cox_training_target(time_train, event_train),
             **fit_kwargs,
         )
         self._fit_breslow_baseline(X_train=X_train, time_train=time_train, event_train=event_train)
@@ -195,7 +289,10 @@ class XGBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
         return self.model.predict(_as_float32_array(X), output_margin=True).astype(np.float64)
 
 
-class XGBoostAFTMethod(BaseSurvivalMethod):
+class XGBoostAFTMethod(_BaseAFTBoostingMethod):
+    _distribution_param = "aft_loss_distribution"
+    _scale_param = "aft_loss_distribution_scale"
+
     def __init__(
         self,
         learning_rate: float = 0.05,
@@ -231,7 +328,6 @@ class XGBoostAFTMethod(BaseSurvivalMethod):
             early_stopping_rounds=early_stopping_rounds,
             seed=seed,
         )
-        self.model = None
 
     def fit(
         self,
@@ -257,30 +353,14 @@ class XGBoostAFTMethod(BaseSurvivalMethod):
             params={
                 "objective": "survival:aft",
                 "eval_metric": "aft-nloglik",
-                "learning_rate": float(self.params["learning_rate"]),
-                "max_depth": int(self.params["max_depth"]),
-                "min_child_weight": float(self.params["min_child_weight"]),
-                "subsample": float(self.params["subsample"]),
-                "colsample_bytree": float(self.params["colsample_bytree"]),
-                "lambda": float(self.params["reg_lambda"]),
-                "alpha": float(self.params["reg_alpha"]),
-                "max_bin": int(self.params["max_bin"]),
-                "tree_method": str(self.params["tree_method"]),
-                "device": str(self.params["device"]),
+                **_xgboost_train_params(self.params),
                 "aft_loss_distribution": normalize_aft_distribution_name(self.params["aft_loss_distribution"]),
                 "aft_loss_distribution_scale": float(self.params["aft_loss_distribution_scale"]),
-                "verbosity": 0,
-                "seed": None if self.params.get("seed") is None else int(self.params["seed"]),
-                "nthread": -1,
             },
             dtrain=dtrain,
             num_boost_round=int(self.params["n_estimators"]),
             evals=evals,
-            early_stopping_rounds=(
-                None
-                if not has_validation or self.params.get("early_stopping_rounds") is None
-                else int(self.params["early_stopping_rounds"])
-            ),
+            early_stopping_rounds=_early_stopping_rounds(self.params, has_validation=has_validation),
             verbose_eval=False,
         )
         return self
@@ -292,17 +372,6 @@ class XGBoostAFTMethod(BaseSurvivalMethod):
             raise RuntimeError("XGBoostAFTMethod must be fit before prediction.")
         dmatrix = xgb.DMatrix(_as_tabular_input(X))
         return self.model.predict(dmatrix, output_margin=True).astype(np.float64)
-
-    def predict_risk(self, X: np.ndarray) -> np.ndarray:
-        return -self._predict_location(X)
-
-    def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
-        return predict_aft_survival(
-            location_scores=self._predict_location(X),
-            times=np.asarray(times, dtype=np.float64),
-            distribution=str(self.params["aft_loss_distribution"]),
-            scale=float(self.params["aft_loss_distribution_scale"]),
-        )
 
 
 class CatBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
@@ -349,37 +418,25 @@ class CatBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
         has_validation = _has_validation_data(X_val, time_val, event_val)
         self.cat_features_ = _catboost_cat_features(X_train_input)
         self.model = CatBoostRegressor(
-            loss_function="Cox",
-            eval_metric="Cox",
-            learning_rate=float(self.params["learning_rate"]),
-            iterations=int(self.params["iterations"]),
-            depth=int(self.params["depth"]),
-            l2_leaf_reg=float(self.params["l2_leaf_reg"]),
-            random_strength=float(self.params["random_strength"]),
-            rsm=float(self.params["rsm"]),
-            bootstrap_type="Bernoulli",
-            subsample=float(self.params["subsample"]),
-            min_data_in_leaf=int(self.params["min_data_in_leaf"]),
-            thread_count=-1,
-            random_seed=None if self.params.get("seed") is None else int(self.params["seed"]),
-            verbose=False,
-            allow_writing_files=False,
+            **_catboost_regressor_params(self.params, loss_function="Cox", eval_metric="Cox"),
         )
 
-        fit_kwargs: dict[str, Any] = {"use_best_model": has_validation}
+        eval_set = None
         if has_validation:
-            fit_kwargs["eval_set"] = (
+            eval_set = (
                 X_val_input,
-                _cox_signed_target(np.asarray(time_val, dtype=np.float64), np.asarray(event_val, dtype=np.int32)),
+                _cox_training_target(time_val, event_val),
             )
-            if self.params.get("early_stopping_rounds") is not None:
-                fit_kwargs["early_stopping_rounds"] = int(self.params["early_stopping_rounds"])
-        if self.cat_features_:
-            fit_kwargs["cat_features"] = self.cat_features_
+        fit_kwargs = _catboost_fit_kwargs(
+            self.params,
+            has_validation=has_validation,
+            eval_set=eval_set,
+            cat_features=self.cat_features_,
+        )
 
         self.model.fit(
             X_train_input,
-            _cox_signed_target(np.asarray(time_train, dtype=np.float64), np.asarray(event_train, dtype=np.int32)),
+            _cox_training_target(time_train, event_train),
             **fit_kwargs,
         )
         self._fit_breslow_baseline(X_train=X_train, time_train=time_train, event_train=event_train)
@@ -391,7 +448,10 @@ class CatBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
         return self.model.predict(_as_tabular_input(X), prediction_type="RawFormulaVal").astype(np.float64)
 
 
-class CatBoostSurvivalAFTMethod(BaseSurvivalMethod):
+class CatBoostSurvivalAFTMethod(_BaseAFTBoostingMethod):
+    _distribution_param = "dist"
+    _scale_param = "scale"
+
     def __init__(
         self,
         learning_rate: float = 0.05,
@@ -421,7 +481,6 @@ class CatBoostSurvivalAFTMethod(BaseSurvivalMethod):
             early_stopping_rounds=early_stopping_rounds,
             seed=seed,
         )
-        self.model = None
         self.cat_features_: list[str] | list[int] = []
 
     def _resolved_dist(self) -> str:
@@ -447,32 +506,21 @@ class CatBoostSurvivalAFTMethod(BaseSurvivalMethod):
         has_validation = _has_validation_data(X_val, time_val, event_val)
         self.cat_features_ = _catboost_cat_features(X_train_input)
         train_lower, train_upper = _aft_bounds(time_train, event_train, censored_upper=-1.0)
+        loss_spec = self._loss_spec()
         self.model = CatBoostRegressor(
-            loss_function=self._loss_spec(),
-            eval_metric=self._loss_spec(),
-            learning_rate=float(self.params["learning_rate"]),
-            iterations=int(self.params["iterations"]),
-            depth=int(self.params["depth"]),
-            l2_leaf_reg=float(self.params["l2_leaf_reg"]),
-            random_strength=float(self.params["random_strength"]),
-            rsm=float(self.params["rsm"]),
-            bootstrap_type="Bernoulli",
-            subsample=float(self.params["subsample"]),
-            min_data_in_leaf=int(self.params["min_data_in_leaf"]),
-            thread_count=-1,
-            random_seed=None if self.params.get("seed") is None else int(self.params["seed"]),
-            verbose=False,
-            allow_writing_files=False,
+            **_catboost_regressor_params(self.params, loss_function=loss_spec, eval_metric=loss_spec),
         )
 
-        fit_kwargs: dict[str, Any] = {"use_best_model": has_validation}
+        eval_set = None
         if has_validation:
             val_lower, val_upper = _aft_bounds(time_val, event_val, censored_upper=-1.0)
-            fit_kwargs["eval_set"] = (X_val_input, np.column_stack([val_lower, val_upper]))
-            if self.params.get("early_stopping_rounds") is not None:
-                fit_kwargs["early_stopping_rounds"] = int(self.params["early_stopping_rounds"])
-        if self.cat_features_:
-            fit_kwargs["cat_features"] = self.cat_features_
+            eval_set = (X_val_input, np.column_stack([val_lower, val_upper]))
+        fit_kwargs = _catboost_fit_kwargs(
+            self.params,
+            has_validation=has_validation,
+            eval_set=eval_set,
+            cat_features=self.cat_features_,
+        )
 
         self.model.fit(
             X_train_input,
@@ -485,14 +533,3 @@ class CatBoostSurvivalAFTMethod(BaseSurvivalMethod):
         if self.model is None:
             raise RuntimeError("CatBoostSurvivalAFTMethod must be fit before prediction.")
         return self.model.predict(_as_tabular_input(X), prediction_type="RawFormulaVal").astype(np.float64)
-
-    def predict_risk(self, X: np.ndarray) -> np.ndarray:
-        return -self._predict_location(X)
-
-    def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
-        return predict_aft_survival(
-            location_scores=self._predict_location(X),
-            times=np.asarray(times, dtype=np.float64),
-            distribution=str(self.params["dist"]),
-            scale=float(self.params["scale"]),
-        )

@@ -6,6 +6,7 @@ import warnings
 import numpy as np
 import pandas as pd
 
+from survarena.data.feature_roles import is_low_cardinality_numeric_categorical
 from survarena.data.schema import DatasetDiagnostics, FeatureMetadata
 
 
@@ -37,6 +38,8 @@ def infer_feature_metadata(frame: pd.DataFrame) -> list[FeatureMetadata]:
 
         if pd.api.types.is_bool_dtype(series):
             inferred_type = "boolean"
+        elif pd.api.types.is_numeric_dtype(series) and is_low_cardinality_numeric_categorical(series):
+            inferred_type = "categorical"
         elif pd.api.types.is_numeric_dtype(series):
             inferred_type = "numerical"
         elif _is_datetime_like(series):

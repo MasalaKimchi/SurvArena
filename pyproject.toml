@@ -39,13 +39,9 @@ foundation-tabpfn = [
     "torchvision==0.17.2",
     "tabpfn==6.2.0",
 ]
-foundation-mitra = [
-    "autogluon.tabular==1.5.0",
-]
 foundation = [
     "torchvision==0.17.2",
     "tabpfn==6.2.0",
-    "autogluon.tabular==1.5.0",
 ]
 tracking = [
     "mlflow==3.10.1",

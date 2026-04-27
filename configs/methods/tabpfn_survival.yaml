@@ -1,7 +1,7 @@
 method_id: tabpfn_survival
 family: foundation
 library: tabpfn + scikit-survival
-notes: Experimental tabular foundation-model adapter using frozen TabPFN embeddings with a trainable MLP survival head optimized by Cox loss.
+notes: Experimental tabular foundation-model adapter using frozen TabPFN public features with a trainable MLP survival head optimized by Cox loss.
 search_space:
   n_estimators:
     type: categorical

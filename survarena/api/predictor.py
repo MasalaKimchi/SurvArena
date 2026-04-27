@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 import os
-import pickle
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -10,6 +9,26 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from survarena.api._predictor_budget import (
+    merge_time_limits,
+    next_method_time_limit,
+    remaining_fit_time,
+    resolve_hyperparameter_tune_kwargs,
+    resolve_tuning_timeout_seconds,
+    validate_num_bag_folds,
+    validate_num_bag_sets,
+    validate_retain_top_k_models,
+    validate_time_limit,
+)
+from survarena.api._predictor_persistence import (
+    PREDICTOR_SERIALIZATION_VERSION,
+    default_predictor_path,
+    load_predictor,
+    persist_artifacts,
+    predictor_manifest_path,
+    save_predictor,
+    serialization_manifest,
+)
 from survarena.automl.bagging import BaggedModelMember, BaggedSurvivalEnsemble
 from survarena.automl.presets import PresetConfig, resolve_preset
 from survarena.automl.validation import (
@@ -35,7 +54,6 @@ from survarena.evaluation.metrics import (
     compute_survival_metrics,
     horizons_from_train_event_times,
 )
-from survarena.logging.tracker import write_json
 from survarena.methods.foundation.catalog import foundation_model_catalog
 from survarena.methods.foundation.readiness import foundation_runtime_status
 from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
@@ -43,7 +61,7 @@ from survarena.methods.registry import get_method_class, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
 
 
-_PREDICTOR_SERIALIZATION_VERSION = 1
+_PREDICTOR_SERIALIZATION_VERSION = PREDICTOR_SERIALIZATION_VERSION
 _SELECTION_TIME_BUDGET_RATIO = 0.8
 
 
@@ -482,31 +500,11 @@ class SurvivalPredictor:
         return pd.DataFrame(survival, columns=columns, index=frame.index)
 
     def save(self, path: str | Path | None = None) -> Path:
-        output_path = Path(path) if path is not None else self._default_predictor_path()
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        with output_path.open("wb") as handle:
-            pickle.dump(self, handle, protocol=pickle.HIGHEST_PROTOCOL)
-        write_json(self._predictor_manifest_path(output_path), self._serialization_manifest(output_path))
-        return output_path
+        return save_predictor(self, path)
 
     @classmethod
     def load(cls, path: str | Path) -> "SurvivalPredictor":
-        path = Path(path)
-        with path.open("rb") as handle:
-            predictor = pickle.load(handle)
-        if not isinstance(predictor, cls):
-            raise TypeError(f"Serialized object at '{path}' is not a {cls.__name__}.")
-        predictor._ensure_runtime_state_defaults()
-        manifest_path = predictor._predictor_manifest_path(path)
-        if manifest_path.exists():
-            manifest = read_yaml(manifest_path)
-            expected_version = int(manifest.get("serialization_version", _PREDICTOR_SERIALIZATION_VERSION))
-            if expected_version != _PREDICTOR_SERIALIZATION_VERSION:
-                raise RuntimeError(
-                    f"Unsupported predictor serialization version {expected_version}; "
-                    f"expected {_PREDICTOR_SERIALIZATION_VERSION}."
-                )
-        return predictor
+        return load_predictor(cls, path)
 
     def plot_kaplan_meier_comparison(
         self,
@@ -904,83 +902,28 @@ class SurvivalPredictor:
         return BaggedSurvivalEnsemble(members)
 
     def _validate_time_limit(self, time_limit: float | None) -> float | None:
-        if time_limit is None:
-            return None
-        resolved = float(time_limit)
-        if resolved <= 0.0:
-            raise ValueError("time_limit must be positive when provided.")
-        return resolved
+        return validate_time_limit(time_limit)
 
     def _validate_num_bag_folds(self, num_bag_folds: int) -> int:
-        resolved = int(num_bag_folds)
-        if resolved < 0:
-            raise ValueError("num_bag_folds must be >= 0.")
-        if resolved == 1:
-            raise ValueError("num_bag_folds must be 0 or >= 2.")
-        return resolved
+        return validate_num_bag_folds(num_bag_folds)
 
     def _validate_num_bag_sets(self, num_bag_sets: int, *, num_bag_folds: int) -> int:
-        resolved = int(num_bag_sets)
-        if resolved < 1:
-            raise ValueError("num_bag_sets must be >= 1.")
-        if resolved > 1 and num_bag_folds <= 0:
-            raise ValueError("num_bag_sets > 1 requires num_bag_folds >= 2.")
-        return resolved
+        return validate_num_bag_sets(num_bag_sets, num_bag_folds=num_bag_folds)
 
     def _validate_retain_top_k_models(self, retain_top_k_models: int | None) -> int | None:
-        if retain_top_k_models is None:
-            return None
-        resolved = int(retain_top_k_models)
-        if resolved < 1:
-            raise ValueError("retain_top_k_models must be >= 1 or None.")
-        return resolved
+        return validate_retain_top_k_models(retain_top_k_models)
 
     def _resolve_hyperparameter_tune_kwargs(
         self,
         hyperparameter_tune_kwargs: dict[str, Any] | None,
     ) -> dict[str, Any] | None:
-        if hyperparameter_tune_kwargs is None:
-            return None
-        if not isinstance(hyperparameter_tune_kwargs, dict):
-            raise TypeError("hyperparameter_tune_kwargs must be a dictionary when provided.")
-
-        supported_keys = {"num_trials", "timeout", "timeout_seconds"}
-        unexpected_keys = sorted(set(hyperparameter_tune_kwargs) - supported_keys)
-        if unexpected_keys:
-            raise ValueError(
-                "Unsupported hyperparameter_tune_kwargs keys: "
-                f"{unexpected_keys}. Supported keys: {sorted(supported_keys)}"
-            )
-        if "timeout" in hyperparameter_tune_kwargs and "timeout_seconds" in hyperparameter_tune_kwargs:
-            raise ValueError("Specify only one of 'timeout' or 'timeout_seconds' in hyperparameter_tune_kwargs.")
-
-        normalized: dict[str, Any] = {}
-        num_trials = hyperparameter_tune_kwargs.get("num_trials")
-        if num_trials is not None:
-            resolved_num_trials = int(num_trials)
-            if resolved_num_trials < 0:
-                raise ValueError("hyperparameter_tune_kwargs num_trials must be >= 0.")
-            normalized["num_trials"] = resolved_num_trials
-
-        timeout_seconds = hyperparameter_tune_kwargs.get("timeout_seconds", hyperparameter_tune_kwargs.get("timeout"))
-        if timeout_seconds is not None:
-            resolved_timeout = float(timeout_seconds)
-            if resolved_timeout <= 0.0:
-                raise ValueError("hyperparameter_tune_kwargs timeout must be positive.")
-            normalized["timeout_seconds"] = resolved_timeout
-
-        return normalized
+        return resolve_hyperparameter_tune_kwargs(hyperparameter_tune_kwargs)
 
     def _resolve_tuning_timeout_seconds(self, fit_tune_kwargs: dict[str, Any] | None) -> float | None:
-        if fit_tune_kwargs is None:
-            return None
-        timeout_seconds = fit_tune_kwargs.get("timeout_seconds")
-        return None if timeout_seconds is None else float(timeout_seconds)
+        return resolve_tuning_timeout_seconds(fit_tune_kwargs)
 
     def _remaining_fit_time(self, fit_started_at: float, time_limit: float | None) -> float:
-        if time_limit is None:
-            return float("inf")
-        return max(0.0, float(time_limit) - float(perf_counter() - fit_started_at))
+        return remaining_fit_time(fit_started_at, time_limit)
 
     def _next_method_time_limit(
         self,
@@ -989,20 +932,15 @@ class SurvivalPredictor:
         selection_time_budget: float | None,
         remaining_methods: int,
     ) -> float | None:
-        if selection_time_budget is None:
-            return None
-        if remaining_methods <= 0:
-            return 0.0
-        remaining_budget = self._remaining_fit_time(fit_started_at, selection_time_budget)
-        if remaining_budget <= 0.0:
-            return 0.0
-        return remaining_budget / float(remaining_methods)
+        return next_method_time_limit(
+            fit_started_at=fit_started_at,
+            selection_time_budget=selection_time_budget,
+            remaining_methods=remaining_methods,
+            remaining_fit_time_fn=self._remaining_fit_time,
+        )
 
     def _merge_time_limits(self, first: float | None, second: float | None) -> float | None:
-        limits = [float(limit) for limit in (first, second) if limit is not None]
-        if not limits:
-            return None
-        return min(limits)
+        return merge_time_limits(first, second)
 
     def _append_budget_exhausted_results(
         self,
@@ -1028,24 +966,13 @@ class SurvivalPredictor:
             )
 
     def _default_predictor_path(self) -> Path:
-        if self.artifact_dir_ is None:
-            raise RuntimeError("No artifact directory is available. Provide a save path or call fit() first.")
-        return self.artifact_dir_ / "predictor.pkl"
+        return default_predictor_path(self.artifact_dir_)
 
     def _predictor_manifest_path(self, output_path: Path) -> Path:
-        return output_path.with_name(f"{output_path.stem}_manifest.json")
+        return predictor_manifest_path(output_path)
 
     def _serialization_manifest(self, output_path: Path) -> dict[str, Any]:
-        return {
-            "serialization_version": _PREDICTOR_SERIALIZATION_VERSION,
-            "class_name": type(self).__name__,
-            "module": type(self).__module__,
-            "path": str(output_path),
-            "best_method_id": self.best_method_id_,
-            "trained_models": self.model_names(),
-            "eval_metric": self.eval_metric,
-            "retain_top_k_models": self.retain_top_k_models,
-        }
+        return serialization_manifest(self, output_path)
 
     def _training_backend_for_method(self, method_id: str) -> str:
         return "autogluon" if method_id == "autogluon_survival" else "native"
@@ -1161,48 +1088,4 @@ class SurvivalPredictor:
             }
 
     def _persist_artifacts(self, dataset_name: str, results: list[PredictorModelResult]) -> None:
-        artifact_root = self.save_path or Path("results") / "predictor"
-        artifact_dir = artifact_root / dataset_name
-        artifact_dir.mkdir(parents=True, exist_ok=True)
-        self.artifact_dir_ = artifact_dir
-
-        if self.leaderboard_ is not None:
-            self.leaderboard_.to_csv(artifact_dir / "leaderboard.csv", index=False)
-        payload = {
-            "config": {
-                "label_time": self.label_time,
-                "label_event": self.label_event,
-                "eval_metric": self.eval_metric,
-                "presets": self.presets,
-                "retain_top_k_models": self.retain_top_k_models,
-                "random_state": self.random_state,
-                "verbose": self.verbose,
-                "enable_foundation_models": self.enable_foundation_models,
-                "validation_strategy": self.validation_strategy_,
-                "holdout_frac": self.validation_holdout_frac_,
-                "num_bag_folds": self.num_bag_folds_,
-                "num_bag_sets": self.num_bag_sets_,
-                "selection_train_rows": self.selection_train_rows_,
-                "validation_rows": self.validation_rows_,
-                "refit_full": self.refit_full_,
-                "final_train_rows": self.final_train_rows_,
-                "hyperparameter_tune_kwargs": self.hyperparameter_tune_kwargs_,
-                "time_limit": self.fit_time_limit_sec_,
-                "selection_time_budget_sec": self.selection_time_budget_sec_,
-                "fit_elapsed_sec": self.fit_elapsed_sec_,
-            },
-            "best_method_id": self.best_method_id_,
-            "best_params": self.best_params_ or {},
-            "portfolio_notes": list(self.preset_config_.portfolio_notes) if self.preset_config_ is not None else [],
-            "dataset_diagnostics": (
-                self.dataset_.metadata.diagnostics.to_dict()
-                if self.dataset_ is not None and self.dataset_.metadata.diagnostics is not None
-                else None
-            ),
-            "test_metrics": self.test_metrics_,
-            "trained_models": self.model_names(),
-            "per_model_test_metrics": self.model_test_metrics_,
-            "results": [asdict(result) for result in results],
-        }
-        write_json(artifact_dir / "fit_summary.json", payload)
-        self.save(artifact_dir / "predictor.pkl")
+        persist_artifacts(self, dataset_name, results)

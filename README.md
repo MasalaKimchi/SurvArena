@@ -84,7 +84,6 @@ VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 # Install optional foundation-model extras.
 INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-tabpfn PYTHON_BIN=python3.11 ./scripts/setup_env.sh
-INSTALL_EXTRAS=dev,foundation-mitra PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 ```
 
 ### Manual Setup
@@ -108,7 +107,6 @@ Optional extras:
 ```bash
 python -m pip install -e ".[foundation]"
 python -m pip install -e ".[foundation-tabpfn]"
-python -m pip install -e ".[foundation-mitra]"
 python -m pip install -e ".[tracking]"
 ```
 
@@ -301,7 +299,6 @@ require their documented extras and readiness checks before long runs.
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
 | `autogluon_survival` | AutoGluon event-risk survival adapter | AutoML | `autogluon.tabular` | `manuscript_autogluon_v1` |
 | `tabpfn_survival` | TabPFN embedding survival head | Foundation | `tabpfn` + `scikit-survival` | Optional foundation runs |
-| `mitra_survival` | Mitra-style tabular foundation survival adapter | Foundation | `autogluon.tabular` + `torch` + `torchsurv` | Optional foundation runs |
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
 metric aggregation, and exported comparison artifacts, see
@@ -365,6 +362,9 @@ Tracked benchmark configs:
 - `configs/benchmark/smoke_foundation.yaml`: isolated foundation-readiness smoke
   track for exploratory optional foundation adapters; not part of main-paper
   claims unless separately promoted
+- `configs/benchmark/smoke_all_models_30min.yaml`: single-dataset all-model
+  smoke with paired no-HPO and one-trial HPO tracks, including foundation
+  adapters
 - `configs/benchmark/smoke_aft.yaml`: AFT-only smoke across all standard
   built-in datasets with paired no-HPO and minimal HPO tracks; use
   `scripts/run_smoke_aft_all_datasets.sh` when checking AFT adapter stability
@@ -440,7 +440,6 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
-- `mitra_survival`
 
 Install and inspect foundation support:
 

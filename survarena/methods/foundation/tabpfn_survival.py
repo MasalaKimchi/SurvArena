@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -9,6 +8,12 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.foundation._tabpfn_survival_data import (
+    SurvivalDatasetCollection,
+    SurvivalDatasetConfig,
+    shuffle_and_chunk_survival_data,
+    survival_meta_collator,
+)
 from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
 
 if TYPE_CHECKING:
@@ -59,162 +64,6 @@ def _activation_cls(name: str) -> type[Any]:
     if name not in mapping:
         raise ValueError(f"Unsupported activation '{name}'. Choices: {sorted(mapping)}")
     return mapping[name]
-
-
-@dataclass
-class _SurvivalDatasetConfig:
-    config: list[Any]
-    X_raw: Any
-    surrogate_y_raw: Any
-    time_raw: np.ndarray
-    event_raw: np.ndarray
-    cat_ix: list[int]
-
-
-@dataclass
-class _SurvivalBatch:
-    X_context: list[torch.Tensor]
-    X_query: list[torch.Tensor]
-    y_context: list[torch.Tensor]
-    cat_indices: list[list[int] | None] | list[list[list[int] | None]]
-    configs: list[Any]
-    time_query_raw: torch.Tensor
-    event_query_raw: torch.Tensor
-
-
-def _take(obj: Any, idx: np.ndarray) -> Any:
-    return obj.iloc[idx] if hasattr(obj, "iloc") else obj[idx]
-
-
-def _shuffle_and_chunk_survival_data(
-    X_raw: Any,
-    surrogate_y_raw: Any,
-    time_raw: np.ndarray,
-    event_raw: np.ndarray,
-    *,
-    max_chunk_size: int,
-    seed: int,
-) -> tuple[list[Any], list[Any], list[np.ndarray], list[np.ndarray]]:
-    rng = np.random.default_rng(seed)
-    order = rng.permutation(len(time_raw))
-    X_shuffled = _take(X_raw, order)
-    surrogate_y_shuffled = _take(surrogate_y_raw, order)
-    time_shuffled = np.asarray(time_raw)[order]
-    event_shuffled = np.asarray(event_raw)[order]
-
-    num_chunks = max(1, int(np.ceil(len(time_raw) / max_chunk_size)))
-    chunk_indices = np.array_split(np.arange(len(time_raw)), num_chunks)
-
-    X_chunks = [_take(X_shuffled, idx) for idx in chunk_indices if len(idx) >= 2]
-    y_chunks = [_take(surrogate_y_shuffled, idx) for idx in chunk_indices if len(idx) >= 2]
-    time_chunks = [time_shuffled[idx] for idx in chunk_indices if len(idx) >= 2]
-    event_chunks = [event_shuffled[idx] for idx in chunk_indices if len(idx) >= 2]
-    return X_chunks, y_chunks, time_chunks, event_chunks
-
-
-class _SurvivalDatasetCollection:
-    def __init__(
-        self,
-        split_fn: Any,
-        rng: np.random.Generator,
-        dataset_configs: list[_SurvivalDatasetConfig],
-        *,
-        backbone_model_type: Literal["classifier", "regressor"],
-    ) -> None:
-        self.split_fn = split_fn
-        self.rng = rng
-        self.dataset_configs = dataset_configs
-        self.backbone_model_type = backbone_model_type
-
-    def __len__(self) -> int:
-        return len(self.dataset_configs)
-
-    def __getitem__(self, index: int) -> _SurvivalBatch:
-        torch = _import_torch()
-        from tabpfn.preprocessing import fit_preprocessing
-        from tabpfn.preprocessing.datamodel import FeatureModality, FeatureSchema
-
-        config = self.dataset_configs[index]
-        (
-            x_train_raw,
-            x_test_raw,
-            y_train_surrogate,
-            _y_test_surrogate,
-            time_train_raw,
-            time_test_raw,
-            event_train_raw,
-            event_test_raw,
-        ) = self.split_fn(
-            config.X_raw,
-            config.surrogate_y_raw,
-            config.time_raw,
-            config.event_raw,
-        )
-
-        feature_schema = FeatureSchema.from_only_categorical_indices(config.cat_ix, x_train_raw.shape[1])
-        preprocessing_iterator = fit_preprocessing(
-            configs=config.config,
-            X_train=x_train_raw,
-            y_train=y_train_surrogate,
-            feature_schema=feature_schema,
-            random_state=self.rng,
-            n_preprocessing_jobs=1,
-            parallel_mode="block",
-        )
-        (configs, preprocessors, X_trains_preprocessed, y_trains_preprocessed, feature_schema_preprocessed) = list(
-            zip(*preprocessing_iterator)
-        )
-        X_trains_preprocessed = list(X_trains_preprocessed)
-        y_trains_preprocessed = list(y_trains_preprocessed)
-
-        X_tests_preprocessed = []
-        for preprocessor in preprocessors:
-            X_tests_preprocessed.append(preprocessor.transform(x_test_raw).X)
-
-        for i in range(len(X_trains_preprocessed)):
-            if not isinstance(X_trains_preprocessed[i], torch.Tensor):
-                X_trains_preprocessed[i] = torch.as_tensor(X_trains_preprocessed[i], dtype=torch.float32)
-            if not isinstance(X_tests_preprocessed[i], torch.Tensor):
-                X_tests_preprocessed[i] = torch.as_tensor(X_tests_preprocessed[i], dtype=torch.float32)
-            if not isinstance(y_trains_preprocessed[i], torch.Tensor):
-                dtype = torch.long if self.backbone_model_type == "classifier" else torch.float32
-                y_trains_preprocessed[i] = torch.as_tensor(y_trains_preprocessed[i], dtype=dtype)
-
-        cat_indices = [
-            modality.indices_for(FeatureModality.CATEGORICAL) for modality in feature_schema_preprocessed
-        ]
-        return _SurvivalBatch(
-            X_context=X_trains_preprocessed,
-            X_query=X_tests_preprocessed,
-            y_context=y_trains_preprocessed,
-            cat_indices=cat_indices,
-            configs=list(configs),
-            time_query_raw=torch.as_tensor(np.asarray(time_test_raw), dtype=torch.float32),
-            event_query_raw=torch.as_tensor(np.asarray(event_test_raw).astype(bool), dtype=torch.bool),
-        )
-
-
-def _survival_meta_collator(batch: list[_SurvivalBatch], padding_val: float = 0.0) -> _SurvivalBatch:
-    torch = _import_torch()
-    from tabpfn.utils import pad_tensors
-
-    assert len(batch) == 1, "Only batch_size=1 is currently supported for TabPFN survival fine-tuning."
-    item = batch[0]
-    num_estimators = len(item.X_context)
-
-    def collate_list_field(field_name: str, labels: bool) -> list[torch.Tensor]:
-        values = [getattr(item, field_name)[idx] for idx in range(num_estimators)]
-        return [torch.stack(pad_tensors([value], padding_val=padding_val, labels=labels)) for value in values]
-
-    return _SurvivalBatch(
-        X_context=collate_list_field("X_context", labels=False),
-        X_query=collate_list_field("X_query", labels=False),
-        y_context=collate_list_field("y_context", labels=(item.y_context[0].ndim == 1)),
-        cat_indices=[[cat_ix] for cat_ix in item.cat_indices],
-        configs=[[cfg] for cfg in item.configs],
-        time_query_raw=torch.stack([item.time_query_raw]),
-        event_query_raw=torch.stack([item.event_query_raw]),
-    )
 
 
 class TabPFNSurvivalMethod(BaseSurvivalMethod):
@@ -278,6 +127,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self.baseline_survival_: np.ndarray | None = None
         self._backbone_cls: Any = None
         self._train_surrogate_target_: np.ndarray | None = None
+        self._uses_prediction_features_: bool = False
 
     def _resolve_device(self) -> torch.device:
         torch = _import_torch()
@@ -411,7 +261,13 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
     def _extract_inference_embeddings(self, X: np.ndarray) -> np.ndarray:
         if self.backbone is None:
             raise RuntimeError("Backbone must be fit before extracting embeddings.")
-        embeddings = self.backbone.get_embeddings(np.asarray(X, dtype=np.float32), data_source="test")
+        if self._uses_prediction_features_ or not hasattr(self.backbone, "get_embeddings"):
+            return self._extract_prediction_features(self.backbone, X)
+        try:
+            embeddings = self.backbone.get_embeddings(np.asarray(X, dtype=np.float32), data_source="test")
+        except Exception:  # noqa: BLE001
+            self._uses_prediction_features_ = True
+            return self._extract_prediction_features(self.backbone, X)
         embeddings = np.asarray(embeddings, dtype=np.float32)
         if embeddings.ndim == 2:
             embeddings = embeddings[:, None, :]
@@ -422,6 +278,88 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         if self.head_input_dim_ is not None:
             features = self._align_embedding_dim(features, int(self.head_input_dim_))
         return features
+
+    def _extract_public_features(self, estimator: Any, X: np.ndarray) -> np.ndarray:
+        if not self._uses_prediction_features_ and hasattr(estimator, "get_embeddings"):
+            try:
+                embeddings = estimator.get_embeddings(np.asarray(X, dtype=np.float32), data_source="test")
+                embeddings = np.asarray(embeddings, dtype=np.float32)
+                if embeddings.ndim == 2:
+                    embeddings = embeddings[:, None, :]
+                if str(self.params["aggregate_estimators"]) == "concat":
+                    return embeddings.transpose(1, 0, 2).reshape(embeddings.shape[1], -1)
+                return embeddings.mean(axis=0)
+            except Exception:  # noqa: BLE001
+                self._uses_prediction_features_ = True
+        return self._extract_prediction_features(estimator, X)
+
+    def _extract_prediction_features(self, estimator: Any, X: np.ndarray) -> np.ndarray:
+        X_np = np.asarray(X, dtype=np.float32)
+        if self._backbone_model_type() == "classifier" and hasattr(estimator, "predict_proba"):
+            features = estimator.predict_proba(X_np)
+        else:
+            features = estimator.predict(X_np)
+        features_np = np.asarray(features, dtype=np.float32)
+        if features_np.ndim == 1:
+            features_np = features_np[:, None]
+        return features_np.reshape(features_np.shape[0], -1)
+
+    def _fit_frozen_public_backbone(
+        self,
+        X_train: np.ndarray,
+        surrogate_y_train: np.ndarray,
+        time_train: np.ndarray,
+        event_train: np.ndarray,
+    ) -> None:
+        torch = _import_torch()
+        self.backbone = self._build_backbone(
+            n_estimators=int(self.params["n_estimators_final_inference"]),
+            fit_mode=str(self.params["fit_mode"]),
+        )
+        self.backbone.fit(X_train, surrogate_y_train)
+        train_features = self._extract_public_features(self.backbone, X_train)
+        self.head_input_dim_ = int(train_features.shape[1])
+        self.head = self._build_head(self.head_input_dim_).to(self.device_)
+
+        opt_name = str(self.params["optimizer"]).lower()
+        optimizer_cls = torch.optim.AdamW if opt_name == "adamw" else torch.optim.Adam
+        optimizer = optimizer_cls(
+            self.head.parameters(),
+            lr=float(self.params["lr"]),
+            weight_decay=float(self.params["weight_decay"]),
+        )
+        features_t = torch.as_tensor(train_features, dtype=torch.float32, device=self.device_)
+        time_t = torch.as_tensor(time_train.astype(np.float32), dtype=torch.float32, device=self.device_)
+        event_t = torch.as_tensor(event_train.astype(bool), dtype=torch.bool, device=self.device_)
+
+        best_state = deepcopy(self.head.state_dict())
+        best_loss = float("inf")
+        stale_epochs = 0
+        for _epoch in range(int(self.params["max_epochs"])):
+            self.head.train()
+            optimizer.zero_grad(set_to_none=True)
+            log_risk = self.head(features_t).squeeze(-1)
+            loss = self._cox_loss(log_risk, event_t, time_t)
+            loss.backward()
+            if self.params["grad_clip_value"] is not None:
+                _clip_grad_norm(self.head.parameters(), float(self.params["grad_clip_value"]))
+            optimizer.step()
+
+            loss_value = float(loss.detach().item())
+            if loss_value + 1e-8 < best_loss:
+                best_loss = loss_value
+                best_state = deepcopy(self.head.state_dict())
+                stale_epochs = 0
+            else:
+                stale_epochs += 1
+                if stale_epochs >= int(self.params["patience"]):
+                    break
+
+        self.head.load_state_dict(best_state)
+        self.head.eval()
+        with torch.no_grad():
+            train_log_risk = self.head(features_t).squeeze(-1).detach().cpu().numpy()
+        self._fit_baseline_survival(time_train, event_train, train_log_risk)
 
     @staticmethod
     def _align_embedding_dim(embeddings: np.ndarray, target_dim: int) -> np.ndarray:
@@ -469,7 +407,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         event_train: np.ndarray,
         *,
         epoch: int,
-    ) -> _SurvivalDatasetCollection:
+    ) -> SurvivalDatasetCollection:
         from tabpfn.utils import infer_random_state
         from tabpfn.preprocessing.datamodel import FeatureModality
 
@@ -478,7 +416,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         else:
             _, rng = infer_random_state(self.finetuned_estimator_.random_state)
 
-        X_parts, surrogate_parts, time_parts, event_parts = _shuffle_and_chunk_survival_data(
+        X_parts, surrogate_parts, time_parts, event_parts = shuffle_and_chunk_survival_data(
             X_train,
             surrogate_y_train,
             time_train,
@@ -487,7 +425,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             seed=int(self.params["seed"] or 0) + epoch,
         )
 
-        dataset_configs: list[_SurvivalDatasetConfig] = []
+        dataset_configs: list[SurvivalDatasetConfig] = []
         for X_part, surrogate_part, time_part, event_part in zip(X_parts, surrogate_parts, time_parts, event_parts):
             if self._backbone_model_type() == "classifier":
                 ensemble_configs, X_mod, y_mod = self.finetuned_estimator_._initialize_dataset_preprocessing(
@@ -499,7 +437,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
                 )
             current_cat_ix = self.finetuned_estimator_.inferred_feature_schema_.indices_for(FeatureModality.CATEGORICAL)
             dataset_configs.append(
-                _SurvivalDatasetConfig(
+                SurvivalDatasetConfig(
                     config=ensemble_configs,
                     X_raw=X_mod,
                     surrogate_y_raw=y_mod,
@@ -516,7 +454,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
             test_size=query_size,
             random_state=int(self.params["seed"] or 0) + epoch,
         )
-        return _SurvivalDatasetCollection(
+        return SurvivalDatasetCollection(
             split_fn=training_splitter,
             rng=rng,
             dataset_configs=dataset_configs,
@@ -602,6 +540,10 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
 
             surrogate_y_train = self._build_surrogate_target(time_train_np, event_train_np)
             self._train_surrogate_target_ = np.asarray(surrogate_y_train)
+            if str(self.params["backbone_training"]).lower() == "frozen":
+                self._fit_frozen_public_backbone(X_train_np, surrogate_y_train, time_train_np, event_train_np)
+                return self
+
             self.finetuned_estimator_ = self._build_backbone(
                 n_estimators=int(self.params["n_estimators_finetune"]),
                 fit_mode="batched",
@@ -626,7 +568,7 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
                 finetuning_dataloader = torch.utils.data.DataLoader(
                     training_datasets,
                     batch_size=1,
-                    collate_fn=_survival_meta_collator,
+                    collate_fn=survival_meta_collator,
                     shuffle=True,
                     generator=torch.Generator().manual_seed(int(self.params["seed"] or 0) + epoch),
                 )

@@ -4,7 +4,7 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `mitra_survival`
+- implemented adapters: `tabpfn_survival`
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
 - predictor access: `presets="foundation"`, `presets="all"`, or `enable_foundation_models=True`
@@ -30,15 +30,12 @@ current adapters use a two-stage contract:
 5. emit the same `predict_risk` and `predict_survival` outputs as native methods
 
 This keeps smoke runs practical and preserves the shared-split benchmark
-contract. Fine-tuning remains available as an explicit experimental setting via
-`backbone_training: finetune`, but it should not be the default smoke behavior.
+contract.
 
 Adapter-specific details:
 
 - `tabpfn_survival` uses frozen TabPFN preprocessing/embeddings and trains an MLP
   Cox head; `n_estimators_final_inference` controls inference ensemble breadth.
-- `mitra_survival` uses AutoGluon/Mitra tabular predictions as a frozen
-  low-dimensional representation and trains the same neural Cox-head family.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated

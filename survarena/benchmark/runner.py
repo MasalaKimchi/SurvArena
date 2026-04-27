@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-import math
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +12,7 @@ from survarena.benchmark.governance import (
     normalize_hpo_budget_telemetry,
     resolve_comparison_modes as _resolve_comparison_modes,
 )
+from survarena.benchmark.resume import completed_resume_keys
 from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, select_hyperparameters
 from survarena.logging.export import MANUSCRIPT_METRIC_COLUMNS
 from survarena.config import read_yaml
@@ -58,53 +58,6 @@ class BenchmarkRunUnitResult:
     run_payloads: list[dict[str, Any]]
     hpo_trial_rows: list[dict[str, Any]]
     log_lines: list[str]
-
-
-def _is_missing_resume_value(value: Any) -> bool:
-    if value is None:
-        return True
-    if isinstance(value, str):
-        return value.strip() == ""
-    try:
-        return bool(math.isnan(float(value)))
-    except (TypeError, ValueError):
-        return False
-
-
-def _resume_completion_key(
-    row: dict[str, Any],
-    *,
-    primary_metric: str,
-) -> tuple[tuple[str, str, str, int, str] | None, str | None]:
-    if str(row.get("status", "")).lower() != "success":
-        return None, "status is not success"
-
-    for field in ("dataset_id", "method_id", "split_id"):
-        if _is_missing_resume_value(row.get(field)):
-            return None, f"missing required field '{field}'"
-
-    seed_value = row.get("seed")
-    if _is_missing_resume_value(seed_value):
-        return None, "missing required field 'seed'"
-    try:
-        seed = int(seed_value)
-    except (TypeError, ValueError):
-        return None, f"invalid seed value '{seed_value}'"
-
-    metric_value = row.get(primary_metric)
-    if _is_missing_resume_value(metric_value):
-        return None, f"missing required metric '{primary_metric}'"
-
-    return (
-        (
-            str(row.get("dataset_id")),
-            str(row.get("method_id")),
-            str(row.get("split_id")),
-            seed,
-            str(row.get("hpo_mode", "")),
-        ),
-        None,
-    )
 
 
 def _require_int(cfg: dict[str, Any], key: str) -> int:
@@ -593,6 +546,125 @@ def _execute_run_units(units: list[BenchmarkRunUnit], *, n_jobs: int) -> list[Be
         return list(executor.map(_evaluate_run_unit, units))
 
 
+def _dataset_curation_row(dataset_id: str, dataset: Any) -> dict[str, Any]:
+    import numpy as np
+
+    return {
+        "dataset_id": dataset_id,
+        "n_rows": int(len(dataset.X)),
+        "n_features": int(dataset.X.shape[1]),
+        "n_events": int(dataset.event.sum()),
+        "event_rate": float(dataset.event.mean()),
+        "censoring_rate": float(1.0 - dataset.event.mean()),
+        "time_min": float(dataset.time.min()),
+        "time_median": float(np.median(dataset.time)),
+        "time_max": float(dataset.time.max()),
+        "feature_types": getattr(dataset.metadata, "feature_types", {}),
+    }
+
+
+def _build_dataset_run_units(
+    *,
+    repo_root: Path,
+    benchmark_cfg: dict[str, Any],
+    benchmark_id: str,
+    dataset_id: str,
+    methods: list[str],
+    seeds: list[int],
+    outer_repeats: int,
+    regenerate_splits: bool,
+    method_cfg_cache: dict[str, dict[str, Any]],
+    completed_keys: set[tuple[str, str, str, int, str]],
+    comparison_modes: tuple[str, ...],
+    hpo_cfg: dict[str, Any],
+    timeout_seconds: float | None,
+    primary_metric: str,
+    decision_thresholds: tuple[float, ...],
+    benchmark_cfg_hash: str,
+    autogluon_cfg: dict[str, Any],
+    max_retries: int,
+) -> tuple[dict[str, Any], list[BenchmarkRunUnit], dict[str, float]]:
+    from time import perf_counter
+
+    from survarena.data.loaders import load_dataset
+    from survarena.data.robustness import apply_label_noise, apply_robustness_track, resolve_robustness_tracks
+    from survarena.data.splitters import load_or_create_splits
+
+    timings = {"loading": 0.0, "split_prep": 0.0, "evaluation_prep": 0.0}
+    phase_started_at = perf_counter()
+    dataset = load_dataset(dataset_id, repo_root)
+    timings["loading"] += perf_counter() - phase_started_at
+    curation_row = _dataset_curation_row(dataset_id, dataset)
+
+    phase_started_at = perf_counter()
+    splits = load_or_create_splits(
+        root=repo_root,
+        task_id=f"{dataset_id}_{benchmark_id}",
+        split_strategy=benchmark_cfg["split_strategy"],
+        n_samples=len(dataset.X),
+        event=dataset.event,
+        seeds=seeds,
+        outer_folds=int(benchmark_cfg.get("outer_folds", 5)),
+        outer_repeats=outer_repeats,
+        regenerate_on_mismatch=bool(regenerate_splits),
+    )
+    timings["split_prep"] += perf_counter() - phase_started_at
+
+    phase_started_at = perf_counter()
+    filtered_splits = [split for split in splits if split.seed in seeds]
+    horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
+    robustness_tracks = resolve_robustness_tracks(
+        benchmark_cfg.get("robustness", {}),
+        dataset_id=dataset_id,
+        feature_columns=list(dataset.X.columns),
+        seed_pool=seeds,
+    )
+
+    run_units: list[BenchmarkRunUnit] = []
+    for method_id in methods:
+        method_cfg = method_cfg_cache[method_id]
+        for split in filtered_splits:
+            for track in robustness_tracks:
+                track_dataset_id = f"{dataset_id}__{track.track_id}"
+                track_split_id = f"{split.split_id}__{track.track_id}"
+                X_track = apply_robustness_track(dataset.X, track=track, split=split, seed=split.seed)
+                event_track = apply_label_noise(dataset.event, track=track, split=split, seed=split.seed)
+                parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
+                for hpo_mode in comparison_modes:
+                    key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
+                    if key in completed_keys:
+                        continue
+                    mode_hpo_cfg = dict(hpo_cfg)
+                    mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
+                    run_units.append(
+                        BenchmarkRunUnit(
+                            benchmark_id=benchmark_id,
+                            track_dataset_id=track_dataset_id,
+                            method_id=method_id,
+                            track_split_id=track_split_id,
+                            track_id=track.track_id,
+                            hpo_mode=hpo_mode,
+                            parity_key=parity_key,
+                            split=split,
+                            X=X_track,
+                            time=dataset.time,
+                            event=event_track,
+                            method_cfg=method_cfg,
+                            inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
+                            timeout_seconds=timeout_seconds,
+                            primary_metric=primary_metric,
+                            horizons_quantiles=horizons_q,  # type: ignore[arg-type]
+                            decision_thresholds=decision_thresholds,
+                            benchmark_cfg_hash=benchmark_cfg_hash,
+                            autogluon_cfg=autogluon_cfg,
+                            mode_hpo_cfg=mode_hpo_cfg,
+                            max_retries=int(max_retries),
+                        )
+                    )
+    timings["evaluation_prep"] += perf_counter() - phase_started_at
+    return curation_row, run_units, timings
+
+
 def run_benchmark(
     *,
     repo_root: Path,
@@ -606,11 +678,6 @@ def run_benchmark(
     max_retries: int = 0,
     regenerate_splits: bool = False,
 ) -> None:
-    import numpy as np
-
-    from survarena.data.loaders import load_dataset
-    from survarena.data.robustness import apply_label_noise, apply_robustness_track, resolve_robustness_tracks
-    from survarena.data.splitters import load_or_create_splits
     from survarena.logging.export import (
         create_experiment_dir,
         export_dataset_curation_table,
@@ -724,28 +791,11 @@ def run_benchmark(
     completed_keys: set[tuple[str, str, str, int, str]] = set()
     if resume:
         existing_fold_results = experiment_dir / f"{benchmark_id}_fold_results.csv"
-        if existing_fold_results.exists():
-            import pandas as pd
-
-            existing = pd.read_csv(existing_fold_results)
-            for row in existing.to_dict(orient="records"):
-                key, reason = _resume_completion_key(row, primary_metric=primary_metric)
-                if key is None:
-                    # D-06: success status alone is insufficient without required output integrity.
-                    if str(row.get("status", "")).lower() == "success":
-                        print(
-                            "[resume][D-06] Ignoring ineligible success row: "
-                            f"dataset_id={row.get('dataset_id')} method_id={row.get('method_id')} "
-                            f"split_id={row.get('split_id')} seed={row.get('seed')} reason={reason}"
-                        )
-                    continue
-                if key[4]:
-                    completed_keys.add(key)
-                else:
-                    # Backward compatibility: pre-mode artifacts had no hpo_mode.
-                    # Treat a successful legacy row as completed for requested execution modes.
-                    for legacy_mode in comparison_modes:
-                        completed_keys.add((key[0], key[1], key[2], key[3], legacy_mode))
+        completed_keys = completed_resume_keys(
+            existing_fold_results,
+            primary_metric=primary_metric,
+            comparison_modes=comparison_modes,
+        )
     manifest_payload = {
         "benchmark_id": benchmark_id,
         "profile": profile,
@@ -768,99 +818,31 @@ def run_benchmark(
     write_json(experiment_dir / "experiment_manifest.json", manifest_payload)
 
     for dataset_id in datasets:
-        phase_started_at = perf_counter()
-        dataset = load_dataset(dataset_id, repo_root)
-        phase_timings_sec["loading"] += perf_counter() - phase_started_at
-        dataset_curation_rows.append(
-            {
-                "dataset_id": dataset_id,
-                "n_rows": int(len(dataset.X)),
-                "n_features": int(dataset.X.shape[1]),
-                "n_events": int(dataset.event.sum()),
-                "event_rate": float(dataset.event.mean()),
-                "censoring_rate": float(1.0 - dataset.event.mean()),
-                "time_min": float(dataset.time.min()),
-                "time_median": float(np.median(dataset.time)),
-                "time_max": float(dataset.time.max()),
-                "feature_types": getattr(dataset.metadata, "feature_types", {}),
-            }
-        )
-        task_id = f"{dataset_id}_{benchmark_id}"
-        phase_started_at = perf_counter()
-        splits = load_or_create_splits(
-            root=repo_root,
-            task_id=task_id,
-            split_strategy=benchmark_cfg["split_strategy"],
-            n_samples=len(dataset.X),
-            event=dataset.event,
-            seeds=seeds,
-            outer_folds=int(benchmark_cfg.get("outer_folds", 5)),
-            outer_repeats=outer_repeats,
-            regenerate_on_mismatch=bool(regenerate_splits),
-        )
-        phase_timings_sec["split_prep"] += perf_counter() - phase_started_at
-
-        filtered_splits = [split for split in splits if split.seed in seeds]
-        horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
-
-        phase_started_at = perf_counter()
-        robustness_tracks = resolve_robustness_tracks(
-            benchmark_cfg.get("robustness", {}),
+        curation_row, run_units, dataset_timings_sec = _build_dataset_run_units(
+            repo_root=repo_root,
+            benchmark_cfg=benchmark_cfg,
+            benchmark_id=benchmark_id,
             dataset_id=dataset_id,
-            feature_columns=list(dataset.X.columns),
-            seed_pool=seeds,
+            methods=methods,
+            seeds=seeds,
+            outer_repeats=outer_repeats,
+            regenerate_splits=regenerate_splits,
+            method_cfg_cache=method_cfg_cache,
+            completed_keys=completed_keys,
+            comparison_modes=comparison_modes,
+            hpo_cfg=hpo_cfg,
+            timeout_seconds=timeout_seconds,
+            primary_metric=primary_metric,
+            decision_thresholds=decision_thresholds,
+            benchmark_cfg_hash=benchmark_cfg_hash,
+            autogluon_cfg=autogluon_cfg,
+            max_retries=max_retries,
         )
-        run_units: list[BenchmarkRunUnit] = []
-        for method_id in methods:
-            method_cfg = method_cfg_cache[method_id]
-            for split in filtered_splits:
-                for track in robustness_tracks:
-                    track_dataset_id = f"{dataset_id}__{track.track_id}"
-                    track_split_id = f"{split.split_id}__{track.track_id}"
-                    X_track = apply_robustness_track(
-                        dataset.X,
-                        track=track,
-                        split=split,
-                        seed=split.seed,
-                    )
-                    event_track = apply_label_noise(
-                        dataset.event,
-                        track=track,
-                        split=split,
-                        seed=split.seed,
-                    )
-                    parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
-                    for hpo_mode in comparison_modes:
-                        key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
-                        if key in completed_keys:
-                            continue
-                        mode_hpo_cfg = dict(hpo_cfg)
-                        mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
-                        run_units.append(
-                            BenchmarkRunUnit(
-                                benchmark_id=benchmark_id,
-                                track_dataset_id=track_dataset_id,
-                                method_id=method_id,
-                                track_split_id=track_split_id,
-                                track_id=track.track_id,
-                                hpo_mode=hpo_mode,
-                                parity_key=parity_key,
-                                split=split,
-                                X=X_track,
-                                time=dataset.time,
-                                event=event_track,
-                                method_cfg=method_cfg,
-                                inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
-                                timeout_seconds=timeout_seconds,
-                                primary_metric=primary_metric,
-                                horizons_quantiles=horizons_q,  # type: ignore[arg-type]
-                                decision_thresholds=decision_thresholds,
-                                benchmark_cfg_hash=benchmark_cfg_hash,
-                                autogluon_cfg=autogluon_cfg,
-                                mode_hpo_cfg=mode_hpo_cfg,
-                                max_retries=int(max_retries),
-                            )
-                        )
+        dataset_curation_rows.append(curation_row)
+        phase_timings_sec["loading"] += dataset_timings_sec["loading"]
+        phase_timings_sec["split_prep"] += dataset_timings_sec["split_prep"]
+
+        phase_started_at = perf_counter() - dataset_timings_sec["evaluation_prep"]
         for result in _execute_run_units(run_units, n_jobs=execution_n_jobs):
             all_records.extend(result.records)
             run_records.extend(result.run_payloads)

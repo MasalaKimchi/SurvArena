@@ -37,20 +37,6 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         requires_hf_auth=True,
     ),
     FoundationModelSpec(
-        method_id="mitra_survival",
-        backbone="Mitra",
-        provider="AutoGluon",
-        task_support=("regression", "classification"),
-        supports_finetune=True,
-        supports_pretrained_weights=True,
-        status="implemented",
-        notes="Uses AutoGluon Mitra regression with a trainable neural Cox head over backbone predictions.",
-        dependency_module="autogluon.tabular",
-        install_extra="foundation-mitra",
-        max_rows_hint=30_000,
-        max_features_hint=2_000,
-    ),
-    FoundationModelSpec(
         method_id="tabicl_survival",
         backbone="TabICL",
         provider="AutoGluon / SODA-Inria",
@@ -93,7 +79,7 @@ def foundation_model_catalog() -> tuple[FoundationModelSpec, ...]:
     return _FOUNDATION_MODEL_SPECS
 
 
-_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival", "mitra_survival"})
+_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival"})
 
 
 def available_foundation_model_specs() -> tuple[FoundationModelSpec, ...]:

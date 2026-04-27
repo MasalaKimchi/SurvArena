@@ -13,7 +13,6 @@ from survarena.methods.foundation.readiness import (
 __all__ = [
     "FoundationModelSpec",
     "FoundationRuntimeStatus",
-    "MitraSurvivalMethod",
     "TabPFNSurvivalMethod",
     "available_foundation_model_specs",
     "ensure_foundation_runtime_ready",
@@ -26,10 +25,6 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "MitraSurvivalMethod":
-        from survarena.methods.foundation.mitra_survival import MitraSurvivalMethod
-
-        return MitraSurvivalMethod
     if name == "TabPFNSurvivalMethod":
         from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
 

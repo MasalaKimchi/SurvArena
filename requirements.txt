@@ -20,7 +20,6 @@
 # Optional extras can be installed directly when needed:
 #   python -m pip install -e ".[foundation]"
 #   python -m pip install -e ".[foundation-tabpfn]"
-#   python -m pip install -e ".[foundation-mitra]"
 #   python -m pip install -e ".[tracking]"
 
 -e ".[dev]"

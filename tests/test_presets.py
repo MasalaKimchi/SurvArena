@@ -66,7 +66,7 @@ def test_foundation_preset_requests_foundation_models_without_extra_flag() -> No
     )
     monkeypatch.undo()
 
-    assert preset.method_ids == ("coxph", "tabpfn_survival", "mitra_survival")
+    assert preset.method_ids == ("coxph", "tabpfn_survival")
 
 
 def test_foundation_preset_reports_when_no_current_adapter_is_eligible() -> None:
@@ -115,7 +115,6 @@ def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> Non
         "deepsurv",
         "deepsurv_moco",
         "tabpfn_survival",
-        "mitra_survival",
     )
 
 

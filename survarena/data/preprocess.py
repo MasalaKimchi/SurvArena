@@ -2,17 +2,34 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-import numpy as np
 import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.impute import SimpleImputer
 from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from survarena.data.feature_roles import is_low_cardinality_numeric_categorical
+
+
+MAX_DENSE_ONE_HOT_FEATURES = 50_000
+
+
+def _to_object_frame(data: pd.DataFrame) -> pd.DataFrame:
+    return data.astype("object")
 
 
 def _split_columns(X: pd.DataFrame) -> tuple[list[str], list[str]]:
-    num_cols = X.select_dtypes(include=[np.number, "bool"]).columns.tolist()
-    cat_cols = [c for c in X.columns if c not in num_cols]
+    num_cols: list[str] = []
+    cat_cols: list[str] = []
+    for column in X.columns:
+        series = X[column]
+        if pd.api.types.is_bool_dtype(series):
+            cat_cols.append(column)
+        elif pd.api.types.is_numeric_dtype(series) and not is_low_cardinality_numeric_categorical(series):
+            num_cols.append(column)
+        else:
+            cat_cols.append(column)
     return num_cols, cat_cols
 
 
@@ -33,6 +50,7 @@ class TabularPreprocessor:
     numeric_imputer: SimpleImputer | None = None
     numeric_scaler: StandardScaler | None = None
     categorical_imputer: SimpleImputer | None = None
+    max_dense_features: int = MAX_DENSE_ONE_HOT_FEATURES
 
     def fit(self, X_train: pd.DataFrame) -> "TabularPreprocessor":
         X_train, keep_cols = remove_constant_columns(X_train)
@@ -70,8 +88,9 @@ class TabularPreprocessor:
         numeric_pipeline = Pipeline(steps=numeric_steps)
         categorical_pipeline = Pipeline(
             steps=[
+                ("to_object", FunctionTransformer(_to_object_frame)),
                 ("imputer", SimpleImputer(strategy="most_frequent")),
-                ("encoder", OneHotEncoder(handle_unknown="ignore")),
+                ("encoder", OneHotEncoder(drop="if_binary", handle_unknown="ignore")),
             ]
         )
 
@@ -85,6 +104,12 @@ class TabularPreprocessor:
         )
         self.transformer.fit(X_train)
         self.output_columns = self._build_output_columns(num_cols, cat_cols)
+        if len(self.output_columns) > int(self.max_dense_features):
+            raise ValueError(
+                "Dense one-hot preprocessing would create "
+                f"{len(self.output_columns)} features, exceeding max_dense_features={self.max_dense_features}. "
+                "Use a native-categorical method or reduce high-cardinality features."
+            )
         return self
 
     def transform(self, X: pd.DataFrame) -> pd.DataFrame:

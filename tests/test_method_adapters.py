@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import importlib.util
 import json
+from pathlib import Path
 import subprocess
 import sys
 
@@ -11,6 +12,7 @@ import pandas as pd
 import pytest
 
 from survarena.methods.registry import get_method_class, registered_method_ids
+from survarena.config import read_yaml
 
 
 def _toy_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -49,6 +51,56 @@ def test_registered_method_ids_include_new_survival_adapters() -> None:
         "pchazard",
         "cox_time",
     }.issubset(registered)
+
+
+@pytest.mark.parametrize(
+    ("method_id", "expected_defaults"),
+    [
+        (
+            "rsf",
+            {
+                "n_estimators": 100,
+                "max_depth": None,
+                "min_samples_split": 6,
+                "min_samples_leaf": 3,
+                "max_features": "sqrt",
+            },
+        ),
+        (
+            "extra_survival_trees",
+            {
+                "n_estimators": 100,
+                "max_depth": None,
+                "min_samples_split": 6,
+                "min_samples_leaf": 3,
+                "max_features": "sqrt",
+                "bootstrap": True,
+            },
+        ),
+        (
+            "gradient_boosting_survival",
+            {
+                "learning_rate": 0.1,
+                "n_estimators": 100,
+                "subsample": 1.0,
+                "min_samples_split": 2,
+                "min_samples_leaf": 1,
+                "max_depth": 3,
+                "max_features": None,
+                "dropout_rate": 0.0,
+            },
+        ),
+    ],
+)
+def test_heavy_sksurv_adapter_defaults_follow_package_defaults(
+    method_id: str,
+    expected_defaults: dict[str, object],
+) -> None:
+    cfg = read_yaml(Path("configs/methods") / f"{method_id}.yaml")
+    method_cls = get_method_class(method_id)
+
+    assert cfg["default_params"] == expected_defaults
+    assert method_cls().params == {**expected_defaults, "seed": None}
 
 
 @pytest.mark.parametrize(

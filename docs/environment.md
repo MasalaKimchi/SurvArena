@@ -23,7 +23,6 @@ Useful overrides:
 - `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
 
 ## Manual Setup
 

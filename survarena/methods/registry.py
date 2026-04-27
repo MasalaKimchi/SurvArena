@@ -35,7 +35,6 @@ _REGISTRY_TARGETS = {
     "deephit_single": ("survarena.methods.deep.pycox_models", "DeepHitSingleMethod"),
     "pchazard": ("survarena.methods.deep.pycox_models", "PCHazardMethod"),
     "cox_time": ("survarena.methods.deep.pycox_models", "CoxTimeMethod"),
-    "mitra_survival": ("survarena.methods.foundation.mitra_survival", "MitraSurvivalMethod"),
     "tabpfn_survival": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalMethod"),
     "autogluon_survival": ("survarena.methods.automl.autogluon_survival", "AutoGluonSurvivalMethod"),
 }

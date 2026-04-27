@@ -8,8 +8,8 @@ from survarena.methods.base import BaseSurvivalMethod, to_structured_y
 class GradientBoostingSurvivalMethod(BaseSurvivalMethod):
     def __init__(
         self,
-        learning_rate: float = 0.05,
-        n_estimators: int = 300,
+        learning_rate: float = 0.1,
+        n_estimators: int = 100,
         subsample: float = 1.0,
         min_samples_split: int = 2,
         min_samples_leaf: int = 1,

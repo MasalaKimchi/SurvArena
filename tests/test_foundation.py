@@ -50,7 +50,7 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
 
 
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:
-    spec = next(item for item in available_foundation_model_specs() if item.method_id == "mitra_survival")
+    spec = next(item for item in available_foundation_model_specs() if item.method_id == "tabpfn_survival")
 
     monkeypatch.setattr("survarena.methods.foundation.readiness._has_dependency", lambda module_name: False)
 
@@ -58,8 +58,8 @@ def test_foundation_runtime_status_reports_install_command_for_missing_dependenc
 
     assert status.runtime_ready is False
     assert status.dependency_installed is False
-    assert status.install_extra == "foundation-mitra"
-    assert status.install_command == 'python -m pip install -e ".[foundation-mitra]"'
+    assert status.install_extra == "foundation-tabpfn"
+    assert status.install_command == 'python -m pip install -e ".[foundation-tabpfn]"'
     assert status.blocked_reason is not None
 
 
@@ -117,76 +117,7 @@ def test_tabpfn_survival_supports_explicit_model_versions(monkeypatch) -> None:
     assert estimator is not None
 
 
-def test_mitra_survival_passes_finetune_controls_to_autogluon(monkeypatch) -> None:
-    from survarena.methods.foundation import mitra_survival as mitra_module
-
-    class FakeTabularPredictor:
-        init_kwargs: dict[str, object] | None = None
-        fit_kwargs: dict[str, object] | None = None
-
-        def __init__(self, **kwargs) -> None:
-            FakeTabularPredictor.init_kwargs = kwargs
-
-        def fit(self, **kwargs) -> "FakeTabularPredictor":
-            FakeTabularPredictor.fit_kwargs = kwargs
-            return self
-
-        def predict(self, frame) -> np.ndarray:
-            values = np.asarray(frame.to_numpy(dtype=np.float32), dtype=np.float32)
-            return values.sum(axis=1) * 0.25 + 0.5
-
-    fake_autogluon = types.ModuleType("autogluon")
-    fake_tabular = types.ModuleType("autogluon.tabular")
-    fake_tabular.TabularPredictor = FakeTabularPredictor
-
-    monkeypatch.setitem(sys.modules, "autogluon", fake_autogluon)
-    monkeypatch.setitem(sys.modules, "autogluon.tabular", fake_tabular)
-    monkeypatch.setattr(mitra_module, "ensure_foundation_runtime_ready", lambda method_id, **kwargs: None)
-
-    class FakeArtifacts:
-        def __init__(self) -> None:
-            self.head = object()
-            self.device = "cpu"
-            self.input_dim = 1
-            self.baseline_event_times = np.asarray([1.0, 3.0], dtype=float)
-            self.baseline_survival = np.asarray([0.9, 0.6], dtype=float)
-
-    monkeypatch.setattr(mitra_module, "_train_neural_cox_head", lambda **kwargs: FakeArtifacts())
-    monkeypatch.setattr(
-        mitra_module,
-        "_predict_head_risk",
-        lambda **kwargs: np.asarray(kwargs["features"], dtype=float).reshape(-1),
-    )
-
-    method = mitra_module.MitraSurvivalMethod(
-        backbone_training="finetune",
-        fine_tune_steps=123,
-    )
-    method.fit(
-        X_train=np.asarray([[0.1, 0.2], [0.4, 0.5], [0.2, 0.3]], dtype=float),
-        time_train=np.asarray([1.0, 2.0, 3.0], dtype=float),
-        event_train=np.asarray([1, 1, 0], dtype=int),
-    )
-
-    assert FakeTabularPredictor.init_kwargs is not None
-    assert FakeTabularPredictor.init_kwargs["problem_type"] == "regression"
-    assert FakeTabularPredictor.fit_kwargs is not None
-    assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune"] is True
-    assert FakeTabularPredictor.fit_kwargs["hyperparameters"]["MITRA"]["fine_tune_steps"] == 123
-
-    risk = method.predict_risk(np.asarray([[0.5, 0.2], [0.1, 0.9]], dtype=float))
-    survival = method.predict_survival(
-        np.asarray([[0.5, 0.2], [0.1, 0.9]], dtype=float),
-        np.asarray([1.0, 2.0], dtype=float),
-    )
-
-    assert risk.shape == (2,)
-    assert survival.shape == (2, 2)
-    assert np.all(survival > 0.0)
-    assert np.all(survival <= 1.0)
-
-
-def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> None:
+def test_foundation_preset_adds_tabpfn_when_dependency_exists(monkeypatch) -> None:
     monkeypatch.setattr(
         "survarena.automl.presets._foundation_runtime_status",
         lambda spec: FoundationRuntimeStatus(
@@ -210,7 +141,6 @@ def test_foundation_preset_adds_mitra_when_dependency_exists(monkeypatch) -> Non
     )
 
     assert "tabpfn_survival" in preset.method_ids
-    assert "mitra_survival" in preset.method_ids
 
 
 def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:

@@ -8,7 +8,7 @@ from survarena.methods.base import BaseSurvivalMethod, to_structured_y
 class ExtraSurvivalTreesMethod(BaseSurvivalMethod):
     def __init__(
         self,
-        n_estimators: int = 300,
+        n_estimators: int = 100,
         max_depth: int | None = None,
         min_samples_split: int = 6,
         min_samples_leaf: int = 3,

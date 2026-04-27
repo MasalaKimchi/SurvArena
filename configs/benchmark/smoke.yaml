@@ -72,7 +72,6 @@ methods:
   - pchazard
   - cox_time
   - tabpfn_survival
-  - mitra_survival
 notes: >
   Quick no-HPO smoke across all standard built-in datasets; one seed and small
   folds; exercises every manuscript default model once per dataset plus optional
