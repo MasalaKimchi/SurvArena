@@ -25,8 +25,7 @@ leaderboards, persisted artifacts, and manuscript-friendly benchmark summaries.
 - Predict risk scores and survival curves.
 - Plot Kaplan-Meier comparisons for quick model inspection.
 - Run benchmark-style comparisons on built-in or user-provided datasets.
-- Export fold results, seed summaries, run ledgers, rank summaries, bootstrap
-  confidence intervals, and experiment manifests.
+- Export fold results, leaderboards, run diagnostics, and experiment manifests.
 - Inspect optional tabular foundation-model readiness before fitting.
 
 ## Repository Layout
@@ -480,12 +479,11 @@ The most useful files are:
 - `kaplan_meier_comparison.png`: optional plot when requested
 
 Benchmark runs live under
-`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/`. The default
-`exports.profile: core_csv` keeps outputs compact with model-prefixed filenames
+`results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or
+`<model_name>_<timestamp>` when a prior run for that model already has CSV
+artifacts). Outputs are always `core_csv` and include model-prefixed filenames
 such as `<model_name>_fold_results.csv`, `<model_name>_leaderboard.csv`, and
-`<model_name>_run_diagnostics.csv`, plus `experiment_manifest.json`. Set
-`exports.profile: full` to emit legacy JSON summaries, ledgers, navigator
-files, and manuscript comparison artifacts.
+`<model_name>_run_diagnostics.csv`, plus `experiment_manifest.json`.
 
 Split definitions are persisted under `data/splits/<task_id>/` so repeated runs
 can reuse consistent evaluation partitions.

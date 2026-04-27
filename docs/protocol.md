@@ -88,8 +88,6 @@ manuscript-shaped runs.
 - overall survival quality: integrated Brier score, Brier score at 25/50/75% event-time horizons, time-dependent AUC
 - calibration and utility: median-horizon calibration slope/intercept and median-horizon net benefit
 - efficiency: fit time, inference time, peak memory
-- manuscript comparison: per-dataset ranks, mean/median rank, pairwise win rate, ELO-style ratings, bootstrap confidence intervals, failure rate, missing-metric rate
-- strong inference artifacts: paired significance tests with multiple-comparison correction and critical-difference summaries
 
 Metric computation is backed by `torchsurv`.
 
@@ -111,9 +109,10 @@ override defaults.
 ## Output Contract
 
 Benchmark-style runs write to
-`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/`.
-The default output profile is `exports.profile: core_csv`, which keeps each run
-folder intentionally small. It writes three CSV tables plus the manifest:
+`results/summary/<dataset_id>/<benchmark_id>/<model_name>/`.
+If that model folder already contains CSV artifacts, a timestamp suffix is
+added (`<model_name>_<YYYYMMDD_HHMMSS>`) to prevent overwrites.
+Outputs are always core CSV artifacts and each run writes:
 
 - `<model_name>_fold_results.csv`: atomic split/method rows with metrics,
   runtime, HPO governance, robustness, retry, and status fields
@@ -121,11 +120,6 @@ folder intentionally small. It writes three CSV tables plus the manifest:
   primary metric
 - `<model_name>_run_diagnostics.csv`: dataset curation, run/failure summaries,
   and HPO trial rows in one auditable table
-
-Set `exports.profile: full` to also emit legacy seed summaries, JSON summaries,
-run ledgers, navigator files, HPO ledgers, and manuscript comparison artifacts.
-Set `exports.write_full_run_ledger: true` with the full profile to additionally
-emit the redundant full run-record JSONL and index.
 
 Fold-result schemas include identifiers, split and mode fields, core and
 time-horizon metrics, timing and memory telemetry, HPO governance fields,

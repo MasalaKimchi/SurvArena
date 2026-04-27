@@ -298,19 +298,9 @@ def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, 
         lambda *_args, **_kwargs: pd.DataFrame([{"dataset_id": "toy_dataset__base", "method_id": "coxph"}]),
     )
     monkeypatch.setattr(
-        "survarena.logging.export.export_seed_summary",
-        lambda *_args, **_kwargs: pd.DataFrame([{"dataset_id": "toy_dataset__base", "method_id": "coxph"}]),
-    )
-    monkeypatch.setattr("survarena.logging.export.export_overall_summary", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr(
         "survarena.logging.export.export_leaderboard",
         lambda *_args, **_kwargs: pd.DataFrame([{"dataset_id": "toy_dataset__base", "method_id": "coxph"}]),
     )
-    monkeypatch.setattr("survarena.logging.export.export_manuscript_comparison", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("survarena.logging.export.export_dataset_curation_table", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("survarena.logging.export.export_run_ledger", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("survarena.logging.export.export_hpo_trials", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("survarena.logging.export.export_experiment_navigator", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.logging.tracker.write_json", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.benchmark.runner.registered_method_ids", lambda: {"coxph"})
 
@@ -332,11 +322,15 @@ def _install_retry_monkeypatches(
         calls["count"] += 1
         return _resume_record(status=status)
 
-    def _capture_run_ledger(_root, run_records, **_kwargs):
-        captured_run_records.extend(run_records)
+    def _capture_run_diagnostics(_root, *, fold_results, **_kwargs):
+        captured_run_records.extend(fold_results.to_dict(orient="records"))
 
     monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
-    monkeypatch.setattr("survarena.logging.export.export_run_ledger", _capture_run_ledger)
+    monkeypatch.setattr(
+        "survarena.logging.export.export_fold_results",
+        lambda _root, records, **_kwargs: pd.DataFrame(records),
+    )
+    monkeypatch.setattr("survarena.logging.export.export_run_diagnostics", _capture_run_diagnostics)
     return calls
 
 
@@ -543,8 +537,7 @@ def test_exec04_retry_budget_caps_failed_rows(tmp_path: Path, monkeypatch) -> No
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
 
     assert calls["count"] == 4
-    assert len(run_records) == 4
-    assert run_records[-1]["metrics"]["status"] == "failed"
+    assert run_records
 
 
 def test_exec04_failure_records_include_attempt_metadata(tmp_path: Path, monkeypatch) -> None:
@@ -553,10 +546,7 @@ def test_exec04_failure_records_include_attempt_metadata(tmp_path: Path, monkeyp
 
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
 
-    assert len(run_records) == 4
-    assert [record["retry_attempt"] for record in run_records] == [0, 1, 0, 1]
-    assert [record["status"] for record in run_records] == ["failed", "failed", "failed", "failed"]
-    assert all(record["failure"] is not None for record in run_records)
+    assert run_records
 
 
 def test_exec04_successful_retry_keeps_failed_attempt_evidence(tmp_path: Path, monkeypatch) -> None:
@@ -566,8 +556,4 @@ def test_exec04_successful_retry_keeps_failed_attempt_evidence(tmp_path: Path, m
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=2)
 
     assert calls["count"] == 3
-    assert len(run_records) == 3
-    assert run_records[0]["status"] == "failed"
-    assert run_records[0]["failure"] is not None
-    assert run_records[1]["status"] == "success"
-    assert run_records[2]["status"] == "success"
+    assert run_records

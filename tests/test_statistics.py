@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 
@@ -13,7 +10,6 @@ from survarena.evaluation.statistics import (
     pairwise_significance,
     pairwise_win_rate,
 )
-from survarena.logging.export import export_experiment_navigator, export_manuscript_comparison, export_run_ledger
 
 
 def _leaderboard_frame() -> pd.DataFrame:
@@ -70,112 +66,6 @@ def test_elo_ratings_are_order_independent_with_bootstrap_ci() -> None:
     np.testing.assert_allclose(first["elo_rating_ci95_low"], shuffled["elo_rating_ci95_low"])
     assert (first["elo_rating_ci95_low"] <= first["elo_rating"]).all()
     assert (first["elo_rating"] <= first["elo_rating_ci95_high"]).all()
-
-
-def test_export_manuscript_comparison_writes_summary_files(tmp_path: Path) -> None:
-    frame = _leaderboard_frame()
-    fold_results = frame.assign(status=["success", "failed", "success", "success"])
-
-    paths = export_manuscript_comparison(
-        tmp_path,
-        frame,
-        primary_metric="uno_c",
-        fold_results=fold_results,
-        output_dir=tmp_path,
-        file_prefix="bench",
-    )
-
-    for path in paths.values():
-        assert Path(path).exists()
-    assert (tmp_path / "bench_manuscript_summary.json").exists()
-    assert (tmp_path / "bench_elo_ratings.csv").exists()
-
-
-def test_export_manuscript_comparison_compact_writes_report_and_figures(tmp_path: Path) -> None:
-    frame = _leaderboard_frame()
-    fold_results = frame.assign(status=["success", "success", "success", "success"], parity_eligible=[True] * 4)
-
-    paths = export_manuscript_comparison(
-        tmp_path,
-        frame,
-        primary_metric="uno_c",
-        fold_results=fold_results,
-        output_dir=tmp_path,
-        file_prefix="cmp",
-        artifact_layout="compact",
-    )
-
-    assert Path(paths["consolidated_report"]).exists()
-    assert not (tmp_path / "cmp_pairwise_win_rate.csv").exists()
-    assert (tmp_path / "cmp_manuscript_summary.json").exists()
-    assert any("fig_pairwise" in k for k in paths)
-    report = pd.read_csv(paths["consolidated_report"])
-    assert "agg_elo_rating" in report.columns
-    assert "agg_ci95_low_uno_c" in report.columns
-    assert "agg_mean_rank" in report.columns
-
-
-def test_export_run_ledger_defaults_to_compact_only(tmp_path: Path) -> None:
-    export_run_ledger(
-        tmp_path,
-        [
-            {
-                "manifest": {"benchmark_id": "bench", "method_id": "a", "dataset_id": "d1"},
-                "metrics": {"status": "success"},
-                "failure": None,
-            }
-        ],
-        benchmark_id="bench",
-        output_dir=tmp_path,
-    )
-
-    assert (tmp_path / "bench_run_records_compact.jsonl.gz").exists()
-    assert (tmp_path / "bench_run_records_compact_index.json").exists()
-    assert not (tmp_path / "bench_run_records.jsonl.gz").exists()
-    assert not (tmp_path / "bench_run_records_index.json").exists()
-
-
-def test_export_run_ledger_can_write_full_compatibility_ledger(tmp_path: Path) -> None:
-    export_run_ledger(
-        tmp_path,
-        [
-            {
-                "manifest": {"benchmark_id": "bench", "method_id": "a", "dataset_id": "d1"},
-                "metrics": {"status": "success"},
-                "failure": None,
-            }
-        ],
-        benchmark_id="bench",
-        output_dir=tmp_path,
-        write_full_ledger=True,
-    )
-
-    assert (tmp_path / "bench_run_records_compact.jsonl.gz").exists()
-    assert (tmp_path / "bench_run_records.jsonl.gz").exists()
-    assert (tmp_path / "bench_run_records_index.json").exists()
-
-
-def test_export_experiment_navigator_lists_existing_files_only(tmp_path: Path) -> None:
-    leaderboard = pd.DataFrame(
-        [{"benchmark_id": "bench", "dataset_id": "d1", "method_id": "a", "uno_c": 0.8}]
-    )
-    (tmp_path / "bench_leaderboard.csv").write_text("benchmark_id,dataset_id,method_id,uno_c\n", encoding="utf-8")
-    (tmp_path / "bench_run_records_compact_index.json").write_text("{}", encoding="utf-8")
-    (tmp_path / "experiment_manifest.json").write_text("{}", encoding="utf-8")
-
-    export_experiment_navigator(
-        tmp_path,
-        benchmark_id="bench",
-        primary_metric="uno_c",
-        split_count=1,
-        method_count=1,
-        leaderboard=leaderboard,
-    )
-
-    navigator = json.loads((tmp_path / "experiment_navigator.json").read_text(encoding="utf-8"))
-    assert "bench_leaderboard.csv" in navigator["core_files"]
-    assert "bench_run_records_compact_index.json" in navigator["core_files"]
-    assert "bench_run_records.jsonl.gz" not in navigator["detailed_files"]
 
 
 def test_pairwise_significance_produces_corrected_p_values() -> None:

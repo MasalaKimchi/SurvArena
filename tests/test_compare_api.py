@@ -4,7 +4,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from pandas.errors import EmptyDataError
 
 from survarena.api.compare import compare_survival_models
 from survarena.data.splitters import SplitDefinition
@@ -77,23 +76,9 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert summary["output_dir"] == str(output_dir)
     assert (output_dir / "experiment_manifest.json").exists()
     assert (output_dir / "coxph_fold_results.csv").exists()
-    assert (output_dir / "coxph_seed_summary.csv").exists()
-    assert (output_dir / "coxph_overall_summary.json").exists()
     assert (output_dir / "coxph_leaderboard.csv").exists()
-    assert (output_dir / "coxph_leaderboard.json").exists()
-    assert (output_dir / "coxph_rank_summary.csv").exists()
-    assert (output_dir / "coxph_pairwise_win_rate.csv").exists()
-    assert (output_dir / "coxph_bootstrap_ci.csv").exists()
-    assert (output_dir / "coxph_elo_ratings.csv").exists()
-    assert (output_dir / "coxph_failure_summary.csv").exists()
-    assert (output_dir / "coxph_missing_metric_summary.csv").exists()
-    assert (output_dir / "coxph_dataset_curation.csv").exists()
-    assert (output_dir / "coxph_manuscript_summary.json").exists()
-    assert not (output_dir / "coxph_run_records.jsonl.gz").exists()
-    assert (output_dir / "coxph_run_records_compact.jsonl.gz").exists()
-    assert (output_dir / "coxph_run_records_compact_index.json").exists()
-    assert (output_dir / "experiment_navigator.json").exists()
-    assert (output_dir / "README.md").exists()
+    assert (output_dir / "coxph_run_diagnostics.csv").exists()
+    assert not (output_dir / "coxph_leaderboard.json").exists()
 
 
 def test_compare_exports_exclude_parity_ineligible_rows(tmp_path: Path, monkeypatch) -> None:
@@ -164,15 +149,8 @@ def test_compare_exports_exclude_parity_ineligible_rows(tmp_path: Path, monkeypa
     assert "parity_eligible" in fold_results.columns
     assert not fold_results["parity_eligible"].any()
 
-    rank_summary = pd.read_csv(output_dir / "coxph_rank_summary.csv")
-    pairwise = pd.read_csv(output_dir / "coxph_pairwise_win_rate.csv")
-    try:
-        pairwise_sig = pd.read_csv(output_dir / "coxph_pairwise_significance.csv")
-    except EmptyDataError:
-        pairwise_sig = pd.DataFrame()
-    assert rank_summary.empty
-    assert pairwise.empty
-    assert pairwise_sig.empty
+    diagnostics = pd.read_csv(output_dir / "coxph_run_diagnostics.csv")
+    assert not diagnostics.empty
 
 
 def test_compare_summary_includes_requested_vs_realized_budget_fields(tmp_path: Path, monkeypatch) -> None:

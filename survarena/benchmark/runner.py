@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -549,6 +548,10 @@ def _execute_run_units(units: list[BenchmarkRunUnit], *, n_jobs: int) -> list[Be
         return list(executor.map(_evaluate_run_unit, units))
 
 
+def _base_dataset_id(value: Any) -> str:
+    return str(value).split("__", 1)[0]
+
+
 def _dataset_curation_row(dataset_id: str, dataset: Any) -> dict[str, Any]:
     import numpy as np
 
@@ -683,16 +686,9 @@ def run_benchmark(
 ) -> None:
     from survarena.logging.export import (
         create_experiment_dir,
-        export_dataset_curation_table,
-        export_experiment_navigator,
         export_fold_results,
-        export_hpo_trials,
         export_leaderboard,
-        export_manuscript_comparison,
-        export_overall_summary,
         export_run_diagnostics,
-        export_run_ledger,
-        export_seed_summary,
     )
     from survarena.logging.tracker import payload_sha256, write_json
 
@@ -746,9 +742,6 @@ def run_benchmark(
         float(x) for x in benchmark_cfg.get("decision_curve", {}).get("thresholds", [0.2])
     )
     exports_cfg = dict(benchmark_cfg.get("exports") or {})
-    export_profile = str(exports_cfg.get("profile", "core_csv")).lower()
-    if export_profile not in {"core_csv", "full"}:
-        raise ValueError("exports.profile must be one of: core_csv, full")
 
     if dry_run:
         print("Dry run complete.")
@@ -765,7 +758,7 @@ def run_benchmark(
         print(f"execution_n_jobs={execution_n_jobs}")
         print(f"decision_thresholds={list(decision_thresholds)}")
         print(f"primary_metric={primary_metric}")
-        print(f"exports.profile={export_profile}")
+        print("exports.profile=core_csv")
         return
 
     registered_methods = set(registered_method_ids())
@@ -790,7 +783,6 @@ def run_benchmark(
     }
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     model_name = methods[0] if len(methods) == 1 else "multi_model"
-    run_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     if resume and output_dir is None:
         raise ValueError("Resume requires --output-dir to target an existing run directory.")
     if output_dir is not None:
@@ -807,7 +799,7 @@ def run_benchmark(
                 repo_root,
                 dataset_id=dataset_id,
                 benchmark_id=benchmark_id,
-                run_stamp=run_stamp,
+                model_name=model_name,
             )
             for dataset_id in datasets
         }
@@ -834,7 +826,7 @@ def run_benchmark(
         "comparison_modes": list(comparison_modes),
         "decision_curve_thresholds": list(decision_thresholds),
         "primary_metric": primary_metric,
-        "exports": {"profile": export_profile, **exports_cfg},
+        "exports": {**exports_cfg, "profile": "core_csv"},
         "benchmark_config_hash": benchmark_cfg_hash,
         "resume": bool(resume),
         "max_retries": int(max_retries),
@@ -886,34 +878,28 @@ def run_benchmark(
     total_wall_time_sec = perf_counter() - benchmark_started_at
     for dataset_id in datasets:
         experiment_dir = dataset_output_dirs[dataset_id]
-        dataset_records = [row for row in all_records if str(row.get("dataset_id")) == dataset_id]
+        dataset_records = [row for row in all_records if _base_dataset_id(row.get("dataset_id")) == dataset_id]
         dataset_run_records = [
-            row for row in run_records if str((row.get("manifest") or {}).get("dataset_id", row.get("dataset_id"))) == dataset_id
+            row
+            for row in run_records
+            if _base_dataset_id((row.get("manifest") or {}).get("dataset_id", row.get("dataset_id"))) == dataset_id
         ]
         if not dataset_run_records and run_records:
             dataset_run_records = list(run_records)
-        dataset_hpo_trials = [row for row in hpo_trial_rows if str(row.get("dataset_id")) == dataset_id]
-        dataset_curation = [row for row in dataset_curation_rows if str(row.get("dataset_id")) == dataset_id]
+        dataset_hpo_trials = [row for row in hpo_trial_rows if _base_dataset_id(row.get("dataset_id")) == dataset_id]
+        dataset_curation = [row for row in dataset_curation_rows if _base_dataset_id(row.get("dataset_id")) == dataset_id]
         frame = export_fold_results(
             repo_root,
             dataset_records,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )
-        seed_summary = export_seed_summary(
-            repo_root,
-            frame,
-            output_dir=experiment_dir,
-            file_prefix=model_name,
-            write_file=export_profile == "full",
-        )
         leaderboard = export_leaderboard(
             repo_root,
-            seed_summary,
+            frame,
             primary_metric=primary_metric,
             output_dir=experiment_dir,
             file_prefix=model_name,
-            write_json_output=export_profile == "full",
         )
         export_run_diagnostics(
             repo_root,
@@ -924,49 +910,6 @@ def run_benchmark(
             output_dir=experiment_dir,
             file_prefix=model_name,
         )
-        export_run_ledger(
-            repo_root,
-            dataset_run_records,
-            benchmark_id=benchmark_id,
-            output_dir=experiment_dir,
-            file_prefix=model_name,
-            write_compact_ledger=export_profile == "full",
-            write_full_ledger=export_profile == "full" and bool(exports_cfg.get("write_full_run_ledger", False)),
-        )
-        if export_profile == "full":
-            export_overall_summary(repo_root, frame, output_dir=experiment_dir, file_prefix=model_name)
-            export_manuscript_comparison(
-                repo_root,
-                leaderboard,
-                primary_metric=primary_metric,
-                fold_results=frame,
-                output_dir=experiment_dir,
-                file_prefix=model_name,
-                artifact_layout=str(exports_cfg.get("manuscript_artifact_layout", "full")),
-            )
-            export_dataset_curation_table(
-                repo_root,
-                dataset_curation,
-                benchmark_id=benchmark_id,
-                output_dir=experiment_dir,
-                file_prefix=model_name,
-            )
-            export_hpo_trials(
-                repo_root,
-                dataset_hpo_trials,
-                benchmark_id=benchmark_id,
-                output_dir=experiment_dir,
-                file_prefix=model_name,
-            )
-            export_experiment_navigator(
-                experiment_dir,
-                benchmark_id=benchmark_id,
-                file_prefix=model_name,
-                primary_metric=primary_metric,
-                split_count=len({(row.get("dataset_id"), row.get("split_id"), row.get("seed")) for row in dataset_records}),
-                method_count=len(methods),
-                leaderboard=leaderboard,
-            )
         profiling_payload = {
             "benchmark_id": benchmark_id,
             "schema_version": "benchmark_profiling_v1",
@@ -983,10 +926,6 @@ def run_benchmark(
             "total_wall_time_sec": total_wall_time_sec,
             "phase_timings_sec": phase_timings_sec,
         }
-        if export_profile == "full":
-            profiling_artifact = f"{model_name}_profiling.json"
-            write_json(experiment_dir / profiling_artifact, profiling_payload)
-            profiling_manifest["artifact"] = profiling_artifact
         dataset_manifest = {
             **manifest_template,
             "datasets": [dataset_id],

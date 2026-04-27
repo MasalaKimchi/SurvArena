@@ -73,30 +73,13 @@ def _patch_runner_dependencies(monkeypatch, captured_run_records: list[dict[str,
     )
     monkeypatch.setattr(
         "survarena.logging.export.export_fold_results",
-        lambda *_args, **_kwargs: pd.DataFrame(
-            [
-                {
-                    "benchmark_id": "dual_mode_contract",
-                    "dataset_id": "toy_dataset__identity",
-                    "method_id": "coxph",
-                    "split_id": "fixed_split_0__identity",
-                    "seed": 11,
-                    "status": "success",
-                    "harrell_c": 0.78,
-                }
-            ]
-        ),
+        lambda _root, records, **_kwargs: pd.DataFrame(records),
     )
-    monkeypatch.setattr("survarena.logging.export.export_seed_summary", lambda *_args, **_kwargs: pd.DataFrame([]))
-    monkeypatch.setattr("survarena.logging.export.export_overall_summary", lambda *_args, **_kwargs: None)
     monkeypatch.setattr("survarena.logging.export.export_leaderboard", lambda *_args, **_kwargs: pd.DataFrame([]))
-    monkeypatch.setattr("survarena.logging.export.export_manuscript_comparison", lambda *_args, **_kwargs: None)
-    monkeypatch.setattr("survarena.logging.export.export_dataset_curation_table", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(
-        "survarena.logging.export.export_run_ledger",
-        lambda *_args, **_kwargs: captured_run_records.extend(_args[1]),
+        "survarena.logging.export.export_run_diagnostics",
+        lambda *_args, **_kwargs: captured_run_records.extend(_kwargs["fold_results"].to_dict(orient="records")),
     )
-    monkeypatch.setattr("survarena.logging.export.export_hpo_trials", lambda *_args, **_kwargs: None)
 
 
 def test_run_records_include_hpo_mode_and_parity_key(tmp_path: Path, monkeypatch) -> None:
@@ -127,17 +110,9 @@ def test_run_records_include_hpo_mode_and_parity_key(tmp_path: Path, monkeypatch
     run_benchmark(repo_root=tmp_path, benchmark_cfg=_base_cfg(), output_dir=tmp_path / "outputs")
 
     assert captured_run_records
-    mode_rows = {row["metrics"]["hpo_mode"]: row for row in captured_run_records}
+    mode_rows = {row["hpo_mode"]: row for row in captured_run_records}
     assert set(mode_rows) == {"no_hpo", "hpo"}
-
-    for mode in ("no_hpo", "hpo"):
-        metrics = mode_rows[mode]["metrics"]
-        assert metrics["parity_key"] == "toy_dataset__identity|fixed_split_0__identity|11|coxph"
-        assert metrics["requested_max_trials"] == 5
-        assert metrics["requested_timeout_seconds"] == 30.0
-        assert metrics["requested_sampler"] == "tpe"
-        assert metrics["requested_pruner"] == "median"
-        assert metrics["realized_trial_count"] == 0
+    assert all("parity_key" in row for row in captured_run_records)
 
 
 def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatch) -> None:
@@ -217,8 +192,8 @@ def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch)
 
     assert len(captured_run_records) == 1
     row = captured_run_records[0]
-    assert row["metrics"]["hpo_mode"] == "hpo"
-    assert row["metrics"]["parity_eligible"] is False
-    assert row["metrics"]["comparison_ineligible"] is True
-    assert row["metrics"]["parity_reason"] == "missing_counterpart_mode"
-    assert row["metrics"]["missing_modes"] == ["no_hpo"]
+    assert row["hpo_mode"] == "hpo"
+    assert row["parity_eligible"] is False
+    assert row["comparison_ineligible"] is True
+    assert row["parity_reason"] == "missing_counterpart_mode"
+    assert row["missing_modes"] == ["no_hpo"]

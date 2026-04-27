@@ -73,15 +73,10 @@ Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
 
 - splits: `data/splits/<task_id>/`
 - predictor artifacts: `results/predictor/<dataset_name>/`
-- benchmark runs: `results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/`
+- benchmark runs: `results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or `<model_name>_<timestamp>` on collision)
 
-Benchmark experiment folders contain generated `README.md` and
-`experiment_navigator.json` entry points. Exact artifacts vary by benchmark
-config, enabled comparison modes, HPO settings, and manuscript artifact layout.
-
-The compact run ledger is the default comprehensive per-run artifact. Set
-`exports.write_full_run_ledger: true` only when a downstream workflow needs the
-legacy full run ledger.
+Benchmark experiment folders contain core CSV outputs plus the experiment
+manifest.
 
 Treat timestamped benchmark output folders as local run artifacts unless you are
 intentionally publishing curated results.

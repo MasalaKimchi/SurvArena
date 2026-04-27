@@ -19,7 +19,7 @@ flowchart TD
     I --> J["Evaluate outer-test fold<br/>risk, survival curves, timing, memory"]
     J --> K["Compute metrics<br/>Uno C, Harrell C, IBS, AUC, calibration, net benefit"]
     K --> L["Aggregate results<br/>folds, seeds, ranks, pairwise tests, CIs"]
-    L --> M["Write compact artifacts<br/>leaderboards, summaries, manifests, run ledger"]
+    L --> M["Write compact artifacts<br/>fold results, leaderboard, diagnostics, manifest"]
 ```
 
 ## What Is Compared
@@ -58,19 +58,14 @@ evaluation.
 ## Output Flow
 
 Benchmark results are written under
-`results/summary/<dataset_id>/<benchmark_id>/<timestamp>/`. The
-human entry point is the generated experiment `README.md`; the machine entry
-point is `experiment_navigator.json`.
+`results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or
+`<model_name>_<timestamp>` when prior CSVs already exist).
 
 Core artifacts include:
 
 - fold-level metric tables
-- seed and overall summaries
 - leaderboards
-- manuscript comparison reports, with detailed ranking and significance files
-  depending on the configured artifact layout
-- failure and missing-metric summaries when available
-- compact per-run ledgers
+- run diagnostics
 - experiment manifests with config and environment metadata
 
 For the full protocol and artifact contract, see [`protocol.md`](protocol.md).

@@ -10,14 +10,9 @@ from survarena.data.splitters import load_or_create_splits
 from survarena.data.user_dataset import load_user_dataset
 from survarena.logging.export import (
     create_experiment_dir,
-    export_dataset_curation_table,
-    export_experiment_navigator,
     export_fold_results,
     export_leaderboard,
-    export_manuscript_comparison,
-    export_overall_summary,
-    export_run_ledger,
-    export_seed_summary,
+    export_run_diagnostics,
 )
 from survarena.logging.tracker import payload_sha256, write_json
 from survarena.methods.registry import registered_method_ids
@@ -216,6 +211,7 @@ def compare_survival_models(
             repo_root,
             dataset_id=dataset.metadata.dataset_id,
             benchmark_id=resolved_benchmark_id,
+            model_name=model_name,
         )
         if output_dir is None
         else Path(output_dir)
@@ -339,31 +335,18 @@ def compare_survival_models(
             row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
-    seed_summary = export_seed_summary(
-        repo_root,
-        frame,
-        output_dir=resolved_output_dir,
-        file_prefix=model_name,
-    )
-    export_overall_summary(repo_root, frame, output_dir=resolved_output_dir, file_prefix=model_name)
     leaderboard = export_leaderboard(
         repo_root,
-        seed_summary,
+        frame,
         primary_metric=primary_metric,
         output_dir=resolved_output_dir,
         file_prefix=model_name,
     )
-    export_manuscript_comparison(
+    export_run_diagnostics(
         repo_root,
-        leaderboard,
-        primary_metric=primary_metric,
+        benchmark_id=resolved_benchmark_id,
         fold_results=frame,
-        output_dir=resolved_output_dir,
-        file_prefix=model_name,
-    )
-    export_dataset_curation_table(
-        repo_root,
-        [
+        dataset_curation_rows=[
             {
                 "dataset_id": dataset.metadata.dataset_id,
                 "dataset_name": dataset.metadata.name,
@@ -375,25 +358,9 @@ def compare_survival_models(
                 "feature_types": dataset.metadata.feature_types,
             }
         ],
-        benchmark_id=resolved_benchmark_id,
+        hpo_trial_rows=[],
         output_dir=resolved_output_dir,
         file_prefix=model_name,
-    )
-    export_run_ledger(
-        repo_root,
-        run_records,
-        benchmark_id=resolved_benchmark_id,
-        output_dir=resolved_output_dir,
-        file_prefix=model_name,
-    )
-    export_experiment_navigator(
-        resolved_output_dir,
-        benchmark_id=resolved_benchmark_id,
-        file_prefix=model_name,
-        primary_metric=primary_metric,
-        split_count=len(splits),
-        method_count=len(method_ids),
-        leaderboard=leaderboard,
     )
     return {
         **summary,

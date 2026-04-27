@@ -1,31 +1,23 @@
 from __future__ import annotations
 
-import json
 from datetime import datetime
 from pathlib import Path
 
 import pandas as pd
 
-from survarena.evaluation.statistics import failure_summary, metric_direction, summarize_frame
+from survarena.evaluation.statistics import failure_summary, metric_direction
 from survarena.logging.export_shared import (
     BENCHMARK_METRIC_COLUMNS,
     CORE_METRIC_COLUMNS,
     EFFICIENCY_COLUMNS,
     GOVERNANCE_COLUMNS,
     MANUSCRIPT_METRIC_COLUMNS,
-    MANUSCRIPT_REPORT_SCHEMA_VERSION,
-    RUN_LEDGER_COMPACT_SCHEMA_VERSION,
-    RUN_LEDGER_SCHEMA_VERSION,
     benchmark_label,
     expand_dynamic_metric_columns,
     group_keys_with_hpo_mode,
     parity_gated_frame,
     unique_in_order,
 )
-from survarena.logging.ledger_export import export_run_ledger
-from survarena.logging.manuscript_export import export_manuscript_comparison
-from survarena.logging.navigator_export import export_experiment_navigator
-from survarena.logging.tracker import write_json
 
 __all__ = [
     "BENCHMARK_METRIC_COLUMNS",
@@ -33,20 +25,10 @@ __all__ = [
     "EFFICIENCY_COLUMNS",
     "GOVERNANCE_COLUMNS",
     "MANUSCRIPT_METRIC_COLUMNS",
-    "MANUSCRIPT_REPORT_SCHEMA_VERSION",
-    "RUN_LEDGER_COMPACT_SCHEMA_VERSION",
-    "RUN_LEDGER_SCHEMA_VERSION",
     "create_experiment_dir",
-    "export_dataset_curation_table",
-    "export_experiment_navigator",
     "export_fold_results",
-    "export_hpo_trials",
     "export_leaderboard",
-    "export_manuscript_comparison",
-    "export_overall_summary",
     "export_run_diagnostics",
-    "export_run_ledger",
-    "export_seed_summary",
 ]
 
 # Backward-compatible private helper aliases for callers/tests that imported them from this module.
@@ -72,16 +54,20 @@ def create_experiment_dir(
     *,
     dataset_id: str | None = None,
     benchmark_id: str | None = None,
+    model_name: str | None = None,
     run_stamp: str | None = None,
 ) -> Path:
     stamp = run_stamp or datetime.now().strftime("%Y%m%d_%H%M%S")
-    if dataset_id is None or benchmark_id is None:
+    if dataset_id is None or benchmark_id is None or model_name is None:
         folder_name = f"exp_{stamp}"
         output_dir = root / "results" / "summary" / folder_name
     else:
         dataset_component = _slugify_component(dataset_id, fallback="dataset")
         benchmark_component = _slugify_component(benchmark_id or "benchmark", fallback="benchmark")
-        output_dir = root / "results" / "summary" / dataset_component / benchmark_component / stamp
+        model_component = _slugify_component(model_name, fallback="model")
+        model_dir = root / "results" / "summary" / dataset_component / benchmark_component / model_component
+        existing_csv = list(model_dir.glob("*.csv")) if model_dir.exists() else []
+        output_dir = model_dir if not existing_csv else model_dir.with_name(f"{model_component}_{stamp}")
     output_dir.mkdir(parents=True, exist_ok=False)
     return output_dir
 
@@ -112,79 +98,35 @@ def export_fold_results(
     return frame
 
 
-def export_seed_summary(
-    root: Path,
-    frame: pd.DataFrame,
-    *,
-    output_dir: Path | None = None,
-    file_prefix: str | None = None,
-    write_file: bool = True,
-) -> pd.DataFrame:
-    by_cols = group_keys_with_hpo_mode(
-        frame,
-        ["benchmark_id", "dataset_id", "method_id", "seed"],
-    )
-    metric_cols = unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(frame))
-    available_metric_cols = [col for col in metric_cols if col in frame.columns]
-    seed_summary = frame.groupby(by_cols, as_index=False)[available_metric_cols].mean(numeric_only=True)
-    if not write_file:
-        return seed_summary
-    if output_dir is None:
-        output = root / "results" / "summaries" / "seed_summary.csv"
-    else:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(frame))
-        output = output_dir / f"{prefix}_seed_summary.csv"
-    seed_summary.to_csv(output, index=False)
-    return seed_summary
-
-
-def export_overall_summary(
-    root: Path,
-    frame: pd.DataFrame,
-    *,
-    output_dir: Path | None = None,
-    file_prefix: str | None = None,
-) -> dict:
-    by_cols = ["benchmark_id", "dataset_id", "method_id"]
-    metric_cols = unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(frame))
-    summary: dict[str, dict] = {}
-
-    for key, sub in frame.groupby(by_cols):
-        k = "__".join(str(v) for v in key)
-        summary[k] = summarize_frame(sub, [col for col in metric_cols if col in sub.columns])
-        summary[k]["n_runs"] = int(len(sub))
-        summary[k]["n_success"] = int((sub.get("status", pd.Series(dtype=str)) == "success").sum())
-        summary[k]["failure_rate"] = float(1.0 - summary[k]["n_success"] / max(len(sub), 1))
-
-    if output_dir is None:
-        output = root / "results" / "summaries" / "overall_summary.json"
-    else:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(frame))
-        output = output_dir / f"{prefix}_overall_summary.json"
-    with output.open("w", encoding="utf-8") as handle:
-        json.dump(summary, handle, indent=2)
-    return summary
-
-
 def export_leaderboard(
     root: Path,
-    seed_summary: pd.DataFrame,
+    fold_results: pd.DataFrame,
     primary_metric: str = "harrell_c",
     *,
     output_dir: Path | None = None,
     file_prefix: str | None = None,
-    write_json_output: bool = True,
 ) -> pd.DataFrame:
+    requested_seed_keys = group_keys_with_hpo_mode(
+        fold_results,
+        ["benchmark_id", "dataset_id", "method_id", "seed"],
+    )
+    seed_keys = [col for col in requested_seed_keys if col in fold_results.columns]
+    if not seed_keys:
+        seed_keys = [col for col in ["dataset_id", "method_id", "seed"] if col in fold_results.columns]
+    metric_cols = unique_in_order(BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(fold_results))
+    available_metric_cols = [col for col in metric_cols if col in fold_results.columns]
+    seed_summary = fold_results.groupby(seed_keys, as_index=False)[available_metric_cols].mean(numeric_only=True)
     metric_cols = unique_in_order(
         BENCHMARK_METRIC_COLUMNS + GOVERNANCE_COLUMNS + expand_dynamic_metric_columns(seed_summary)
     )
     available_metric_cols = [col for col in metric_cols if col in seed_summary.columns]
-    lb_keys = group_keys_with_hpo_mode(
+    requested_lb_keys = group_keys_with_hpo_mode(
         seed_summary,
         ["benchmark_id", "dataset_id", "method_id"],
     )
+    lb_keys = [col for col in requested_lb_keys if col in seed_summary.columns]
+    if not lb_keys:
+        lb_keys = [col for col in ["dataset_id", "method_id"] if col in seed_summary.columns]
     leaderboard = seed_summary.groupby(lb_keys, as_index=False)[available_metric_cols].mean(numeric_only=True)
     if primary_metric not in leaderboard.columns:
         raise ValueError(f"Primary metric '{primary_metric}' not found in leaderboard columns.")
@@ -197,75 +139,12 @@ def export_leaderboard(
 
     if output_dir is None:
         csv_path = root / "results" / "tables" / "leaderboard.csv"
-        json_path = root / "results" / "summaries" / "leaderboard.json"
     else:
         output_dir.mkdir(parents=True, exist_ok=True)
         prefix = _artifact_prefix(file_prefix, fallback=benchmark_label(seed_summary))
         csv_path = output_dir / f"{prefix}_leaderboard.csv"
-        json_path = output_dir / f"{prefix}_leaderboard.json"
     leaderboard.to_csv(csv_path, index=False)
-    if write_json_output:
-        leaderboard.to_json(json_path, orient="records", indent=2)
     return leaderboard
-
-
-def export_dataset_curation_table(
-    root: Path,
-    rows: list[dict],
-    *,
-    benchmark_id: str,
-    output_dir: Path | None = None,
-    file_prefix: str | None = None,
-) -> pd.DataFrame:
-    frame = pd.DataFrame(rows)
-    if output_dir is None:
-        output = root / "results" / "summaries" / f"{benchmark_id}_dataset_curation.csv"
-        output.parent.mkdir(parents=True, exist_ok=True)
-    else:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
-        output = output_dir / f"{prefix}_dataset_curation.csv"
-    frame.to_csv(output, index=False)
-    return frame
-
-
-def export_hpo_trials(
-    root: Path,
-    rows: list[dict],
-    *,
-    benchmark_id: str,
-    output_dir: Path | None = None,
-    file_prefix: str | None = None,
-) -> pd.DataFrame:
-    frame = pd.DataFrame(rows)
-    if output_dir is None:
-        output = root / "results" / "summaries" / f"{benchmark_id}_hpo_trials.csv"
-        summary_output = root / "results" / "summaries" / f"{benchmark_id}_hpo_summary.json"
-        output.parent.mkdir(parents=True, exist_ok=True)
-    else:
-        output_dir.mkdir(parents=True, exist_ok=True)
-        prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
-        output = output_dir / f"{prefix}_hpo_trials.csv"
-        summary_output = output_dir / f"{prefix}_hpo_summary.json"
-    frame.to_csv(output, index=False)
-    if frame.empty:
-        summary = {"benchmark_id": benchmark_id, "trial_count": 0, "methods": []}
-    else:
-        method_summary = (
-            frame.groupby(["benchmark_id", "method_id"], as_index=False)
-            .agg(
-                trial_count=("trial_number", "count"),
-                best_trial_value=("value", "max"),
-            )
-            .to_dict(orient="records")
-        )
-        summary = {
-            "benchmark_id": benchmark_id,
-            "trial_count": int(len(frame)),
-            "methods": method_summary,
-        }
-    write_json(summary_output, summary)
-    return frame
 
 
 def export_run_diagnostics(
@@ -280,11 +159,11 @@ def export_run_diagnostics(
 ) -> pd.DataFrame:
     rows: list[dict[str, object]] = []
     if not fold_results.empty:
-        failure_keys = group_keys_with_hpo_mode(
+        requested_failure_keys = group_keys_with_hpo_mode(
             fold_results,
             ["benchmark_id", "dataset_id", "method_id"],
         )
-        failure_keys = [key for key in failure_keys if key in fold_results.columns]
+        failure_keys = [key for key in requested_failure_keys if key in fold_results.columns]
         for row in failure_summary(fold_results).to_dict(orient="records"):
             rows.append({"record_type": "failure_summary", **row})
         if failure_keys and "status" in fold_results.columns:
