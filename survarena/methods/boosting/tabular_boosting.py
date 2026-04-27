@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import numpy as np
@@ -158,6 +159,15 @@ def _has_validation_data(
     return X_val is not None and time_val is not None and event_val is not None
 
 
+def _configure_xgboost_runtime_threads() -> None:
+    """Avoid OpenMP/BLAS deadlocks on threaded benchmark runs."""
+    os.environ.setdefault("OMP_NUM_THREADS", "1")
+    os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+    os.environ.setdefault("MKL_NUM_THREADS", "1")
+    os.environ.setdefault("VECLIB_MAXIMUM_THREADS", "1")
+    os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
+
 class _BaseCalibratedCoxBoostingMethod(BaseSurvivalMethod):
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
@@ -255,6 +265,7 @@ class XGBoostCoxMethod(_BaseCalibratedCoxBoostingMethod):
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
     ) -> "XGBoostCoxMethod":
+        _configure_xgboost_runtime_threads()
         import xgboost as xgb
 
         has_validation = _has_validation_data(X_val, time_val, event_val)
@@ -338,6 +349,7 @@ class XGBoostAFTMethod(_BaseAFTBoostingMethod):
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
     ) -> "XGBoostAFTMethod":
+        _configure_xgboost_runtime_threads()
         import xgboost as xgb
 
         has_validation = _has_validation_data(X_val, time_val, event_val)
