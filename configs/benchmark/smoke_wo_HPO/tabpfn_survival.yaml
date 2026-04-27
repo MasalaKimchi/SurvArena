@@ -10,7 +10,6 @@ primary_metric: uno_c
 profile: smoke
 comparison_modes:
 - no_hpo
-- hpo
 secondary_metrics:
 - harrell_c
 - ibs
@@ -27,7 +26,7 @@ autogluon:
   num_stack_levels: 0
   refit_full: false
 hpo:
-  enabled: true
+  enabled: false
   max_trials: 1
   timeout_seconds: 15
   sampler: random
@@ -54,8 +53,8 @@ exports:
 datasets:
 - aids
 methods:
-- componentwise_gradient_boosting
-notes: Single-method shard of smoke_all_models_30min for componentwise_gradient_boosting.
-  Uses the same benchmark_id, dataset, folds, seeds, HPO budget, and export profile
-  as the all-model config so split definitions remain identical and fold results can
-  be aggregated later.
+- tabpfn_survival
+notes: Single-method shard of smoke_all_models_30min for tabpfn_survival. Uses the
+  same benchmark_id, dataset, folds, seeds, HPO budget, and export profile as the
+  all-model config so split definitions remain identical and fold results can be aggregated
+  later.
