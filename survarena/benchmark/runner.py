@@ -412,6 +412,8 @@ def evaluate_split(
             "hpo_status": "failed",
             "hpo_trial_count": 0,
             "status": "failed",
+            "failure_type": type(exc).__name__,
+            "exception_message": str(exc),
         }
 
 
@@ -686,6 +688,7 @@ def run_benchmark(
 ) -> None:
     from survarena.logging.export import (
         create_experiment_dir,
+        export_coverage_matrix,
         export_fold_results,
         export_leaderboard,
         export_run_diagnostics,
@@ -892,7 +895,7 @@ def run_benchmark(
             output_dir=experiment_dir,
             file_prefix=model_name,
         )
-        leaderboard = export_leaderboard(
+        export_leaderboard(
             repo_root,
             frame,
             primary_metric=primary_metric,
@@ -905,9 +908,50 @@ def run_benchmark(
             fold_results=frame,
             dataset_curation_rows=dataset_curation,
             hpo_trial_rows=dataset_hpo_trials,
+            run_records=dataset_run_records,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )
+        export_coverage_matrix(
+            repo_root,
+            frame,
+            primary_metric=primary_metric,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+        )
+        artifact_names = {
+            "fold_results_csv": f"{model_name}_fold_results.csv",
+            "leaderboard_csv": f"{model_name}_leaderboard.csv",
+            "run_diagnostics_csv": f"{model_name}_run_diagnostics.csv",
+            "coverage_matrix_csv": f"{model_name}_coverage_matrix.csv",
+            "coverage_matrix_md": f"{model_name}_coverage_matrix.md",
+            "runtime_failure_summary_csv": f"{model_name}_runtime_failure_summary.csv",
+            "runtime_failure_summary_md": f"{model_name}_runtime_failure_summary.md",
+        }
+        write_json(
+            experiment_dir / "experiment_navigator.json",
+            {
+                "schema_version": "experiment_navigator_v1",
+                "benchmark_id": benchmark_id,
+                "dataset_id": dataset_id,
+                "model_name": model_name,
+                "artifacts": artifact_names,
+            },
+        )
+        readme_lines = [
+            f"# SurvArena Experiment: {dataset_id}",
+            "",
+            f"- Benchmark: `{benchmark_id}`",
+            f"- Model set: `{model_name}`",
+            f"- Fold results: [{artifact_names['fold_results_csv']}]({artifact_names['fold_results_csv']})",
+            f"- Leaderboard: [{artifact_names['leaderboard_csv']}]({artifact_names['leaderboard_csv']})",
+            f"- Coverage matrix: [{artifact_names['coverage_matrix_md']}]({artifact_names['coverage_matrix_md']})",
+            f"- Runtime and failure summary: [{artifact_names['runtime_failure_summary_md']}]({artifact_names['runtime_failure_summary_md']})",
+            f"- Run diagnostics: [{artifact_names['run_diagnostics_csv']}]({artifact_names['run_diagnostics_csv']})",
+            "- Navigator: [experiment_navigator.json](experiment_navigator.json)",
+            "",
+        ]
+        (experiment_dir / "README.md").write_text("\n".join(readme_lines), encoding="utf-8")
         profiling_payload = {
             "benchmark_id": benchmark_id,
             "schema_version": "benchmark_profiling_v1",
@@ -928,6 +972,7 @@ def run_benchmark(
             **manifest_template,
             "datasets": [dataset_id],
             "output_dir": str(experiment_dir),
+            "artifacts": artifact_names,
             "profiling": profiling_manifest,
         }
         write_json(experiment_dir / "experiment_manifest.json", dataset_manifest)

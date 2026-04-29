@@ -304,6 +304,88 @@ For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
 metric aggregation, and exported comparison artifacts, see
 [`docs/benchmarking_workflow.md`](docs/benchmarking_workflow.md).
 
+## AutoGluon Usage Contract
+
+SurvArena exposes AutoGluon through one adapter method id:
+`autogluon_survival`.
+The design intent is to use AutoGluon's tabular model portfolio as a training
+backend while keeping SurvArena's survival-centric evaluation and export
+contract unchanged.
+
+### Intent and adaptation boundary
+
+- `TabularPredictor.fit(...)` can train many tabular base models plus ensembles
+  (for example `WeightedEnsemble_L2`) under one predictor.
+- In this repository, that portfolio is adapted to survival by:
+  - fitting a binary event-risk model (`event` as label),
+  - using event probability as risk score,
+  - deriving survival curves via Breslow baseline calibration.
+- This is an adaptation layer for right-censored benchmarks, not native
+  censored-loss optimization inside `autogluon.tabular`.
+
+### What "all AutoGluon models" means in SurvArena
+
+- SurvArena benchmark rows are keyed by SurvArena `method_id`, not by every
+  AutoGluon internal submodel.
+- `autogluon_survival` may internally evaluate many AutoGluon tabular models,
+  but appears as one method in SurvArena fold/leaderboard CSVs.
+- Use two leaderboards for different questions:
+  - AutoGluon internal model ranking: `predictor.leaderboard(...)`.
+  - Benchmark-level cross-method ranking: `<model_name>_leaderboard.csv`.
+
+### Comparability contract (what to trust for benchmark claims)
+
+- For cross-method survival comparison, treat SurvArena survival exports as
+  authoritative (`uno_c`, `harrell_c`, `ibs`, horizon AUC/Brier/calibration/net
+  benefit where configured).
+- AutoGluon-native tabular task metrics (for example `accuracy`/`roc_auc` for
+  internal event modeling) are diagnostic and should not replace SurvArena's
+  survival metrics in benchmark conclusions.
+- The benchmark runner (`python -m survarena.run_benchmark`) is the canonical
+  path for producing comparable artifacts across methods and split geometry.
+
+### Runtime controls and HPO interaction
+
+AutoGluon-related benchmark YAML controls live under `autogluon:` (for example
+in `configs/benchmark/standard_v1.yaml`):
+
+- `presets`
+- `time_limit_seconds`
+- `hyperparameter_tune_kwargs`
+- `num_bag_folds`
+- `num_stack_levels`
+- `refit_full`
+
+Interpretation in outputs:
+
+- `training_backend=autogluon` indicates AutoGluon trained the model.
+- `hpo_backend=autogluon` indicates AutoGluon-internal tuning was used.
+- SurvArena's native HPO loop applies only when a method exposes a non-empty
+  SurvArena `search_space`.
+
+### Recommended usage patterns
+
+- **AutoGluon backend stress test**: Run only `autogluon_survival` to inspect
+  AutoGluon-managed behavior and internal leaderboard metadata.
+- **Fair benchmark comparison**: Run `autogluon_survival` alongside native
+  adapters on shared splits; compare only SurvArena survival metrics and
+  benchmark artifacts.
+
+For auditability, check exported fields such as:
+`training_backend`, `hpo_backend`, `autogluon_presets`,
+`autogluon_best_model`, `autogluon_model_count`, `autogluon_path`,
+`bagging_folds`, and `stack_levels`.
+
+### Limitations and open questions
+
+- Event-risk adaptation does not make `autogluon.tabular` a native censored
+  survival optimizer.
+- Per-AutoGluon-submodel survival rows are not yet first-class benchmark rows;
+  current reporting is method-level plus metadata.
+- Manuscript-grade claims should continue to rely on the maintained benchmark
+  protocol and configs; AutoGluon-heavy tracks are currently positioned as
+  dedicated comparison/appendix analyses.
+
 ## Compare API
 
 Use `compare_survival_models(...)` for benchmark-style comparisons on a user

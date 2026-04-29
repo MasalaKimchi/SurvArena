@@ -447,6 +447,29 @@ def test_benchmark_profiling_manifest_and_artifact_emitted(tmp_path: Path, monke
     assert all(value >= 0.0 for value in manifest["profiling"]["phase_timings_sec"].values())
 
 
+def test_benchmark_run_emits_coverage_links(tmp_path: Path, monkeypatch) -> None:
+    calls = {"count": 0}
+    writes: dict[str, dict[str, object]] = {}
+    _install_common_monkeypatches(monkeypatch, calls)
+
+    def _capture_write_json(path: Path, payload: dict[str, object]) -> None:
+        writes[path.name] = payload
+
+    monkeypatch.setattr("survarena.logging.tracker.write_json", _capture_write_json)
+    cfg = _resume_benchmark_cfg()
+    cfg["comparison_modes"] = ["no_hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    assert calls["count"] == 1
+    assert (tmp_path / "coxph_coverage_matrix.csv").exists()
+    assert (tmp_path / "coxph_coverage_matrix.md").exists()
+    assert (tmp_path / "README.md").exists()
+    assert writes["experiment_navigator.json"]["artifacts"]["coverage_matrix_csv"] == "coxph_coverage_matrix.csv"
+    assert writes["experiment_manifest.json"]["artifacts"]["coverage_matrix_md"] == "coxph_coverage_matrix.md"
+    assert "coxph_coverage_matrix.md" in (tmp_path / "README.md").read_text(encoding="utf-8")
+
+
 def test_comparison_modes_can_run_only_hpo(tmp_path: Path, monkeypatch) -> None:
     calls = {"count": 0}
     hpo_enabled_values: list[bool] = []

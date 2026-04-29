@@ -335,7 +335,7 @@ def compare_survival_models(
             row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
-    leaderboard = export_leaderboard(
+    export_leaderboard(
         repo_root,
         frame,
         primary_metric=primary_metric,
@@ -359,6 +359,7 @@ def compare_survival_models(
             }
         ],
         hpo_trial_rows=[],
+        run_records=run_records,
         output_dir=resolved_output_dir,
         file_prefix=model_name,
     )
