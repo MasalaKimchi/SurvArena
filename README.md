@@ -143,6 +143,14 @@ otherwise; they do not auto-select Apple MPS. A direct MPS probe of
 because PyTorch MPS does not implement `aten::_logcumsumexp`, so Cox-loss neural
 training remains CPU-only here.
 
+### Local Feasible HPO Elo Preview
+
+The current local feasible HPO evidence bundle compares native Python adapters
+across paired no-HPO and HPO modes. Foundation-model adapters are not included
+in this run.
+
+![Paired no-HPO and HPO Elo ratings by SurvArena model](docs/assets/local_feasible_hpo_elo_uno_c.png)
+
 ### First Smoke Run
 
 After setup, start with commands that check the benchmark wiring before running
