@@ -10,6 +10,7 @@ from torch import nn
 import torchtuples as tt
 
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
 from survarena.methods.survival_utils import risk_from_survival_frame, survival_frame_to_array
 
 
@@ -62,10 +63,7 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
         self.device: torch.device | None = None
 
     def _resolve_device(self) -> torch.device:
-        raw_device = str(self.params["device"])
-        if raw_device == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.device(raw_device)
+        return resolve_torch_training_device(str(self.params["device"]))
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
@@ -122,10 +120,16 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
             target_val = self._transform_targets(np.asarray(time_val), np.asarray(event_val))
             val_data = (X_val_f32, target_val)
 
+        batch_size = batch_norm_safe_batch_size(
+            len(X_train_f32),
+            int(self.params["batch_size"]),
+            batch_norm=bool(self.params["batch_norm"]),
+        )
+
         self.model.fit(
             X_train_f32,
             target_train,
-            batch_size=min(int(self.params["batch_size"]), len(X_train_f32)),
+            batch_size=batch_size,
             epochs=int(self.params["max_epochs"]),
             callbacks=callbacks if callbacks else None,
             verbose=False,

@@ -17,12 +17,12 @@ artifacts.
 - secondary metrics: `harrell_c`, `ibs`, `td_auc`
 - default methods: `coxph`, `coxnet`, `rsf`, `deepsurv`
 
-`configs/benchmark/manuscript_v1.yaml` and the smoke suite configs add
+`configs/benchmark/manuscript_v1.yaml` adds
 `brier`, `calibration`, and `net_benefit` to `secondary_metrics`, plus the
 usual time-horizon and decision-curve settings for those outputs.
-`configs/benchmark/smoke_aft.yaml` is the targeted AFT adapter stability smoke:
-it runs Weibull, LogNormal, LogLogistic, XGBoost AFT, and CatBoost AFT across
-all standard built-in datasets with paired no-HPO and one-trial HPO modes.
+`configs/benchmark/local_feasible_hpo_v1.yaml` is the MacBook-local paired
+no-HPO/HPO feasibility profile across the six standard built-in datasets with
+the core ranking metrics (`uno_c`, `harrell_c`, `ibs`, and `td_auc`).
 
 Benchmark profiles (see `validate_benchmark_profile_contract` in
 `survarena/benchmark/runner.py`):
@@ -36,16 +36,12 @@ Benchmark profiles (see `validate_benchmark_profile_contract` in
 The main-paper benchmark scope is `configs/benchmark/manuscript_v1.yaml`: native
 Python survival adapters, shared repeated nested CV, and no-HPO/default-policy
 comparison. Paired no-HPO/HPO analysis is a budget/sensitivity track represented
-by `configs/benchmark/standard_v1.yaml` or by an explicitly named future config,
+by `configs/benchmark/standard_v1.yaml` or `configs/benchmark/local_feasible_hpo_v1.yaml`,
 not by the main manuscript config.
 
-`configs/benchmark/manuscript_autogluon_v1.yaml` is an appendix AutoGluon track
-with AutoGluon-managed HPO, bagging, stacking, and refit. Foundation adapters are
-exploratory readiness checks in `configs/benchmark/smoke.yaml` and can be
-isolated with `configs/benchmark/smoke_foundation.yaml`. They run as frozen
-pretrained tabular feature extractors plus lightweight survival heads by
-default, and do not support main-paper claims until a separate manuscript-grade
-foundation config and evidence bundle are created.
+AutoGluon and foundation adapters are optional appendix/exploratory tracks in
+this checkout. They do not support main-paper claims until a separate
+manuscript-grade config and evidence bundle are created.
 
 Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`,
 `severity_levels`) control optional perturbation tracks; when disabled, only the

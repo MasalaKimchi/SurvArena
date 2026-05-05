@@ -19,7 +19,7 @@ def _synthetic_fold_results() -> pd.DataFrame:
                 "seed": 11,
                 "split_id": "repeat_0_fold_0__base",
                 "status": "success",
-                "validation_score": 0.7,
+                "validation_score": np.nan,
                 "uno_c": 0.71,
                 "harrell_c": 0.72,
                 "ibs": 0.2,
@@ -95,6 +95,7 @@ def test_runtime_failure_summary_exports_csv_and_markdown(tmp_path: Path) -> Non
     assert (tmp_path / "toy_runtime_failure_summary.md").exists()
     by_method = summary.set_index("method_id")
     assert by_method.loc["coxph", "failure_category"] == "success"
+    assert by_method.loc["coxph", "missing_metric_columns"] == ""
     assert by_method.loc["rsf", "failure_category"] == "dependency_missing"
     assert by_method.loc["rsf", "n_crashed"] == 1
     assert by_method.loc["coxnet", "failure_category"] == "missing_metrics"

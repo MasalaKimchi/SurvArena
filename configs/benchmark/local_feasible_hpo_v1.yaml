@@ -503,6 +503,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
     deepsurv_moco:
       max_trials: 1
       timeout_seconds: 75
@@ -547,6 +548,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         use_momentum_encoder: false
         momentum: 0.99
         queue_size: 128
@@ -588,6 +590,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         num_durations: 10
         duration_scheme: quantiles
     pmf:
@@ -608,6 +611,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         num_durations: 10
         duration_scheme: quantiles
     mtlr:
@@ -628,6 +632,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         num_durations: 10
         duration_scheme: quantiles
     deephit_single:
@@ -668,6 +673,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         num_durations: 10
         duration_scheme: quantiles
         alpha: 0.2
@@ -690,6 +696,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         num_durations: 10
         duration_scheme: quantiles
     cox_time:
@@ -729,6 +736,7 @@ hpo:
         batch_size: 128
         max_epochs: 50
         patience: 8
+        device: cpu
         shrink: 0.0
         log_duration: true
 decision_curve:

@@ -10,6 +10,7 @@ from torchsurv.loss.cox import neg_partial_log_likelihood
 from torchsurv.loss.momentum import Momentum
 
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.deep.batching import resolve_torch_training_device
 from survarena.methods.deep.deepsurv import _activation_cls, _parse_hidden_layers
 
 
@@ -61,10 +62,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         self.baseline_survival_: np.ndarray | None = None
 
     def _resolve_device(self) -> torch.device:
-        raw_device = str(self.params["device"])
-        if raw_device == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.device(raw_device)
+        return resolve_torch_training_device(str(self.params["device"]))
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:

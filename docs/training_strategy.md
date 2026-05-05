@@ -24,9 +24,9 @@ test rows.
 | Config | Profile | Datasets | Outer folds | Outer repeats | Inner folds | Seeds used by default | Comparison modes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
 | `configs/benchmark/smoke.yaml` | `smoke` | 6 | 2 | 1 | 2 | 1 | `no_hpo` |
-| `configs/benchmark/smoke_aft.yaml` | `smoke` | 6 | 2 | 1 | 2 | 1 | `no_hpo`, `hpo` |
 | `configs/benchmark/standard_v1.yaml` | `standard` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo`, `hpo` |
 | `configs/benchmark/manuscript_v1.yaml` | `manuscript` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo` |
+| `configs/benchmark/local_feasible_hpo_v1.yaml` | `standard` | 6 | 3 | 3 | 2 | `[11, 22, 33]` | `no_hpo`, `hpo` |
 
 Although standard and manuscript configs list five seeds, the repeated outer
 loop uses three repeats by default. That gives 15 outer splits per dataset:
@@ -172,10 +172,10 @@ locked:
 
 The shipped manuscript config is the main-paper native default/no-HPO benchmark.
 Dual-mode no-HPO/HPO comparisons are represented by `standard_v1.yaml` or by a
-new, intentionally added benchmark config and should be treated as sensitivity
-or budget-analysis evidence unless explicitly promoted. AutoGluon is separated
-into an appendix track via `manuscript_autogluon_v1.yaml`; foundation adapters
-remain exploratory under `smoke_foundation.yaml`.
+new, intentionally added benchmark config such as `local_feasible_hpo_v1.yaml`
+and should be treated as sensitivity or budget-analysis evidence unless
+explicitly promoted. AutoGluon and foundation adapters remain optional
+appendix/exploratory tracks until their configs and evidence bundles are added.
 
 Keep final benchmark YAML immutable once a run starts, and use `--resume` for
 restartable execution.

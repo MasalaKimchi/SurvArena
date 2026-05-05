@@ -60,11 +60,11 @@ Current evidence:
 
 - Six standard datasets are documented and configured: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
 - `kkbox` is configured and documented as a large/local-only track, but remains outside the ready manuscript suite until credentials, cache preparation, runtime, and dataset statistics are reproducible.
-- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, and `manuscript_v1.yaml`. Some docs/state references still mention `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, or `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
+- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, and `local_feasible_hpo_v1.yaml`. Removed docs references to absent `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, and `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
 - There are 25 method configs. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
 - Export code/tests cover fold results, leaderboards, run diagnostics, coverage matrices, runtime/failure summaries, manifests, and navigators. Checked-in run evidence is only a tiny `whas500`/`smoke`/`weibull_aft` no-HPO result with two successful folds.
 - Local milestone probe on 2026-05-04 passed environment validation, `smoke.yaml` dry-run, `manuscript_v1.yaml` dry-run, a targeted `standard_v1.yaml` dry-run, and the six-dataset native smoke matrix: 138/138 native dataset-method combinations completed with 276/276 successful folds under `results/local_milestone_probe/`.
-- Local feasible paired no-HPO/HPO benchmark on 2026-05-05 ran all six standard datasets x 23 native methods with 3 outer folds x 3 repeats/seeds x 2 modes under `results/local_feasible_hpo_v1_all/`. Final artifacts cover 138/138 dataset-method combinations, 2,484 fold rows, 2,412 successful fold rows, and plot-ready mode summaries/deltas. Six `flchain` neural adapter combinations have fold-level failures caused by PyTorch batch-normalization batches of size 1; the remaining 132 combinations have complete no-HPO/HPO fold coverage.
+- Local feasible paired no-HPO/HPO benchmark on 2026-05-05 ran all six standard datasets x 23 native methods with 3 outer folds x 3 repeats/seeds x 2 modes under `results/local_feasible_hpo_v1_all/`. Final artifacts now cover 138/138 dataset-method combinations, 2,484/2,484 successful fold rows, and plot-ready mode summaries/deltas after fixing and rerunning the `flchain` neural-adapter batch-normalization singleton-batch edge case.
 - Optional `tabpfn_survival` is not locally smoke-ready: `support` timed out after 900 seconds and the remaining dataset repeats were skipped as an optional foundation readiness blocker.
 - Dataset and method contribution guides exist.
 
@@ -75,9 +75,9 @@ Checklist:
 - [x] Main-paper native method portfolio represented in `manuscript_v1.yaml`.
 - [x] Compact artifact exporters implemented for fold results, leaderboards, diagnostics, coverage, runtime/failure, manifests, and navigators.
 - [x] Dataset and method contribution guides available.
-- [ ] Align docs/state references with actual benchmark configs, or add the missing AutoGluon/foundation/AFT configs before mentioning them as maintained tracks.
+- [x] Align docs/state references with actual benchmark configs, or add the missing AutoGluon/foundation/AFT configs before mentioning them as maintained tracks.
 - [x] Regenerate fresh smoke artifacts with the current exporter and verify coverage matrix, runtime/failure summary, manifest, navigator, and per-experiment README are emitted across the six-dataset native smoke matrix.
-- [ ] Fix or explain runtime/failure summaries marking successful no-HPO rows as `missing_metrics` when only `validation_score` is blank and primary/test metrics are present.
+- [x] Fix runtime/failure summaries so successful no-HPO rows are not marked `missing_metrics` only because `validation_score` is blank while primary/test metrics are present.
 - [x] Produce an actual dataset-method-mode coverage matrix from fresh artifacts across all six standard datasets and manuscript methods.
 - [x] Produce a method coverage/status table with successes, failures, missing metrics, runtime, memory, and artifact paths.
 - [ ] Add or identify a manuscript report generator that reads `results/summary/...` and emits paper-ready tables for datasets, methods, metrics, ranks, CIs, pairwise tests, failures, and runtime.
@@ -87,21 +87,19 @@ Checklist:
 
 Remaining blockers:
 
-- Full local feasible paired no-HPO/HPO artifacts now exist for the six-dataset native suite, but six `flchain` neural adapter combinations have fold-level batch-normalization failures and should be fixed or explicitly excluded before manuscript claims.
+- Full local feasible paired no-HPO/HPO artifacts now exist for the six-dataset native suite with no failed fold rows after rerunning the six affected `flchain` neural adapter combinations.
 - No checked-in manuscript report artifact or obvious source generator is present for final paper tables.
-- Benchmark config references are inconsistent across project state/docs versus `configs/benchmark/`.
-- Current result evidence includes smoke-scale native coverage plus a local feasible paired no-HPO/HPO benchmark. It supports exporter/config/runtime assessment and preliminary HPO-vs-default analysis, but still needs failure cleanup and manuscript table generation before final claims.
+- Benchmark config references are now aligned across README/docs/project state versus `configs/benchmark/`.
+- Current result evidence includes smoke-scale native coverage plus a complete local feasible paired no-HPO/HPO benchmark. It supports exporter/config/runtime assessment and preliminary HPO-vs-default analysis, but still needs manuscript table generation before final claims.
 - Optional `tabpfn_survival` timed out locally and should stay out of default smoke/manuscript claims until readiness is improved or the benchmark contract gives it a bounded budget.
-- Runtime/failure summaries currently risk false-negative dashboard signals for no-HPO runs because blank `validation_score` is counted as a missing metric.
+- Runtime/failure summaries no longer treat blank no-HPO `validation_score` as a missing metric; remaining missing-metric signals should reflect benchmark/test metrics.
 - KKBox, AutoGluon, and foundation paths should remain optional/appendix/exploratory until dedicated configs and evidence are restored or added.
 
 Targeted experiments needed, in order:
 
-1. Fix or document the no-HPO `validation_score` missing-metric behavior before trusting runtime/failure dashboards.
-2. Fix the `flchain` neural adapter batch-normalization edge case, or add an explicit batch/drop-last/minibatch policy and rerun the six affected combinations.
-3. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
-4. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
-5. Add separate appendix-track experiments for AutoGluon, foundation adapters, or KKBox only after their configs and readiness checks are aligned.
+1. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
+2. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
+3. Add separate appendix-track experiments for AutoGluon, foundation adapters, or KKBox only after their configs and readiness checks are aligned.
 
 Exit criteria:
 

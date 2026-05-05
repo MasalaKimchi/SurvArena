@@ -340,6 +340,12 @@ def _failure_category(*, status: str, missing_metric_count: int, detail: dict[st
     return "unknown_failure"
 
 
+def _runtime_metric_columns_for_row(row: pd.Series, metric_cols: list[str]) -> list[str]:
+    if str(row.get("hpo_mode", "") or "").lower() == "no_hpo":
+        return [col for col in metric_cols if col != "validation_score"]
+    return metric_cols
+
+
 def _runtime_failure_rows(
     fold_results: pd.DataFrame,
     *,
@@ -380,7 +386,8 @@ def _runtime_failure_rows(
         repeat, fold = _parse_split_geometry(split_id)
         detail = details_by_key.get((dataset_id, method_id, hpo_mode, seed, split_id), {})
         status = str(row.get("status", "") or "").lower()
-        missing_metric_columns = [col for col in metric_cols if pd.isna(row.get(col))]
+        expected_metric_cols = _runtime_metric_columns_for_row(row, metric_cols)
+        missing_metric_columns = [col for col in expected_metric_cols if pd.isna(row.get(col))]
         category = _failure_category(
             status=status,
             missing_metric_count=len(missing_metric_columns),

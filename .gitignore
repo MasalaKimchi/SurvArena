@@ -20,6 +20,7 @@ __pycache__/
 .coverage.*
 htmlcov/
 catboost_info/
+weight_checkpoint_*.pt
 
 # Keep only placeholder data directories in git; local datasets and split artifacts stay untracked.
 data/raw/**

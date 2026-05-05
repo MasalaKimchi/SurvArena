@@ -9,6 +9,7 @@ from torch import nn
 from torchsurv.loss.cox import neg_partial_log_likelihood
 
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
 
 
 def _parse_hidden_layers(value: Any) -> list[int]:
@@ -67,10 +68,7 @@ class DeepSurvMethod(BaseSurvivalMethod):
         self.baseline_survival_: np.ndarray | None = None
 
     def _resolve_device(self) -> torch.device:
-        raw_device = str(self.params["device"])
-        if raw_device == "auto":
-            return torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        return torch.device(raw_device)
+        return resolve_torch_training_device(str(self.params["device"]))
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
@@ -170,7 +168,11 @@ class DeepSurvMethod(BaseSurvivalMethod):
             lr=float(self.params["lr"]),
             weight_decay=float(self.params["weight_decay"]),
         )
-        batch_size = int(self.params["batch_size"])
+        batch_size = batch_norm_safe_batch_size(
+            len(X_train_t),
+            int(self.params["batch_size"]),
+            batch_norm=bool(self.params["batch_norm"]),
+        )
         max_epochs = int(self.params["max_epochs"])
         patience = int(self.params["patience"])
 

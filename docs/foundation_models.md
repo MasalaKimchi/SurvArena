@@ -8,8 +8,9 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
 - predictor access: `presets="foundation"`, `presets="all"`, or `enable_foundation_models=True`
-- benchmark smoke access: `configs/benchmark/smoke.yaml` includes foundation adapters,
-  and `configs/benchmark/smoke_foundation.yaml` isolates them for quicker checks
+- benchmark access: no maintained foundation benchmark config is present in this
+  checkout; keep foundation adapters out of smoke, manuscript, and local
+  feasible HPO claims until a bounded config and evidence bundle are added
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
 
 TabPFN note:

@@ -10,9 +10,11 @@ import sys
 import numpy as np
 import pandas as pd
 import pytest
+import torch
 
 from survarena.methods.registry import get_method_class, registered_method_ids
 from survarena.config import read_yaml
+from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
 
 
 def _toy_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
@@ -27,6 +29,22 @@ def _toy_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarr
         event[:36].astype(np.int32),
         X[36:].astype(np.float64),
     )
+
+
+def test_batch_norm_safe_batch_size_avoids_singleton_final_batches() -> None:
+    assert batch_norm_safe_batch_size(577, 64, batch_norm=True) == 63
+    assert batch_norm_safe_batch_size(65, 64, batch_norm=True) == 65
+    assert batch_norm_safe_batch_size(577, 64, batch_norm=False) == 64
+    assert batch_norm_safe_batch_size(64, 128, batch_norm=True) == 64
+
+
+def test_resolve_torch_training_device_keeps_mac_local_deep_training_on_cpu(monkeypatch) -> None:
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    assert str(resolve_torch_training_device("auto")) == "cpu"
+    assert str(resolve_torch_training_device("cpu")) == "cpu"
+    with pytest.raises(ValueError, match="MPS is not supported"):
+        resolve_torch_training_device("mps")
 
 
 def test_registered_method_ids_include_new_survival_adapters() -> None:

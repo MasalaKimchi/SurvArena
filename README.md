@@ -122,6 +122,27 @@ The environment check reports the active Python executable, virtual environment
 status, core imports, optional foundation imports, foundation runtime readiness,
 and smoke checks for the `torchsurv` metrics used by SurvArena.
 
+### Local Reference Machine
+
+The bundled `configs/benchmark/local_feasible_hpo_v1.yaml` profile is calibrated
+for the local MacBook used for the current feasibility run:
+
+- MacBook Pro, Mac15,6
+- Apple M3 Pro, 11 CPU cores (5 performance, 6 efficiency)
+- 14-core integrated Apple GPU with Metal support
+- 18 GB unified memory
+- macOS 26.3.1
+- Python 3.12.2 in `.venv`
+- PyTorch 2.2.2, `torch.backends.mps.is_available() == True`,
+  `torch.cuda.is_available() == False`
+
+For manuscript-grade local ELO construction on this machine, use CPU defaults.
+The deep survival adapters resolve `device: auto` to CUDA when available and CPU
+otherwise; they do not auto-select Apple MPS. A direct MPS probe of
+`torchsurv.loss.cox.neg_partial_log_likelihood` fails on this environment
+because PyTorch MPS does not implement `aten::_logcumsumexp`, so Cox-loss neural
+training remains CPU-only here.
+
 ### First Smoke Run
 
 After setup, start with commands that check the benchmark wiring before running
@@ -323,7 +344,7 @@ require their documented extras and readiness checks before long runs.
 | `deephit_single` | DeepHit single-risk model | Deep learning | `pycox` | Smoke, manuscript |
 | `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Smoke, manuscript |
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `autogluon_survival` | AutoGluon event-risk survival adapter | AutoML | `autogluon.tabular` | `manuscript_autogluon_v1` |
+| `autogluon_survival` | AutoGluon event-risk survival adapter | AutoML | `autogluon.tabular` | Optional appendix runs |
 | `tabpfn_survival` | TabPFN embedding survival head | Foundation | `tabpfn` + `scikit-survival` | Optional foundation runs |
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
@@ -454,7 +475,6 @@ For a first benchmark run, use `configs/benchmark/smoke.yaml` with `--dataset`,
 The unscoped smoke config is still small relative to standard/manuscript runs,
 but it covers all six standard built-in datasets and every manuscript default
 method.
-For remote execution through Codex, see [Cloud Runs Through Codex](CLOUD_RUN.md).
 
 Tracked benchmark configs:
 
@@ -462,20 +482,12 @@ Tracked benchmark configs:
   DeepSurv) on the six built-in standard datasets, repeated nested CV
 - `configs/benchmark/manuscript_v1.yaml`: main-paper native manuscript
   portfolio, repeated nested CV, no-HPO/default-policy only
-- `configs/benchmark/manuscript_autogluon_v1.yaml`: appendix AutoGluon track
-  with AutoGluon-managed HPO, bagging, stacking, and refit
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
-  standard built-in datasets, including optional frozen-backbone foundation
-  adapters (CI and `scripts/validate_benchmark_protocol.sh`)
-- `configs/benchmark/smoke_foundation.yaml`: isolated foundation-readiness smoke
-  track for exploratory optional foundation adapters; not part of main-paper
-  claims unless separately promoted
-- `configs/benchmark/smoke_all_models_30min.yaml`: single-dataset all-model
-  smoke with paired no-HPO and one-trial HPO tracks, including foundation
-  adapters
-- `configs/benchmark/smoke_aft.yaml`: AFT-only smoke across all standard
-  built-in datasets with paired no-HPO and minimal HPO tracks; use
-  `scripts/run_smoke_aft_all_datasets.sh` when checking AFT adapter stability
+  standard built-in datasets and native manuscript methods
+- `configs/benchmark/local_feasible_hpo_v1.yaml`: MacBook-local native
+  feasibility profile with paired `no_hpo` and bounded `hpo` tracks across the
+  six standard datasets; foundation and AutoGluon adapters are intentionally
+  excluded
 
 To evaluate a **single method** (for example one cloud worker per method), use
 `--method` and optionally `--dataset` with `standard_v1.yaml` or
@@ -630,7 +642,6 @@ python -m pip install -r requirements.txt
 - [AutoGluon comparison notes](docs/autogluon_comparison.md)
 - [Foundation models roadmap](docs/foundation_models.md)
 - [Benchmarking workflow](docs/benchmarking_workflow.md)
-- [Cloud runs through Codex](CLOUD_RUN.md)
 
 ## License
 
