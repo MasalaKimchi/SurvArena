@@ -147,6 +147,62 @@ def test_dual_mode_execution_order_is_no_hpo_then_hpo(tmp_path: Path, monkeypatc
     assert observed_modes == ["no_hpo", "hpo"]
 
 
+def test_method_hpo_overrides_are_applied_per_method(tmp_path: Path, monkeypatch) -> None:
+    captured_run_records: list[dict[str, Any]] = []
+    _patch_runner_dependencies(monkeypatch, captured_run_records)
+    observed: list[dict[str, Any]] = []
+    cfg = _base_cfg()
+    cfg["hpo"]["method_overrides"] = {
+        "coxph": {
+            "max_trials": 2,
+            "timeout_seconds": 15,
+            "sampler": "random",
+            "pruner": "none",
+            "n_startup_trials": 1,
+            "default_params": {"alpha": 0.01},
+            "search_space": {"alpha": {"type": "categorical", "choices": [0.01, 0.1]}},
+        }
+    }
+
+    def fake_evaluate_split(**kwargs) -> dict[str, Any]:
+        observed.append(
+            {
+                "enabled": bool(kwargs["hpo_cfg"].get("enabled")),
+                "max_trials": kwargs["hpo_cfg"].get("max_trials"),
+                "timeout_seconds": kwargs["hpo_cfg"].get("timeout_seconds"),
+                "default_params": kwargs["method_cfg"].get("default_params"),
+                "search_space": kwargs["method_cfg"].get("search_space"),
+            }
+        )
+        return {
+            "run_payload": {
+                "manifest": {"run_id": "toy_dataset_coxph_fixed_split_0_seed11"},
+                "metrics": {"status": "success"},
+                "hpo_metadata": {"status": "disabled", "trial_count": 0},
+                "hpo_trials": [],
+                "failure": None,
+            },
+            "benchmark_id": kwargs["benchmark_id"],
+            "dataset_id": kwargs["dataset_id"],
+            "method_id": kwargs["method_id"],
+            "split_id": kwargs["split"].split_id,
+            "seed": kwargs["split"].seed,
+            "primary_metric": kwargs["primary_metric"],
+            "harrell_c": 0.78,
+            "status": "success",
+        }
+
+    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", fake_evaluate_split)
+
+    run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path / "outputs")
+
+    assert [row["enabled"] for row in observed] == [False, True]
+    assert all(row["max_trials"] == 2 for row in observed)
+    assert all(row["timeout_seconds"] == 15 for row in observed)
+    assert all(row["default_params"] == {"alpha": 0.01} for row in observed)
+    assert all(row["search_space"] == {"alpha": {"type": "categorical", "choices": [0.01, 0.1]}} for row in observed)
+
+
 def test_missing_mode_marks_pairing_unit_ineligible(tmp_path: Path, monkeypatch) -> None:
     captured_run_records: list[dict[str, Any]] = []
     _patch_runner_dependencies(monkeypatch, captured_run_records)

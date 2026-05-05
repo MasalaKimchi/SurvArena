@@ -12,9 +12,9 @@ Paper framing: SurvArena is a reproducible benchmarking framework for tabular su
 
 Ready-to-run datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
 
-Large-track/future dataset candidate: `kkbox`, currently present as a local-loader placeholder rather than a ready manuscript dataset.
+Large-track/future dataset candidate: `kkbox`, currently configured as a local-only dataset path rather than a ready manuscript dataset.
 
-Maintained benchmark configs include `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `manuscript_autogluon_v1.yaml`, and `smoke_foundation.yaml`.
+Maintained benchmark configs currently present in this checkout are `smoke.yaml`, `standard_v1.yaml`, and `manuscript_v1.yaml`. AutoGluon, foundation, and KKBox tracks should remain optional until their configs and evidence bundles are restored or added.
 
 ## Method Coverage
 
@@ -54,4 +54,58 @@ Each weekly update should include implemented changes, benchmark evidence, paper
 
 Milestone: SurvArena v0.1 manuscript benchmark readiness.
 
-Exit criteria: dataset coverage matrix, method coverage matrix, experiment registry, manuscript report generator, leakage/preprocessing audit export, runtime/failure summary, reproducible smoke benchmark validation, reproducible standard benchmark validation, paper-ready dataset table, paper-ready method taxonomy table, and contribution guides.
+Status: not manuscript-ready yet. The framework and export plumbing are close, but the repository does not yet contain a current full evidence bundle that supports paper claims.
+
+Current evidence:
+
+- Six standard datasets are documented and configured: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
+- `kkbox` is configured and documented as a large/local-only track, but remains outside the ready manuscript suite until credentials, cache preparation, runtime, and dataset statistics are reproducible.
+- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, and `manuscript_v1.yaml`. Some docs/state references still mention `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, or `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
+- There are 25 method configs. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
+- Export code/tests cover fold results, leaderboards, run diagnostics, coverage matrices, runtime/failure summaries, manifests, and navigators. Checked-in run evidence is only a tiny `whas500`/`smoke`/`weibull_aft` no-HPO result with two successful folds.
+- Local milestone probe on 2026-05-04 passed environment validation, `smoke.yaml` dry-run, `manuscript_v1.yaml` dry-run, a targeted `standard_v1.yaml` dry-run, and the six-dataset native smoke matrix: 138/138 native dataset-method combinations completed with 276/276 successful folds under `results/local_milestone_probe/`.
+- Local feasible paired no-HPO/HPO benchmark on 2026-05-05 ran all six standard datasets x 23 native methods with 3 outer folds x 3 repeats/seeds x 2 modes under `results/local_feasible_hpo_v1_all/`. Final artifacts cover 138/138 dataset-method combinations, 2,484 fold rows, 2,412 successful fold rows, and plot-ready mode summaries/deltas. Six `flchain` neural adapter combinations have fold-level failures caused by PyTorch batch-normalization batches of size 1; the remaining 132 combinations have complete no-HPO/HPO fold coverage.
+- Optional `tabpfn_survival` is not locally smoke-ready: `support` timed out after 900 seconds and the remaining dataset repeats were skipped as an optional foundation readiness blocker.
+- Dataset and method contribution guides exist.
+
+Checklist:
+
+- [x] Core benchmark protocol documented around shared splits, train-side preprocessing, seeded runs, no-HPO/HPO governance, compact artifacts, and manifests.
+- [x] Standard six-dataset suite documented and represented in benchmark YAML.
+- [x] Main-paper native method portfolio represented in `manuscript_v1.yaml`.
+- [x] Compact artifact exporters implemented for fold results, leaderboards, diagnostics, coverage, runtime/failure, manifests, and navigators.
+- [x] Dataset and method contribution guides available.
+- [ ] Align docs/state references with actual benchmark configs, or add the missing AutoGluon/foundation/AFT configs before mentioning them as maintained tracks.
+- [x] Regenerate fresh smoke artifacts with the current exporter and verify coverage matrix, runtime/failure summary, manifest, navigator, and per-experiment README are emitted across the six-dataset native smoke matrix.
+- [ ] Fix or explain runtime/failure summaries marking successful no-HPO rows as `missing_metrics` when only `validation_score` is blank and primary/test metrics are present.
+- [x] Produce an actual dataset-method-mode coverage matrix from fresh artifacts across all six standard datasets and manuscript methods.
+- [x] Produce a method coverage/status table with successes, failures, missing metrics, runtime, memory, and artifact paths.
+- [ ] Add or identify a manuscript report generator that reads `results/summary/...` and emits paper-ready tables for datasets, methods, metrics, ranks, CIs, pairwise tests, failures, and runtime.
+- [ ] Add a preprocessing/split audit export proving train-only preprocessing and shared split reuse for the final run bundle.
+- [ ] Validate one reproducible smoke benchmark run and one standard/manuscript-shaped pilot after exporter/config alignment.
+- [ ] Decide whether calibration, net benefit, AutoGluon, foundation models, HPO, or KKBox appear in the manuscript, appendix, or limitations only; require separate evidence bundles for any promoted claim.
+
+Remaining blockers:
+
+- Full local feasible paired no-HPO/HPO artifacts now exist for the six-dataset native suite, but six `flchain` neural adapter combinations have fold-level batch-normalization failures and should be fixed or explicitly excluded before manuscript claims.
+- No checked-in manuscript report artifact or obvious source generator is present for final paper tables.
+- Benchmark config references are inconsistent across project state/docs versus `configs/benchmark/`.
+- Current result evidence includes smoke-scale native coverage plus a local feasible paired no-HPO/HPO benchmark. It supports exporter/config/runtime assessment and preliminary HPO-vs-default analysis, but still needs failure cleanup and manuscript table generation before final claims.
+- Optional `tabpfn_survival` timed out locally and should stay out of default smoke/manuscript claims until readiness is improved or the benchmark contract gives it a bounded budget.
+- Runtime/failure summaries currently risk false-negative dashboard signals for no-HPO runs because blank `validation_score` is counted as a missing metric.
+- KKBox, AutoGluon, and foundation paths should remain optional/appendix/exploratory until dedicated configs and evidence are restored or added.
+
+Targeted experiments needed, in order:
+
+1. Fix or document the no-HPO `validation_score` missing-metric behavior before trusting runtime/failure dashboards.
+2. Fix the `flchain` neural adapter batch-normalization edge case, or add an explicit batch/drop-last/minibatch policy and rerun the six affected combinations.
+3. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
+4. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
+5. Add separate appendix-track experiments for AutoGluon, foundation adapters, or KKBox only after their configs and readiness checks are aligned.
+
+Exit criteria:
+
+- Fresh artifact bundle covers all promoted datasets, methods, modes, seeds, and split geometry.
+- Dataset coverage matrix, method coverage matrix, runtime/failure summary, and preprocessing/split audit are generated from the final artifacts.
+- Manuscript report tables are reproducible from `results/summary/...` without manual spreadsheet work.
+- Claims about HPO, calibration, net benefit, AutoGluon, foundation models, or KKBox are either backed by targeted evidence or explicitly scoped as future/appendix/limitations.

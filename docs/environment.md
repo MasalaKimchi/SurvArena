@@ -23,6 +23,7 @@ Useful overrides:
 - `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,kkbox ./scripts/setup_env.sh`
 
 ## Manual Setup
 
@@ -40,6 +41,21 @@ Optional foundation extras:
 python -m pip install -e ".[foundation]"
 python scripts/check_environment.py --include-foundation
 survarena foundation-check
+```
+
+Optional KKBox downloader extras:
+
+```bash
+python -m pip install -e ".[kkbox]"
+```
+
+KKBox data still requires Kaggle credentials and competition access. Create a
+Kaggle API token at `~/.kaggle/kaggle.json`, accept the
+`kkbox-churn-prediction-challenge` terms on Kaggle, then run:
+
+```bash
+chmod 600 ~/.kaggle/kaggle.json
+python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
 ```
 
 ## What the Check Covers

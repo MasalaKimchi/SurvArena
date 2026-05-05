@@ -14,13 +14,28 @@ User datasets can also be passed directly to `SurvivalPredictor.fit(...)` or
 | `gbsg2` | Standard | 686 | 8 | 56.41% | scikit-survival | Compact clinical benchmark. |
 | `flchain` | Standard | 7,874 | 9 | 27.55% | scikit-survival | Heavy censoring. |
 | `whas500` | Standard | 500 | 14 | 43.00% | scikit-survival | Small cardiovascular cohort. |
-| `kkbox` | Large | N/A | N/A | N/A | custom | Placeholder large-scale track requiring a local loader. |
+| `kkbox` | Large | N/A | N/A | N/A | pycox/Kaggle | Large-scale local-cache dataset prepared through pycox with Kaggle credentials. |
 
 ## Notes
 
 - counts reflect the current built-in loaders
 - event rate is `events / rows`
-- `kkbox` is config-only today and is not shipped as a ready-made local dataset
+- `kkbox` is not shipped as a ready-made local dataset; prepare the pycox KKBox cache with Kaggle credentials before use
+
+## KKBox Download
+
+KKBox requires the optional downloader dependencies and Kaggle credentials:
+
+```bash
+python -m pip install -e ".[kkbox]"
+chmod 600 ~/.kaggle/kaggle.json
+python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
+python -c "from pathlib import Path; from survarena.data.loaders import load_dataset; print(load_dataset('kkbox', Path.cwd()).X.shape)"
+```
+
+Before running the download command, create a Kaggle API token at
+`~/.kaggle/kaggle.json` and accept the `kkbox-churn-prediction-challenge` terms
+from the Kaggle website.
 
 ## Dataset Metadata
 

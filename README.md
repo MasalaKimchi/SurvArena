@@ -80,9 +80,10 @@ PYTHON_BIN=python3.12 ./scripts/setup_env.sh
 # Use a different virtual environment directory.
 VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 
-# Install optional foundation-model extras.
+# Install optional foundation-model or KKBox extras.
 INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-tabpfn PYTHON_BIN=python3.11 ./scripts/setup_env.sh
+INSTALL_EXTRAS=dev,kkbox PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 ```
 
 ### Manual Setup
@@ -250,9 +251,34 @@ readers can trace each dataset back to the upstream survival-analysis ecosystem.
 | `flchain` | FLCHAIN | `scikit-survival` | 7,874 | 9 | 27.55% | Serum free light chain dataset with heavier censoring. |
 | `whas500` | WHAS500 | `scikit-survival` | 500 | 14 | 43.00% | Worcester Heart Attack Study 500 benchmark. |
 
-`kkbox` is also present as a large-track dataset config, but it is a
-local-loader placeholder today and is not part of the ready-to-run standard or
-manuscript benchmark suites unless a local KKBox loader is provided.
+`kkbox` is also present as a large-track dataset config. It is loaded from the
+local pycox KKBox cache, which must first be prepared with Kaggle credentials,
+and remains outside the ready-to-run standard and manuscript benchmark suites.
+
+### KKBox Setup
+
+KKBox is not bundled with SurvArena or pycox. It is derived from Kaggle's
+`kkbox-churn-prediction-challenge` files and must be downloaded into pycox's
+local cache before `load_dataset("kkbox", ...)` can work.
+
+```bash
+# Install optional downloader/extractor dependencies.
+python -m pip install -e ".[kkbox]"
+
+# In Kaggle: create an API token, place it at ~/.kaggle/kaggle.json,
+# accept the KKBox competition terms, then lock down the token file.
+chmod 600 ~/.kaggle/kaggle.json
+
+# Prepare pycox's local KKBox cache.
+python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
+
+# Verify SurvArena can load it.
+python -c "from pathlib import Path; from survarena.data.loaders import load_dataset; d = load_dataset('kkbox', Path.cwd()); print(d.X.shape, int(d.event.sum()))"
+```
+
+If the verification command reports that KKBox is not locally available, check
+that the Kaggle token is present, the Kaggle account has accepted the competition
+terms, and the download command completed without errors.
 
 ## Presets and Models
 

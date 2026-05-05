@@ -43,6 +43,10 @@ foundation = [
     "torchvision==0.17.2",
     "tabpfn==6.2.0",
 ]
+kkbox = [
+    "kaggle>=2.1,<3",
+    "py7zr>=1.1,<2",
+]
 tracking = [
     "mlflow==3.10.1",
     "wandb==0.23.0",

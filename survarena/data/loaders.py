@@ -67,10 +67,32 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
-def _load_kkbox_placeholder() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    raise NotImplementedError(
-        "KKBox loader is a Large v1 placeholder. Add a custom loader that reads local data files."
-    )
+def _read_kkbox_pycox_frame() -> pd.DataFrame | None:
+    from pycox.datasets import kkbox
+
+    return kkbox.read_df(log_trans=True, no_covs=False)
+
+
+def _load_kkbox_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    frame = _read_kkbox_pycox_frame()
+    if frame is None:
+        raise FileNotFoundError(
+            "KKBox data is not locally available in the pycox cache. "
+            "Prepare it with pycox.datasets.kkbox.download_kkbox() after configuring Kaggle credentials, "
+            "then rerun SurvArena."
+        )
+
+    required_columns = {"event", "duration"}
+    missing_columns = required_columns.difference(frame.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"KKBox pycox frame is missing required column(s): {missing}")
+
+    event = frame["event"].to_numpy(dtype=np.int32)
+    time = frame["duration"].to_numpy(dtype=np.float64)
+    drop_columns = ["event", "duration", "censor_duration", "msno"]
+    X = frame.drop(columns=[column for column in drop_columns if column in frame.columns])
+    return X, time, event
 
 
 def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
@@ -83,7 +105,7 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),
         "whas500": lambda: _load_from_sksurv("whas500"),
-        "kkbox": _load_kkbox_placeholder,
+        "kkbox": _load_kkbox_pycox,
     }
     if dataset_id not in loaders:
         raise ValueError(f"Unknown dataset_id: {dataset_id}")

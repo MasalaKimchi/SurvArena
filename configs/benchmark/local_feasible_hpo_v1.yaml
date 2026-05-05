@@ -1,0 +1,785 @@
+benchmark_id: local_feasible_hpo_v1
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 3
+outer_repeats: 3
+inner_folds: 2
+seeds:
+- 11
+- 22
+- 33
+primary_metric: uno_c
+profile: standard
+comparison_modes:
+- no_hpo
+- hpo
+secondary_metrics:
+- harrell_c
+- ibs
+- td_auc
+execution:
+  n_jobs: 1
+autogluon:
+  enabled: false
+  presets: medium
+  time_limit_seconds: null
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+hpo:
+  enabled: true
+  max_trials: 2
+  timeout_seconds: 90
+  sampler: random
+  pruner: none
+  n_startup_trials: 1
+  method_overrides:
+    coxph:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        alpha:
+          type: categorical
+          choices:
+          - 0.1
+          - 1.0
+          - 10.0
+      default_params:
+        alpha: 1.0
+    coxnet:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        alpha:
+          type: categorical
+          choices:
+          - 0.01
+          - 0.1
+          - 1.0
+        l1_ratio:
+          type: categorical
+          choices:
+          - 0.1
+          - 0.5
+          - 0.9
+      default_params:
+        alpha: 0.01
+        l1_ratio: 0.5
+    weibull_aft:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: &id001
+        penalizer:
+          type: categorical
+          choices:
+          - 0.0
+          - 0.001
+          - 0.01
+        l1_ratio:
+          type: categorical
+          choices:
+          - 0.0
+          - 0.5
+        fit_intercept:
+          type: categorical
+          choices:
+          - true
+        model_ancillary:
+          type: categorical
+          choices:
+          - false
+    lognormal_aft:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: *id001
+    loglogistic_aft:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: *id001
+    aalen_additive:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        coef_penalizer:
+          type: categorical
+          choices:
+          - 0.0
+          - 0.01
+        smoothing_penalizer:
+          type: categorical
+          choices:
+          - 0.0
+          - 0.01
+        fit_intercept:
+          type: categorical
+          choices:
+          - true
+    fast_survival_svm:
+      max_trials: 3
+      timeout_seconds: 45
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        alpha:
+          type: categorical
+          choices:
+          - 0.01
+          - 0.1
+          - 1.0
+        rank_ratio:
+          type: categorical
+          choices:
+          - 0.5
+          - 1.0
+        fit_intercept:
+          type: categorical
+          choices:
+          - true
+        max_iter:
+          type: categorical
+          choices:
+          - 100
+          - 300
+        tol:
+          type: categorical
+          choices:
+          - 0.001
+    rsf:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        n_estimators:
+          type: categorical
+          choices:
+          - 50
+          - 100
+        max_depth:
+          type: categorical
+          choices:
+          - null
+          - 6
+          - 12
+        min_samples_split:
+          type: categorical
+          choices:
+          - 4
+          - 12
+        min_samples_leaf:
+          type: categorical
+          choices:
+          - 2
+          - 6
+        max_features:
+          type: categorical
+          choices:
+          - sqrt
+          - log2
+    extra_survival_trees:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        n_estimators:
+          type: categorical
+          choices:
+          - 50
+          - 100
+        max_depth:
+          type: categorical
+          choices:
+          - null
+          - 6
+          - 12
+        min_samples_split:
+          type: categorical
+          choices:
+          - 4
+          - 12
+        min_samples_leaf:
+          type: categorical
+          choices:
+          - 2
+          - 6
+        max_features:
+          type: categorical
+          choices:
+          - sqrt
+          - log2
+        bootstrap:
+          type: categorical
+          choices:
+          - false
+    gradient_boosting_survival:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate:
+          type: categorical
+          choices:
+          - 0.03
+          - 0.1
+        n_estimators:
+          type: categorical
+          choices:
+          - 50
+          - 100
+        subsample:
+          type: categorical
+          choices:
+          - 0.8
+          - 1.0
+        min_samples_split:
+          type: categorical
+          choices:
+          - 4
+          - 12
+        min_samples_leaf:
+          type: categorical
+          choices:
+          - 2
+          - 6
+        max_depth:
+          type: categorical
+          choices:
+          - 2
+          - 4
+        max_features:
+          type: categorical
+          choices:
+          - sqrt
+        dropout_rate:
+          type: categorical
+          choices:
+          - 0.0
+    componentwise_gradient_boosting:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate:
+          type: categorical
+          choices:
+          - 0.03
+          - 0.1
+        n_estimators:
+          type: categorical
+          choices:
+          - 50
+          - 100
+        subsample:
+          type: categorical
+          choices:
+          - 0.8
+          - 1.0
+        dropout_rate:
+          type: categorical
+          choices:
+          - 0.0
+    xgboost_cox:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate: &id002
+          type: categorical
+          choices:
+          - 0.03
+          - 0.1
+        n_estimators: &id003
+          type: categorical
+          choices:
+          - 50
+          - 100
+        max_depth: &id004
+          type: categorical
+          choices:
+          - 2
+          - 4
+        min_child_weight: &id005
+          type: categorical
+          choices:
+          - 1
+          - 5
+        subsample: &id006
+          type: categorical
+          choices:
+          - 0.8
+        colsample_bytree: &id007
+          type: categorical
+          choices:
+          - 0.8
+        reg_lambda: &id008
+          type: categorical
+          choices:
+          - 1.0
+          - 5.0
+        reg_alpha: &id009
+          type: categorical
+          choices:
+          - 0.0
+          - 0.1
+    xgboost_aft:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate: *id002
+        n_estimators: *id003
+        max_depth: *id004
+        min_child_weight: *id005
+        subsample: *id006
+        colsample_bytree: *id007
+        reg_lambda: *id008
+        reg_alpha: *id009
+        aft_loss_distribution:
+          type: categorical
+          choices:
+          - normal
+          - logistic
+        aft_loss_distribution_scale:
+          type: categorical
+          choices:
+          - 1.0
+    catboost_cox:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate: &id010
+          type: categorical
+          choices:
+          - 0.03
+          - 0.1
+        iterations: &id011
+          type: categorical
+          choices:
+          - 50
+          - 100
+        depth: &id012
+          type: categorical
+          choices:
+          - 3
+          - 5
+        l2_leaf_reg: &id013
+          type: categorical
+          choices:
+          - 3.0
+          - 10.0
+        random_strength: &id014
+          type: categorical
+          choices:
+          - 1.0
+        rsm: &id015
+          type: categorical
+          choices:
+          - 0.8
+        subsample: &id016
+          type: categorical
+          choices:
+          - 0.8
+        min_data_in_leaf: &id017
+          type: categorical
+          choices:
+          - 10
+          - 30
+    catboost_survival_aft:
+      max_trials: 2
+      timeout_seconds: 120
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        learning_rate: *id010
+        iterations: *id011
+        depth: *id012
+        l2_leaf_reg: *id013
+        random_strength: *id014
+        rsm: *id015
+        subsample: *id016
+        min_data_in_leaf: *id017
+        dist:
+          type: categorical
+          choices:
+          - Normal
+          - Logistic
+        scale:
+          type: categorical
+          choices:
+          - 1.0
+    deepsurv:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        hidden_layers: &id018
+          type: categorical
+          choices:
+          - '64'
+          - 128-64
+        activation: &id019
+          type: categorical
+          choices:
+          - relu
+        dropout: &id020
+          type: categorical
+          choices:
+          - 0.0
+          - 0.1
+        batch_norm: &id021
+          type: categorical
+          choices:
+          - true
+        optimizer: &id022
+          type: categorical
+          choices:
+          - adamw
+        lr: &id023
+          type: categorical
+          choices:
+          - 0.001
+          - 0.002
+        weight_decay: &id024
+          type: categorical
+          choices:
+          - 0.0001
+        batch_size: &id025
+          type: categorical
+          choices:
+          - 128
+        max_epochs: &id026
+          type: categorical
+          choices:
+          - 50
+        patience: &id027
+          type: categorical
+          choices:
+          - 8
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+    deepsurv_moco:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        hidden_layers: *id018
+        activation: *id019
+        dropout: *id020
+        batch_norm: *id021
+        optimizer: *id022
+        lr: *id023
+        weight_decay: *id024
+        batch_size: *id025
+        max_epochs: *id026
+        patience: *id027
+        use_momentum_encoder:
+          type: categorical
+          choices:
+          - false
+        momentum:
+          type: categorical
+          choices:
+          - 0.99
+        queue_size:
+          type: categorical
+          choices:
+          - 128
+        temperature:
+          type: categorical
+          choices:
+          - 0.1
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        use_momentum_encoder: false
+        momentum: 0.99
+        queue_size: 128
+        temperature: 0.1
+    logistic_hazard:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: &id028
+        hidden_layers: *id018
+        activation: *id019
+        dropout: *id020
+        batch_norm: *id021
+        optimizer: *id022
+        lr: *id023
+        weight_decay: *id024
+        batch_size: *id025
+        max_epochs: *id026
+        patience: *id027
+        num_durations: &id029
+          type: categorical
+          choices:
+          - 10
+          - 20
+        duration_scheme: &id030
+          type: categorical
+          choices:
+          - quantiles
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        num_durations: 10
+        duration_scheme: quantiles
+    pmf:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: *id028
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        num_durations: 10
+        duration_scheme: quantiles
+    mtlr:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: *id028
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        num_durations: 10
+        duration_scheme: quantiles
+    deephit_single:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        hidden_layers: *id018
+        activation: *id019
+        dropout: *id020
+        batch_norm: *id021
+        optimizer: *id022
+        lr: *id023
+        weight_decay: *id024
+        batch_size: *id025
+        max_epochs: *id026
+        patience: *id027
+        num_durations: *id029
+        duration_scheme: *id030
+        alpha:
+          type: categorical
+          choices:
+          - 0.2
+        sigma:
+          type: categorical
+          choices:
+          - 0.1
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        num_durations: 10
+        duration_scheme: quantiles
+        alpha: 0.2
+        sigma: 0.1
+    pchazard:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space: *id028
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        num_durations: 10
+        duration_scheme: quantiles
+    cox_time:
+      max_trials: 1
+      timeout_seconds: 75
+      sampler: random
+      pruner: none
+      n_startup_trials: 1
+      search_space:
+        hidden_layers: *id018
+        activation: *id019
+        dropout: *id020
+        batch_norm: *id021
+        optimizer: *id022
+        lr: *id023
+        weight_decay: *id024
+        batch_size: *id025
+        max_epochs: *id026
+        patience: *id027
+        shrink:
+          type: categorical
+          choices:
+          - 0.0
+          - 0.01
+        log_duration:
+          type: categorical
+          choices:
+          - true
+      default_params:
+        hidden_layers: '64'
+        activation: relu
+        dropout: 0.1
+        batch_norm: true
+        optimizer: adamw
+        lr: 0.001
+        weight_decay: 0.0001
+        batch_size: 128
+        max_epochs: 50
+        patience: 8
+        shrink: 0.0
+        log_duration: true
+decision_curve:
+  thresholds:
+  - 0.2
+robustness:
+  enabled: false
+  tracks:
+  - baseline
+  severity_levels:
+  - 0.05
+time_horizons_quantiles:
+- 0.25
+- 0.5
+- 0.75
+exports:
+  profile: core_csv
+  manuscript_artifact_layout: compact
+datasets:
+- support
+- metabric
+- aids
+- gbsg2
+- flchain
+- whas500
+methods:
+- coxph
+- coxnet
+- weibull_aft
+- lognormal_aft
+- loglogistic_aft
+- aalen_additive
+- fast_survival_svm
+- rsf
+- extra_survival_trees
+- gradient_boosting_survival
+- componentwise_gradient_boosting
+- xgboost_cox
+- xgboost_aft
+- catboost_cox
+- catboost_survival_aft
+- deepsurv
+- deepsurv_moco
+- logistic_hazard
+- pmf
+- mtlr
+- deephit_single
+- pchazard
+- cox_time
+notes: Local feasible all-native dual-mode HPO profile for an 11-core/18GB Mac. Keeps
+  canonical method configs unchanged and narrows HPO through benchmark-level method_overrides.
+  Foundation and AutoGluon adapters are excluded from this native local profile. Deep-method
+  default_params are also resource-bounded in this local profile to keep no-HPO and
+  HPO comparable under laptop constraints.

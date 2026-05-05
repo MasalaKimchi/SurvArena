@@ -136,6 +136,64 @@ def _resolve_execution_n_jobs(benchmark_cfg: dict[str, Any]) -> int:
     return n_jobs
 
 
+def _method_hpo_overrides(hpo_cfg: dict[str, Any], method_id: str) -> dict[str, Any]:
+    overrides = hpo_cfg.get("method_overrides", {})
+    if overrides is None:
+        return {}
+    if not isinstance(overrides, dict):
+        raise ValueError("hpo.method_overrides must be a mapping when provided.")
+    method_override = overrides.get(method_id, {})
+    if method_override is None:
+        return {}
+    if not isinstance(method_override, dict):
+        raise ValueError(f"hpo.method_overrides.{method_id} must be a mapping when provided.")
+    return dict(method_override)
+
+
+def _method_cfg_with_hpo_overrides(
+    method_cfg: dict[str, Any],
+    *,
+    method_id: str,
+    method_override: dict[str, Any],
+) -> dict[str, Any]:
+    resolved = dict(method_cfg)
+    if "default_params" in method_override:
+        default_params = method_override.get("default_params")
+        if default_params is None:
+            resolved["default_params"] = {}
+        elif isinstance(default_params, dict):
+            resolved["default_params"] = {
+                **dict(resolved.get("default_params", {})),
+                **dict(default_params),
+            }
+        else:
+            raise ValueError(f"hpo.method_overrides.{method_id}.default_params must be a mapping or null.")
+    if "search_space" in method_override:
+        search_space = method_override.get("search_space")
+        if search_space is None:
+            resolved["search_space"] = {}
+        elif isinstance(search_space, dict):
+            resolved["search_space"] = dict(search_space)
+        else:
+            raise ValueError(f"hpo.method_overrides.{method_id}.search_space must be a mapping or null.")
+    return resolved
+
+
+def _mode_hpo_cfg_with_method_overrides(
+    hpo_cfg: dict[str, Any],
+    *,
+    method_id: str,
+    hpo_enabled: bool,
+    method_override: dict[str, Any],
+) -> dict[str, Any]:
+    mode_hpo_cfg = {key: value for key, value in hpo_cfg.items() if key != "method_overrides"}
+    for key, value in method_override.items():
+        if key != "search_space":
+            mode_hpo_cfg[key] = value
+    mode_hpo_cfg["enabled"] = hpo_enabled and bool(mode_hpo_cfg.get("enabled", True))
+    return mode_hpo_cfg
+
+
 def evaluate_split(
     *,
     benchmark_id: str,
@@ -630,7 +688,12 @@ def _build_dataset_run_units(
 
     run_units: list[BenchmarkRunUnit] = []
     for method_id in methods:
-        method_cfg = method_cfg_cache[method_id]
+        method_override = _method_hpo_overrides(hpo_cfg, method_id)
+        method_cfg = _method_cfg_with_hpo_overrides(
+            method_cfg_cache[method_id],
+            method_id=method_id,
+            method_override=method_override,
+        )
         for split in filtered_splits:
             for track in robustness_tracks:
                 track_dataset_id = f"{dataset_id}__{track.track_id}"
@@ -642,8 +705,12 @@ def _build_dataset_run_units(
                     key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
                     if key in completed_keys:
                         continue
-                    mode_hpo_cfg = dict(hpo_cfg)
-                    mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
+                    mode_hpo_cfg = _mode_hpo_cfg_with_method_overrides(
+                        hpo_cfg,
+                        method_id=method_id,
+                        hpo_enabled=hpo_mode == "hpo",
+                        method_override=method_override,
+                    )
                     run_units.append(
                         BenchmarkRunUnit(
                             benchmark_id=benchmark_id,

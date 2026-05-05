@@ -51,8 +51,8 @@ Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`
 `severity_levels`) control optional perturbation tracks; when disabled, only the
 baseline track runs.
 
-The large `kkbox` dataset is config-only today and requires a custom local
-loader before it can participate in benchmark runs.
+The large `kkbox` dataset uses the local pycox KKBox cache and requires Kaggle
+credentials/preparation before it can participate in benchmark runs.
 
 ## User Dataset Comparison
 
