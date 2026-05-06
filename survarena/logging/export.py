@@ -325,8 +325,15 @@ def _failure_category(*, status: str, missing_metric_count: int, detail: dict[st
 
     failure_type = detail.get("failure_type", "")
     text = " ".join([failure_type, detail.get("failure_message", ""), detail.get("traceback", "")]).lower()
-    if failure_type in {"ImportError", "ModuleNotFoundError"} or "no module named" in text:
+    if (
+        failure_type in {"ImportError", "ModuleNotFoundError"}
+        or "no module named" in text
+        or ("dependency" in text and "not installed" in text)
+        or "install the required extra" in text
+    ):
         return "dependency_missing"
+    if "hugging face authentication" in text or "gated checkpoint" in text or "hf auth login" in text:
+        return "auth_missing"
     if failure_type == "TimeoutError" or "timed out" in text or "timeout" in text or "time limit" in text:
         return "timeout"
     if failure_type == "MemoryError" or "out of memory" in text or "oom" in text:

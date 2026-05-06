@@ -21,13 +21,9 @@ from survarena.api._predictor_budget import (
     validate_time_limit,
 )
 from survarena.api._predictor_persistence import (
-    PREDICTOR_SERIALIZATION_VERSION,
-    default_predictor_path,
     load_predictor,
     persist_artifacts,
-    predictor_manifest_path,
     save_predictor,
-    serialization_manifest,
 )
 from survarena.automl.bagging import BaggedModelMember, BaggedSurvivalEnsemble
 from survarena.automl.presets import PresetConfig, resolve_preset
@@ -61,7 +57,6 @@ from survarena.methods.registry import get_method_class, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
 
 
-_PREDICTOR_SERIALIZATION_VERSION = PREDICTOR_SERIALIZATION_VERSION
 _SELECTION_TIME_BUDGET_RATIO = 0.8
 
 
@@ -970,15 +965,6 @@ class SurvivalPredictor:
                     error_type="TimeLimitExceeded",
                 )
             )
-
-    def _default_predictor_path(self) -> Path:
-        return default_predictor_path(self.artifact_dir_)
-
-    def _predictor_manifest_path(self, output_path: Path) -> Path:
-        return predictor_manifest_path(output_path)
-
-    def _serialization_manifest(self, output_path: Path) -> dict[str, Any]:
-        return serialization_manifest(self, output_path)
 
     def _training_backend_for_method(self, method_id: str) -> str:
         return "autogluon" if method_id == "autogluon_survival" else "native"

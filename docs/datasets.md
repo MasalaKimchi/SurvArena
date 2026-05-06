@@ -4,6 +4,24 @@ Built-in benchmark dataset configs live in `configs/datasets/`.
 User datasets can also be passed directly to `SurvivalPredictor.fit(...)` or
 `compare_survival_models(...)` from a `DataFrame`, CSV, or Parquet file.
 
+## User Dataset Pilot
+
+Use `survarena pilot` when you want to substitute your own dataset and get a
+small benchmark-style estimate before committing to a larger run:
+
+```bash
+survarena pilot \
+  --data train.csv \
+  --time-col time \
+  --event-col event \
+  --dataset-name my_dataset
+```
+
+The command writes benchmark-style CSV artifacts and prints the aggregate
+leaderboard metrics in the CLI summary. Use `--id-col patient_id` or
+`--drop-columns col_a,col_b` for non-feature columns, and add `--repeated` for a
+3-fold x 2-repeat pilot.
+
 ## Built-in Benchmarks
 
 | Dataset | Track | Rows | Features | Event Rate | Source | Notes |

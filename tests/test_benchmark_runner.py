@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -276,6 +277,79 @@ def _resume_record(status: str = "success") -> dict[str, object]:
     }
 
 
+@pytest.mark.parametrize(
+    ("method_id", "failure_message"),
+    [
+        ("coxph", "classical fit failed"),
+        ("rsf", "tree fit failed"),
+        ("xgboost_cox", "boosting fit failed"),
+        ("deepsurv", "deep fit failed"),
+        ("autogluon_survival", "automl fit failed"),
+        ("tabpfn_survival", "Dependency 'tabpfn' is not installed."),
+    ],
+)
+def test_evaluate_split_failure_payload_covers_major_method_families(
+    method_id: str,
+    failure_message: str,
+    monkeypatch,
+) -> None:
+    class FailingMethod:
+        def __init__(self, **_params) -> None:
+            return None
+
+        def fit(self, *_args, **_kwargs) -> None:
+            raise RuntimeError(failure_message)
+
+    split = _single_split()[0]
+    dataset = _fake_dataset()
+    monkeypatch.setattr(runner, "get_method_class", lambda _method_id: FailingMethod)
+    monkeypatch.setattr(runner, "peak_process_memory_mb", lambda: 64.0, raising=False)
+
+    record = runner.evaluate_split(
+        benchmark_id="failure_payload",
+        dataset_id="toy_dataset",
+        method_id=method_id,
+        split=split,
+        X=dataset.X,
+        time=dataset.time,
+        event=dataset.event,
+        method_cfg={"method_id": method_id, "default_params": {}, "search_space": {}},
+        inner_folds=2,
+        timeout_seconds=None,
+        primary_metric="uno_c",
+        horizons_quantiles=(0.25, 0.5, 0.75),
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg-hash",
+        hpo_cfg={"enabled": False},
+    )
+
+    run_payload = record["run_payload"]
+    manifest = run_payload["manifest"]
+    metrics = run_payload["metrics"]
+
+    assert record["status"] == "failed"
+    assert record["method_id"] == method_id
+    assert record["dataset_id"] == "toy_dataset"
+    assert record["split_id"] == split.split_id
+    assert record["seed"] == split.seed
+    assert record["failure_type"] == "RuntimeError"
+    assert record["exception_message"] == failure_message
+    assert np.isnan(record["uno_c"])
+    assert np.isnan(record["harrell_c"])
+    assert np.isnan(record["ibs"])
+    assert manifest["status"] == "failed"
+    assert manifest["method_id"] == method_id
+    assert manifest["dataset_id"] == "toy_dataset"
+    assert manifest["split_id"] == split.split_id
+    assert manifest["seed"] == split.seed
+    assert manifest["notes"] == failure_message
+    assert metrics["status"] == "failed"
+    assert metrics["failure_type"] == "RuntimeError"
+    assert metrics["exception_message"] == failure_message
+    assert "RuntimeError" in run_payload["failure"]["traceback"]
+    assert failure_message in run_payload["failure"]["traceback"]
+
+
 def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, status: str = "success") -> None:
     monkeypatch.setattr("survarena.data.loaders.load_dataset", lambda *_args, **_kwargs: _fake_dataset())
     monkeypatch.setattr("survarena.data.splitters.load_or_create_splits", lambda **_kwargs: _single_split())
@@ -468,6 +542,110 @@ def test_benchmark_run_emits_coverage_links(tmp_path: Path, monkeypatch) -> None
     assert writes["experiment_navigator.json"]["artifacts"]["coverage_matrix_csv"] == "coxph_coverage_matrix.csv"
     assert writes["experiment_manifest.json"]["artifacts"]["coverage_matrix_md"] == "coxph_coverage_matrix.md"
     assert "coxph_coverage_matrix.md" in (tmp_path / "README.md").read_text(encoding="utf-8")
+
+
+def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.setattr("survarena.data.loaders.load_dataset", lambda *_args, **_kwargs: _fake_dataset())
+    monkeypatch.setattr("survarena.data.splitters.load_or_create_splits", lambda **_kwargs: _single_split())
+    monkeypatch.setattr(
+        "survarena.data.robustness.resolve_robustness_tracks",
+        lambda *_args, **_kwargs: [SimpleNamespace(track_id="base")],
+    )
+    monkeypatch.setattr("survarena.data.robustness.apply_robustness_track", lambda X, **_kwargs: X)
+    monkeypatch.setattr("survarena.data.robustness.apply_label_noise", lambda event, **_kwargs: event)
+    monkeypatch.setattr("survarena.benchmark.runner.registered_method_ids", lambda: {"coxph", "rsf"})
+    monkeypatch.setattr(
+        "survarena.benchmark.runner.read_yaml",
+        lambda path: {"method_id": Path(path).stem, "default_params": {}, "search_space": {}},
+    )
+
+    def _fake_evaluate_split(**kwargs):
+        status = "failed" if kwargs["method_id"] == "rsf" else "success"
+        failure = None if status == "success" else {"traceback": "RuntimeError: simulated rsf failure"}
+        failure_fields = (
+            {}
+            if status == "success"
+            else {"failure_type": "RuntimeError", "exception_message": "simulated rsf failure"}
+        )
+        return {
+            "run_payload": {
+                "manifest": {
+                    "run_id": f"toy_{kwargs['method_id']}_{kwargs['split'].split_id}_seed{kwargs['split'].seed}",
+                    "benchmark_id": kwargs["benchmark_id"],
+                    "dataset_id": kwargs["dataset_id"],
+                    "method_id": kwargs["method_id"],
+                    "split_id": kwargs["split"].split_id,
+                    "seed": kwargs["split"].seed,
+                    "status": status,
+                },
+                "metrics": {"status": status, **failure_fields},
+                "hpo_metadata": {"status": "disabled", "trial_count": 0},
+                "hpo_trials": [],
+                "failure": failure,
+            },
+            "benchmark_id": kwargs["benchmark_id"],
+            "dataset_id": kwargs["dataset_id"],
+            "method_id": kwargs["method_id"],
+            "split_id": kwargs["split"].split_id,
+            "seed": kwargs["split"].seed,
+            "primary_metric": kwargs["primary_metric"],
+            "validation_score": 0.7 if status == "success" else np.nan,
+            "uno_c": 0.71 if status == "success" else np.nan,
+            "harrell_c": 0.7 if status == "success" else np.nan,
+            "ibs": 0.2 if status == "success" else np.nan,
+            "td_auc_25": 0.68 if status == "success" else np.nan,
+            "td_auc_50": 0.69 if status == "success" else np.nan,
+            "td_auc_75": 0.7 if status == "success" else np.nan,
+            "tuning_time_sec": 0.01,
+            "runtime_sec": 0.02,
+            "fit_time_sec": 0.01 if status == "success" else np.nan,
+            "infer_time_sec": 0.01 if status == "success" else np.nan,
+            "peak_memory_mb": 64.0,
+            "status": status,
+            **failure_fields,
+        }
+
+    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
+    cfg = _resume_benchmark_cfg("compact_artifacts")
+    cfg["methods"] = ["coxph", "rsf"]
+    cfg["comparison_modes"] = ["no_hpo"]
+
+    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
+
+    expected_artifacts = {
+        "multi_model_fold_results.csv",
+        "multi_model_leaderboard.csv",
+        "multi_model_run_diagnostics.csv",
+        "multi_model_coverage_matrix.csv",
+        "multi_model_coverage_matrix.md",
+        "multi_model_runtime_failure_summary.csv",
+        "multi_model_runtime_failure_summary.md",
+        "experiment_navigator.json",
+        "experiment_manifest.json",
+        "README.md",
+    }
+    assert expected_artifacts.issubset({path.name for path in tmp_path.iterdir()})
+    assert not (tmp_path / "multi_model_leaderboard.json").exists()
+    assert not (tmp_path / "coxph_fold_results.csv").exists()
+    assert not (tmp_path / "rsf_fold_results.csv").exists()
+
+    navigator = json.loads((tmp_path / "experiment_navigator.json").read_text(encoding="utf-8"))
+    manifest = json.loads((tmp_path / "experiment_manifest.json").read_text(encoding="utf-8"))
+    readme = (tmp_path / "README.md").read_text(encoding="utf-8")
+
+    assert navigator["model_name"] == "multi_model"
+    assert navigator["artifacts"] == manifest["artifacts"]
+    assert set(navigator["artifacts"].values()) == expected_artifacts - {
+        "experiment_navigator.json",
+        "experiment_manifest.json",
+        "README.md",
+    }
+    for artifact_name in navigator["artifacts"].values():
+        assert artifact_name in readme
+
+    fold_results = pd.read_csv(tmp_path / "multi_model_fold_results.csv")
+    assert set(fold_results["method_id"]) == {"coxph", "rsf"}
+    assert set(fold_results["status"]) == {"success", "failed"}
 
 
 def test_comparison_modes_can_run_only_hpo(tmp_path: Path, monkeypatch) -> None:

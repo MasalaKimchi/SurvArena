@@ -73,7 +73,17 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert summary["benchmark_id"] == "user_compare_fixed"
     assert summary["methods"] == ["coxph"]
     assert summary["split_count"] == 1
+    assert summary["fold_results_rows"] == 2
     assert summary["output_dir"] == str(output_dir)
+    assert summary["artifacts"] == {
+        "experiment_manifest": str(output_dir / "experiment_manifest.json"),
+        "fold_results": str(output_dir / "coxph_fold_results.csv"),
+        "leaderboard": str(output_dir / "coxph_leaderboard.csv"),
+        "run_diagnostics": str(output_dir / "coxph_run_diagnostics.csv"),
+    }
+    assert {row["hpo_mode"] for row in summary["leaderboard"]} == {"no_hpo", "hpo"}
+    assert {row["method_id"] for row in summary["leaderboard"]} == {"coxph"}
+    assert {row["uno_c"] for row in summary["leaderboard"]} == {0.79}
     assert (output_dir / "experiment_manifest.json").exists()
     assert (output_dir / "coxph_fold_results.csv").exists()
     assert (output_dir / "coxph_leaderboard.csv").exists()

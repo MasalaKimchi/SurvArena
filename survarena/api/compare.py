@@ -33,6 +33,18 @@ def _normalize_seed_list(seeds: list[int] | tuple[int, ...] | None) -> list[int]
     return resolved
 
 
+def _json_ready_records(frame: Any) -> list[dict[str, Any]]:
+    clean_frame = frame.astype(object).where(frame.notna(), None)
+    records = clean_frame.to_dict(orient="records")
+    return [
+        {
+            str(key): value.item() if hasattr(value, "item") else value
+            for key, value in row.items()
+        }
+        for row in records
+    ]
+
+
 def _resolve_compare_methods(
     *,
     n_rows: int,
@@ -335,7 +347,7 @@ def compare_survival_models(
             row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
-    export_leaderboard(
+    leaderboard = export_leaderboard(
         repo_root,
         frame,
         primary_metric=primary_metric,
@@ -363,8 +375,17 @@ def compare_survival_models(
         output_dir=resolved_output_dir,
         file_prefix=model_name,
     )
+    artifact_paths = {
+        "experiment_manifest": str(resolved_output_dir / "experiment_manifest.json"),
+        "fold_results": str(resolved_output_dir / f"{model_name}_fold_results.csv"),
+        "leaderboard": str(resolved_output_dir / f"{model_name}_leaderboard.csv"),
+        "run_diagnostics": str(resolved_output_dir / f"{model_name}_run_diagnostics.csv"),
+    }
     return {
         **summary,
         "output_dir": str(resolved_output_dir),
         "split_count": int(len(splits)),
+        "fold_results_rows": int(len(frame)),
+        "leaderboard": _json_ready_records(leaderboard),
+        "artifacts": artifact_paths,
     }

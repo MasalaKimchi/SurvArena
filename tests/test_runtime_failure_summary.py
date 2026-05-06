@@ -122,3 +122,73 @@ def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
     assert (tmp_path / "toy_run_diagnostics.csv").exists()
     assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
     assert (tmp_path / "toy_runtime_failure_summary.md").exists()
+
+
+def test_runtime_failure_summary_classifies_foundation_readiness_failures(tmp_path: Path) -> None:
+    fold_results = pd.DataFrame(
+        [
+            {
+                "benchmark_id": "toy",
+                "dataset_id": "toy_dataset__base",
+                "method_id": "tabpfn_survival",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "fixed_split_0__base",
+                "status": "failed",
+                "runtime_sec": 0.1,
+                "uno_c": np.nan,
+            },
+            {
+                "benchmark_id": "toy",
+                "dataset_id": "toy_dataset__base",
+                "method_id": "tabpfn_survival",
+                "hpo_mode": "hpo",
+                "seed": 11,
+                "split_id": "fixed_split_0__base",
+                "status": "failed",
+                "runtime_sec": 0.2,
+                "uno_c": np.nan,
+            },
+        ]
+    )
+    summary = export_runtime_failure_summary(
+        tmp_path,
+        benchmark_id="toy",
+        fold_results=fold_results,
+        run_records=[
+            {
+                "manifest": {
+                    "dataset_id": "toy_dataset__base",
+                    "method_id": "tabpfn_survival",
+                    "seed": 11,
+                    "split_id": "fixed_split_0__base",
+                },
+                "metrics": {
+                    "hpo_mode": "no_hpo",
+                    "failure_type": "RuntimeError",
+                    "exception_message": "Dependency 'tabpfn' is not installed. Install it with `python -m pip install -e \".[foundation-tabpfn]\"`.",
+                },
+                "failure": {"traceback": "RuntimeError: Dependency 'tabpfn' is not installed."},
+            },
+            {
+                "manifest": {
+                    "dataset_id": "toy_dataset__base",
+                    "method_id": "tabpfn_survival",
+                    "seed": 11,
+                    "split_id": "fixed_split_0__base",
+                },
+                "metrics": {
+                    "hpo_mode": "hpo",
+                    "failure_type": "RuntimeError",
+                    "exception_message": "TabPFN access is not ready for the default gated checkpoint. Run `hf auth login`.",
+                },
+                "failure": {"traceback": "RuntimeError: Hugging Face authentication was not detected."},
+            },
+        ],
+        output_dir=tmp_path,
+        file_prefix="toy",
+    )
+
+    by_mode = summary.set_index("hpo_mode")
+    assert by_mode.loc["no_hpo", "failure_category"] == "dependency_missing"
+    assert by_mode.loc["hpo", "failure_category"] == "auth_missing"

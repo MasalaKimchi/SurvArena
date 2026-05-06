@@ -124,6 +124,9 @@ def test_heavy_sksurv_adapter_defaults_follow_package_defaults(
 @pytest.mark.parametrize(
     ("method_id", "params"),
     [
+        ("coxph", {}),
+        ("coxnet", {"l1_ratio": 0.5, "alpha_min_ratio": 0.1}),
+        ("rsf", {"n_estimators": 20, "max_depth": 4, "seed": 0}),
         ("weibull_aft", {"penalizer": 0.01}),
         ("lognormal_aft", {"penalizer": 0.01}),
         ("loglogistic_aft", {"penalizer": 0.01}),
@@ -136,6 +139,7 @@ def test_heavy_sksurv_adapter_defaults_follow_package_defaults(
         ("catboost_cox", {"iterations": 20, "depth": 4, "learning_rate": 0.1, "seed": 0}),
         ("xgboost_aft", {"n_estimators": 20, "max_depth": 2, "learning_rate": 0.1, "seed": 0}),
         ("catboost_survival_aft", {"iterations": 20, "depth": 4, "learning_rate": 0.1, "seed": 0}),
+        ("deepsurv", {"hidden_layers": "16", "batch_size": 16, "max_epochs": 3, "patience": 1, "seed": 0}),
     ],
 )
 def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params: dict[str, object]) -> None:

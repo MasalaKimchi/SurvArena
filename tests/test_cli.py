@@ -106,6 +106,91 @@ def test_compare_cli_invokes_user_compare_workflow(monkeypatch, capsys) -> None:
     assert '"benchmark_id": "user_compare_fixed"' in capsys.readouterr().out
 
 
+def test_pilot_cli_invokes_compare_with_fixed_pilot_defaults(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {
+            "benchmark_id": kwargs["benchmark_id"],
+            "leaderboard": [{"method_id": "coxph", "uno_c": 0.71, "harrell_c": 0.7}],
+            "artifacts": {"leaderboard": "tmp/pilot/coxph_leaderboard.csv"},
+        }
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["data"] == "toy.csv"
+    assert captured["split_strategy"] == "fixed_split"
+    assert captured["outer_repeats"] == 1
+    assert captured["inner_folds"] == 2
+    assert captured["seeds"] == [11]
+    assert captured["presets"] == "fast"
+    assert captured["benchmark_id"] == "user_pilot_fixed"
+    assert captured["hpo"] == {
+        "enabled": True,
+        "max_trials": 1,
+        "timeout_seconds": None,
+        "sampler": "tpe",
+        "pruner": "median",
+        "n_startup_trials": 8,
+    }
+    output = capsys.readouterr().out
+    assert '"benchmark_id": "user_pilot_fixed"' in output
+    assert '"uno_c": 0.71' in output
+    assert "coxph_leaderboard.csv" in output
+
+
+def test_pilot_cli_repeated_uses_small_cv_defaults(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {"benchmark_id": kwargs["benchmark_id"]}
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--repeated",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["split_strategy"] == "repeated_nested_cv"
+    assert captured["outer_folds"] == 3
+    assert captured["outer_repeats"] == 2
+    assert captured["seeds"] == [11, 23]
+    assert captured["benchmark_id"] == "user_pilot_cv"
+
+
 def test_foundation_check_cli_emits_runtime_status(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         cli,

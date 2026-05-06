@@ -185,6 +185,25 @@ from `smoke.yaml` to `standard_v1.yaml` or a derived manuscript config.
 
 ## Quick Start
 
+### Pilot Your Own Dataset
+
+For a quick benchmark-style read on a CSV or Parquet dataset, run:
+
+```bash
+survarena pilot \
+  --data train.csv \
+  --time-col time \
+  --event-col event \
+  --dataset-name my_dataset
+```
+
+The pilot command uses the fast preset by default, evaluates the same
+user-provided data path as `compare_survival_models(...)`, and prints a compact
+JSON summary with aggregate C-index metrics plus the artifact paths for
+`fold_results`, `leaderboard`, `run_diagnostics`, and the experiment manifest.
+Add `--models coxph,rsf` for explicit model control or `--repeated` for a small
+3-fold x 2-repeat nested-CV pilot before moving to the full benchmark runner.
+
 ### Python API
 
 ```python

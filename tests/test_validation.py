@@ -4,7 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from survarena.automl.validation import ValidationPlan, build_validation_plan, default_holdout_frac, prepare_validation_fold_cache
+from survarena.automl.validation import (
+    ValidationPlan,
+    build_refit_dataset,
+    build_validation_plan,
+    default_holdout_frac,
+    prepare_validation_fold_cache,
+)
 from survarena.data.schema import DatasetMetadata, SurvivalDataset
 from survarena.methods.preprocessing import method_uses_native_categorical_features, method_uses_scaled_numeric_features
 
@@ -89,6 +95,62 @@ def test_build_validation_plan_rejects_low_count_event_classes() -> None:
 
     with pytest.raises(ValueError, match="requires at least two samples in each event class"):
         build_validation_plan(dataset, seed=0)
+
+
+@pytest.mark.parametrize("holdout_frac", [-0.1, 0.0, 1.0, 1.2])
+def test_build_validation_plan_rejects_invalid_holdout_fraction(holdout_frac: float) -> None:
+    dataset = _dataset(
+        pd.DataFrame({"age": [61, 57, 70, 66, 59, 63, 68, 55]}),
+        time=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0],
+        event=[1, 0, 1, 0, 1, 0, 1, 0],
+    )
+
+    with pytest.raises(ValueError, match="holdout_frac must be between 0 and 1"):
+        build_validation_plan(dataset, seed=0, holdout_frac=holdout_frac)
+
+
+def test_build_validation_plan_creates_stratified_auto_holdout() -> None:
+    dataset = _dataset(
+        pd.DataFrame({"row_id": list(range(10)), "age": [50, 51, 52, 53, 54, 55, 56, 57, 58, 59]}),
+        time=[1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        event=[1, 0, 1, 0, 1, 0, 1, 0, 1, 0],
+    )
+
+    plan = build_validation_plan(dataset, seed=11, holdout_frac=0.2)
+
+    assert plan.source == "auto_holdout"
+    assert plan.holdout_frac == 0.2
+    assert len(plan.train_X) == 8
+    assert len(plan.validation_X) == 2
+    assert set(plan.train_X["row_id"]).isdisjoint(set(plan.validation_X["row_id"]))
+    assert int(plan.validation_event.sum()) == 1
+    assert int((plan.validation_event == 0).sum()) == 1
+
+
+def test_build_refit_dataset_with_explicit_tuning_data_respects_refit_full() -> None:
+    training = _dataset(
+        pd.DataFrame({"age": [61, 57, 70], "stage": ["i", "ii", "iii"]}),
+        time=[1.0, 2.0, 3.0],
+        event=[1, 0, 1],
+    )
+    tuning = _dataset(
+        pd.DataFrame({"stage": ["iii", "i"], "age": [66, 59]}),
+        time=[4.0, 5.0],
+        event=[0, 1],
+    )
+
+    refit_full = build_refit_dataset(training, validation_plan=None, tuning_dataset=tuning, refit_full=True)
+    refit_train_only = build_refit_dataset(training, validation_plan=None, tuning_dataset=tuning, refit_full=False)
+
+    assert refit_full.X.to_dict(orient="list") == {
+        "age": [61, 57, 70, 66, 59],
+        "stage": ["i", "ii", "iii", "iii", "i"],
+    }
+    np.testing.assert_allclose(refit_full.time, np.asarray([1.0, 2.0, 3.0, 4.0, 5.0]))
+    np.testing.assert_array_equal(refit_full.event, np.asarray([1, 0, 1, 0, 1]))
+    assert refit_train_only.X.to_dict(orient="list") == training.X.to_dict(orient="list")
+    np.testing.assert_allclose(refit_train_only.time, training.time)
+    np.testing.assert_array_equal(refit_train_only.event, training.event)
 
 
 def test_prepare_validation_fold_cache_applies_method_specific_numeric_scaling() -> None:
