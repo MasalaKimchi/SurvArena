@@ -300,7 +300,12 @@ def select_hyperparameters(
         )
         finished_at = datetime.utcnow().isoformat(timespec="seconds")
 
-        if study.best_trial is None:
+        completed_trials = [
+            trial
+            for trial in study.trials
+            if str(getattr(trial.state, "name", trial.state)) == "COMPLETE" and trial.value is not None
+        ]
+        if not completed_trials:
             default_result["hpo_metadata"] = _build_hpo_metadata(
                 resolved_hpo=resolved_hpo,
                 enabled=True,
@@ -312,10 +317,11 @@ def select_hyperparameters(
             )
             return default_result
 
+        best_trial = study.best_trial
         trial_score = float(study.best_value)
         if _is_better_score(trial_score, default_score, maximize=maximize):
             selected = dict(defaults)
-            selected.update(dict(study.best_trial.params))
+            selected.update(dict(best_trial.params))
             best_score = trial_score
         else:
             selected = dict(defaults)
@@ -360,7 +366,7 @@ def select_hyperparameters(
                 started_at=started_at,
                 finished_at=finished_at,
                 realized_trial_count=int(len(study.trials)),
-                best_trial_number=int(study.best_trial.number),
+                best_trial_number=int(best_trial.number),
                 best_trial_score=float(study.best_value),
             ),
             "hpo_trials": trial_rows,

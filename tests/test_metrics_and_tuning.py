@@ -10,6 +10,7 @@ from survarena.evaluation.metrics import (
     MetricBundle,
     _event_status_at_horizons,
     compute_primary_metric_score,
+    compute_survival_metrics,
     horizons_from_train_event_times,
 )
 
@@ -135,3 +136,24 @@ def test_metric_bundle_float_conversion_stays_finite_for_normal_values() -> None
 
     assert math.isfinite(values["uno_c"])
     assert math.isfinite(values["harrell_c"])
+
+
+def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:
+    metrics = compute_survival_metrics(
+        train_time=np.asarray([1.0, 2.0, 3.0, 10.0]),
+        train_event=np.asarray([1, 1, 1, 0]),
+        test_time=np.asarray([1.5, 2.5]),
+        test_event=np.asarray([1, 0]),
+        risk_scores=np.asarray([0.8, 0.2]),
+        survival_probs=np.asarray(
+            [
+                [0.95, 0.82, 0.75, 0.65],
+                [0.98, 0.92, 0.86, 0.78],
+            ]
+        ),
+        survival_times=np.asarray([1.0, 2.0, 3.0, 9.0]),
+        horizons=(1.5, 2.0, 2.5),
+    ).to_dict()
+
+    assert math.isfinite(metrics["harrell_c"])
+    assert "ibs" in metrics

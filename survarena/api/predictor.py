@@ -406,10 +406,10 @@ class SurvivalPredictor:
             raise RuntimeError(f"All candidate models failed during fitting: {errors}")
 
         self.model_results_ = results
-        best_result = max(successful, key=lambda result: result.selection_score)
+        best_result = max(successful, key=self._selection_sort_key)
         refit_order = [best_result] + [
             result
-            for result in sorted(successful, key=lambda result: result.selection_score, reverse=True)
+            for result in sorted(successful, key=self._selection_sort_key, reverse=True)
             if result.method_id != best_result.method_id
         ]
         self._fit_successful_models(
@@ -641,6 +641,12 @@ class SurvivalPredictor:
         leaderboard = leaderboard.reset_index(drop=True)
         leaderboard.insert(0, "rank", np.arange(1, len(leaderboard) + 1, dtype=int))
         return leaderboard
+
+    def _selection_sort_key(self, result: PredictorModelResult) -> tuple[bool, float]:
+        score = float(result.selection_score)
+        if not np.isfinite(score):
+            return (False, 0.0)
+        return (True, score)
 
     def _fold_cache_metric_summary(
         self,

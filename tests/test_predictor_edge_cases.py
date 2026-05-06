@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from survarena.api.predictor import SurvivalPredictor
+from survarena.api.predictor import PredictorModelResult, SurvivalPredictor
 from survarena.automl.presets import PresetConfig
 from survarena.evaluation.metrics import MetricBundle
 
@@ -107,6 +107,21 @@ def test_predictor_fit_surfaces_when_all_candidate_models_fail(tmp_path: Path, m
 
     with pytest.raises(RuntimeError, match="All candidate models failed during fitting"):
         predictor.fit(frame, tuning_data=frame, dataset_name="toy")
+
+
+def test_predictor_selection_sort_places_finite_scores_before_nan() -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+    results = [
+        PredictorModelResult("first_nan", float("nan"), {}, 0.0, 1, {}),
+        PredictorModelResult("valid", 0.62, {}, 0.0, 1, {}),
+        PredictorModelResult("lower", 0.51, {}, 0.0, 1, {}),
+    ]
+
+    best = max(results, key=predictor._selection_sort_key)
+    ordered = sorted(results, key=predictor._selection_sort_key, reverse=True)
+
+    assert best.method_id == "valid"
+    assert [result.method_id for result in ordered] == ["valid", "lower", "first_nan"]
 
 
 def test_compute_metric_bundle_safe_clips_inputs_after_training_support_error(monkeypatch) -> None:

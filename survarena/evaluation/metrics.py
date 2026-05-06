@@ -56,6 +56,18 @@ def _ipcw_estimable_mask(train_time: np.ndarray, train_event: np.ndarray, eval_t
     return np.asarray(eval_time, dtype=float) <= max_observed_time
 
 
+def _ipcw_support_limit(train_time: np.ndarray, train_event: np.ndarray) -> float | None:
+    observed_train_times = np.asarray(train_time)[np.asarray(train_event).astype(bool)]
+    if observed_train_times.size == 0:
+        return None
+    return max(1e-8, _strictly_below(float(np.max(observed_train_times))))
+
+
+def _strictly_below(value: float) -> float:
+    margin = max(1e-6, abs(float(value)) * 1e-6)
+    return float(value) - margin
+
+
 def compute_survival_metrics(
     *,
     train_time: np.ndarray,
@@ -94,33 +106,48 @@ def compute_survival_metrics(
     risk_scores = np.asarray(risk_scores)[estimable_mask]
     survival_probs = np.asarray(survival_probs)[estimable_mask]
 
+    original_survival_times = np.asarray(survival_times, dtype=float)
+    test_follow_up_lower = float(np.min(test_time))
+    test_follow_up_upper = max(test_follow_up_lower, _strictly_below(float(np.max(test_time))))
+    support_limit = _ipcw_support_limit(train_time, train_event)
+    if support_limit is not None:
+        support_upper = min(support_limit, test_follow_up_upper)
+    else:
+        support_upper = test_follow_up_upper
+    supported_time_mask = (original_survival_times >= test_follow_up_lower) & (original_survival_times <= support_upper)
+    supported_survival_times = original_survival_times[supported_time_mask]
+    supported_survival_probs = np.asarray(survival_probs)[:, supported_time_mask]
+    horizons = tuple(float(min(max(horizon, test_follow_up_lower), support_upper)) for horizon in horizons)
+
     train_event_t = torch.as_tensor(train_event.astype(bool))
     train_time_t = torch.as_tensor(train_time.astype(np.float32))
     test_event_t = torch.as_tensor(test_event.astype(bool))
     test_time_t = torch.as_tensor(test_time.astype(np.float32))
     risk_t = torch.as_tensor(risk_scores.astype(np.float32))
-    survival_probs_t = torch.as_tensor(survival_probs.astype(np.float32))
-    survival_times_t = torch.as_tensor(survival_times.astype(np.float32))
     horizons_t = torch.as_tensor(np.asarray(horizons, dtype=np.float32))
 
     ipcw_test = get_ipcw(train_event_t, train_time_t, test_time_t)
-    ipcw_survival_times = get_ipcw(train_event_t, train_time_t, survival_times_t)
     ipcw_horizons = get_ipcw(train_event_t, train_time_t, horizons_t)
 
     cindex = ConcordanceIndex()
     uno = cindex(risk_t, test_event_t, test_time_t, weight=ipcw_test)
     harrell = cindex(risk_t, test_event_t, test_time_t)
 
-    brier = BrierScore()
-    _ = brier(
-        survival_probs_t,
-        test_event_t,
-        test_time_t,
-        new_time=survival_times_t,
-        weight=ipcw_test,
-        weight_new_time=ipcw_survival_times,
-    )
-    ibs = brier.integral()
+    ibs = float("nan")
+    if supported_survival_times.size:
+        survival_probs_t = torch.as_tensor(supported_survival_probs.astype(np.float32))
+        survival_times_t = torch.as_tensor(supported_survival_times.astype(np.float32))
+        ipcw_survival_times = get_ipcw(train_event_t, train_time_t, survival_times_t)
+        brier = BrierScore()
+        _ = brier(
+            survival_probs_t,
+            test_event_t,
+            test_time_t,
+            new_time=survival_times_t,
+            weight=ipcw_test,
+            weight_new_time=ipcw_survival_times,
+        )
+        ibs = brier.integral()
 
     auc = Auc()
     aucs = auc(

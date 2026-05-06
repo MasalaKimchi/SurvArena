@@ -190,7 +190,7 @@ def _mode_hpo_cfg_with_method_overrides(
     for key, value in method_override.items():
         if key != "search_space":
             mode_hpo_cfg[key] = value
-    mode_hpo_cfg["enabled"] = hpo_enabled and bool(mode_hpo_cfg.get("enabled", True))
+    mode_hpo_cfg["enabled"] = bool(method_override.get("enabled", True)) if hpo_enabled else False
     return mode_hpo_cfg
 
 

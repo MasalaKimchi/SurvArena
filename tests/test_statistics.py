@@ -3,6 +3,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
+from survarena.evaluation import _significance
 from survarena.evaluation.statistics import (
     aggregate_rank_summary,
     critical_difference_summary,
@@ -98,6 +99,34 @@ def test_pairwise_significance_produces_corrected_p_values() -> None:
     assert not result.empty
     assert {"p_value", "p_value_corrected", "effect_size_mean_delta"}.issubset(result.columns)
     assert (result["p_value_corrected"] <= 1.0).all()
+
+
+def test_pairwise_significance_corrects_unique_pairs_before_mirroring(monkeypatch) -> None:
+    captured: dict[str, list[float]] = {}
+
+    def fake_holm(p_values: list[float]) -> list[float]:
+        captured["p_values"] = list(p_values)
+        return [0.11 + index for index, _value in enumerate(p_values)]
+
+    monkeypatch.setattr(_significance, "_holm_correction", fake_holm)
+    frame = pd.DataFrame(
+        [
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s1", "method_id": "a", "uno_c": 0.8},
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s1", "method_id": "b", "uno_c": 0.7},
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s1", "method_id": "c", "uno_c": 0.6},
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s2", "method_id": "a", "uno_c": 0.81},
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s2", "method_id": "b", "uno_c": 0.71},
+            {"benchmark_id": "b1", "dataset_id": "d1", "split_id": "s2", "method_id": "c", "uno_c": 0.61},
+        ]
+    )
+
+    result = pairwise_significance(frame, metric="uno_c", correction="holm")
+
+    assert len(captured["p_values"]) == 3
+    assert len(result) == 6
+    ab = result[(result["method_id"] == "a") & (result["opponent_method_id"] == "b")].iloc[0]
+    ba = result[(result["method_id"] == "b") & (result["opponent_method_id"] == "a")].iloc[0]
+    assert float(ab["p_value_corrected"]) == float(ba["p_value_corrected"])
 
 
 def test_pairwise_significance_keeps_hpo_mode_strata_separate() -> None:

@@ -118,6 +118,7 @@ def pairwise_significance(
         key_tuple = key if isinstance(key, tuple) else (key,)
         stratum = dict(zip(stratum_cols, key_tuple, strict=True))
         pair_rows: list[dict[str, object]] = []
+        pair_p_values: list[float] = []
         methods = sorted(stratum_sub["method_id"].dropna().astype(str).unique())
         for left_index, left_method in enumerate(methods):
             for right_method in methods[left_index + 1 :]:
@@ -143,9 +144,12 @@ def pairwise_significance(
                     except ValueError:
                         p_value = 1.0
                 effect_size = float(np.mean(delta))
+                pair_index = len(pair_p_values)
+                pair_p_values.append(p_value)
                 pair_rows.append(
                     {
                         **stratum,
+                        "_pair_index": pair_index,
                         "method_id": left_method,
                         "opponent_method_id": right_method,
                         "metric": metric,
@@ -159,6 +163,7 @@ def pairwise_significance(
                 pair_rows.append(
                     {
                         **stratum,
+                        "_pair_index": pair_index,
                         "method_id": right_method,
                         "opponent_method_id": left_method,
                         "metric": metric,
@@ -169,15 +174,15 @@ def pairwise_significance(
                         "ties": int(np.sum(delta == 0)),
                     }
                 )
-        p_values = [float(row["p_value"]) for row in pair_rows]
-        if not p_values:
+        if not pair_p_values:
             continue
         if correction == "bh":
-            corrected = _benjamini_hochberg(p_values)
+            corrected = _benjamini_hochberg(pair_p_values)
         else:
-            corrected = _holm_correction(p_values)
-        for row, corrected_p in zip(pair_rows, corrected, strict=False):
-            rows.append({**row, "p_value_corrected": float(corrected_p), "correction": correction})
+            corrected = _holm_correction(pair_p_values)
+        for row in pair_rows:
+            pair_index = int(row.pop("_pair_index"))
+            rows.append({**row, "p_value_corrected": float(corrected[pair_index]), "correction": correction})
     return pd.DataFrame(rows)
 
 

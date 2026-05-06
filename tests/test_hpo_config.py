@@ -167,3 +167,32 @@ def test_select_hyperparameters_falls_back_to_defaults_when_trial_fails(monkeypa
     assert result["best_params"] == {"alpha": 0.1}
     assert result["best_score"] == 0.5
     assert result["hpo_trials"][0]["user_attrs"]["failure_type"] == "RuntimeError"
+
+
+def test_select_hyperparameters_falls_back_when_optuna_has_no_completed_trials(monkeypatch) -> None:
+    import pytest
+
+    pytest.importorskip("optuna")
+
+    monkeypatch.setattr(
+        tuning,
+        "_inner_cv_evaluate",
+        lambda **_kwargs: {"primary_score": 0.5},
+    )
+
+    result = tuning.select_hyperparameters(
+        method_id="coxph",
+        method_cfg={
+            "default_params": {"alpha": 0.1},
+            "search_space": {"alpha": {"type": "categorical", "choices": [0.2]}},
+        },
+        fold_cache=[{"dummy": True}],
+        primary_metric="harrell_c",
+        seed=11,
+        hpo_config={"enabled": True, "max_trials": 1, "timeout_seconds": 0.0, "sampler": "random", "pruner": "nop"},
+    )
+
+    assert result["best_params"] == {"alpha": 0.1}
+    assert result["best_score"] == 0.5
+    assert result["hpo_metadata"]["status"] == "no_valid_trial"
+    assert result["hpo_metadata"]["realized_trial_count"] == 0
