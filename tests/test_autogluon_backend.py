@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 
 from survarena.automl.autogluon_backend import fit_autogluon_event_predictor, predict_event_probability
-from survarena.methods.automl.autogluon_survival import AutoGluonSurvivalMethod
+from survarena.methods.automl.mitra_survival import MitraSurvivalMethod
 from survarena.methods.registry import get_method_class, registered_method_ids
 
 
@@ -63,24 +63,32 @@ def test_autogluon_backend_passes_fit_controls_and_predicts_event_probability(mo
     np.testing.assert_allclose(predict_event_probability(predictor, pd.DataFrame({"x": [6.0, 7.0]})), [0.75, 0.75])
 
 
-def test_autogluon_survival_method_is_registered_and_exposes_survival_predictions(monkeypatch, tmp_path) -> None:
+def test_mitra_survival_method_forces_mitra_hyperparameters(monkeypatch, tmp_path) -> None:
     fake_module = ModuleType("autogluon.tabular")
     fake_module.TabularPredictor = FakeTabularPredictor
+    fake_sklearn_interface = ModuleType("autogluon.tabular.models.mitra.sklearn_interface")
+    fake_sklearn_interface.MitraClassifier = object
     monkeypatch.setitem(__import__("sys").modules, "autogluon", ModuleType("autogluon"))
     monkeypatch.setitem(__import__("sys").modules, "autogluon.tabular", fake_module)
+    monkeypatch.setitem(__import__("sys").modules, "autogluon.tabular.models", ModuleType("autogluon.tabular.models"))
+    monkeypatch.setitem(__import__("sys").modules, "autogluon.tabular.models.mitra", ModuleType("autogluon.tabular.models.mitra"))
+    monkeypatch.setitem(
+        __import__("sys").modules,
+        "autogluon.tabular.models.mitra.sklearn_interface",
+        fake_sklearn_interface,
+    )
 
-    assert "autogluon_survival" in registered_method_ids()
-    assert get_method_class("autogluon_survival") is AutoGluonSurvivalMethod
+    assert "mitra_survival" in registered_method_ids()
+    assert get_method_class("mitra_survival") is MitraSurvivalMethod
 
-    model = AutoGluonSurvivalMethod(path=tmp_path / "ag")
+    model = MitraSurvivalMethod(path=tmp_path / "mitra", hyperparameters=None, mitra_params={"fine_tune": False})
     model.fit(
         pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]}),
         np.asarray([1.0, 2.0, 3.0, 4.0]),
         np.asarray([1, 0, 1, 0]),
     )
 
-    risk = model.predict_risk(pd.DataFrame({"x": [5.0, 6.0]}))
-    survival = model.predict_survival(pd.DataFrame({"x": [5.0, 6.0]}), np.asarray([1.0, 2.0, 3.0]))
-    np.testing.assert_allclose(risk, [0.75, 0.75])
-    assert survival.shape == (2, 3)
-    assert model.autogluon_metadata()["autogluon_best_model"] == "WeightedEnsemble_L2"
+    assert FakeTabularPredictor.fit_kwargs is not None
+    assert FakeTabularPredictor.fit_kwargs["hyperparameters"] == {"MITRA": {"fine_tune": False}}
+    np.testing.assert_allclose(model.predict_risk(pd.DataFrame({"x": [5.0, 6.0]})), [0.75, 0.75])
+    assert model.predict_survival(pd.DataFrame({"x": [5.0, 6.0]}), np.asarray([1.0, 2.0, 3.0])).shape == (2, 3)

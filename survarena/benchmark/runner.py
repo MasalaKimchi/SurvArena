@@ -16,7 +16,7 @@ from survarena.benchmark.resume import completed_resume_keys
 from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_method_params, select_hyperparameters
 from survarena.logging.export import MANUSCRIPT_METRIC_COLUMNS
 from survarena.config import read_yaml
-from survarena.methods.registry import get_method_class, registered_method_ids
+from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
 
 
 _CANONICAL_PROFILES = ("smoke", "standard", "manuscript")
@@ -313,9 +313,10 @@ def evaluate_split(
         peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
         autogluon_metadata = _autogluon_metadata(model)
-        training_backend = "autogluon" if method_id == "autogluon_survival" else "native"
+        autogluon_backed = is_autogluon_method(method_id)
+        training_backend = "autogluon" if autogluon_backed else "native"
         hpo_backend = str(hpo_metadata.get("backend", "none"))
-        if method_id == "autogluon_survival" and best_params.get("hyperparameter_tune_kwargs"):
+        if autogluon_backed and best_params.get("hyperparameter_tune_kwargs"):
             hpo_backend = "autogluon"
 
         manifest = RunManifest(
@@ -352,12 +353,12 @@ def evaluate_split(
                 "peak_memory_mb": peak_memory_mb,
                 "training_backend": training_backend,
                 "hpo_backend": hpo_backend,
-                "autogluon_presets": best_params.get("presets") if method_id == "autogluon_survival" else None,
+                "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
                 "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
                 "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
                 "autogluon_path": autogluon_metadata.get("autogluon_path"),
-                "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
-                "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
+                "bagging_folds": best_params.get("num_bag_folds", 0) if autogluon_backed else 0,
+                "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
                 "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
@@ -388,12 +389,12 @@ def evaluate_split(
             "peak_memory_mb": peak_memory_mb,
             "training_backend": training_backend,
             "hpo_backend": hpo_backend,
-            "autogluon_presets": best_params.get("presets") if method_id == "autogluon_survival" else None,
+            "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
             "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
             "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
             "autogluon_path": autogluon_metadata.get("autogluon_path"),
-            "bagging_folds": best_params.get("num_bag_folds", 0) if method_id == "autogluon_survival" else 0,
-            "stack_levels": best_params.get("num_stack_levels", 0) if method_id == "autogluon_survival" else 0,
+            "bagging_folds": best_params.get("num_bag_folds", 0) if autogluon_backed else 0,
+            "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
             "hpo_status": hpo_metadata.get("status", "disabled"),
             "hpo_trial_count": hpo_metadata.get("trial_count", 0),
             "status": "success",
@@ -459,7 +460,7 @@ def evaluate_split(
             "fit_time_sec": np.nan,
             "infer_time_sec": np.nan,
             "peak_memory_mb": peak_memory_mb,
-            "training_backend": "autogluon" if method_id == "autogluon_survival" else "native",
+            "training_backend": "autogluon" if is_autogluon_method(method_id) else "native",
             "hpo_backend": "none",
             "autogluon_presets": None,
             "autogluon_best_model": None,
@@ -483,7 +484,7 @@ def _autogluon_metadata(model: Any) -> dict[str, Any]:
 
 
 def _method_cfg_with_autogluon_defaults(method_cfg: dict[str, Any], autogluon_cfg: dict[str, Any] | None) -> dict[str, Any]:
-    if method_cfg.get("method_id") != "autogluon_survival":
+    if not is_autogluon_method(str(method_cfg.get("method_id"))):
         return method_cfg
     merged = dict(method_cfg)
     defaults = dict(method_cfg.get("default_params", {}))
@@ -634,10 +635,7 @@ def _benchmark_artifact_names(model_name: str) -> dict[str, str]:
         "fold_results_csv": f"{model_name}_fold_results.csv",
         "leaderboard_csv": f"{model_name}_leaderboard.csv",
         "run_diagnostics_csv": f"{model_name}_run_diagnostics.csv",
-        "coverage_matrix_csv": f"{model_name}_coverage_matrix.csv",
-        "coverage_matrix_md": f"{model_name}_coverage_matrix.md",
         "runtime_failure_summary_csv": f"{model_name}_runtime_failure_summary.csv",
-        "runtime_failure_summary_md": f"{model_name}_runtime_failure_summary.md",
     }
 
 
@@ -655,16 +653,10 @@ def _benchmark_readme_lines(
         f"- Model set: `{model_name}`",
         f"- Fold results: [{artifact_names['fold_results_csv']}]({artifact_names['fold_results_csv']})",
         f"- Leaderboard: [{artifact_names['leaderboard_csv']}]({artifact_names['leaderboard_csv']})",
-        f"- Coverage matrix CSV: [{artifact_names['coverage_matrix_csv']}]({artifact_names['coverage_matrix_csv']})",
-        f"- Coverage matrix: [{artifact_names['coverage_matrix_md']}]({artifact_names['coverage_matrix_md']})",
         (
             "- Runtime and failure summary CSV: "
             f"[{artifact_names['runtime_failure_summary_csv']}]"
             f"({artifact_names['runtime_failure_summary_csv']})"
-        ),
-        (
-            "- Runtime and failure summary: "
-            f"[{artifact_names['runtime_failure_summary_md']}]({artifact_names['runtime_failure_summary_md']})"
         ),
         f"- Run diagnostics: [{artifact_names['run_diagnostics_csv']}]({artifact_names['run_diagnostics_csv']})",
         "- Navigator: [experiment_navigator.json](experiment_navigator.json)",
@@ -798,7 +790,6 @@ def run_benchmark(
 ) -> None:
     from survarena.logging.export import (
         create_experiment_dir,
-        export_coverage_matrix,
         export_fold_results,
         export_leaderboard,
         export_run_diagnostics,
@@ -1019,13 +1010,6 @@ def run_benchmark(
             dataset_curation_rows=dataset_curation,
             hpo_trial_rows=dataset_hpo_trials,
             run_records=dataset_run_records,
-            output_dir=experiment_dir,
-            file_prefix=model_name,
-        )
-        export_coverage_matrix(
-            repo_root,
-            frame,
-            primary_metric=primary_metric,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )

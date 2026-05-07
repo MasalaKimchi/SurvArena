@@ -4,13 +4,17 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`
+- implemented adapters: `tabpfn_survival`, `mitra_survival`
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
-- predictor access: `presets="foundation"`, `presets="all"`, or `enable_foundation_models=True`
-- benchmark access: no maintained foundation benchmark config is present in this
-  checkout; keep foundation adapters out of smoke, manuscript, and local
-  feasible HPO claims until a bounded config and evidence bundle are added
+- CLI access: `--foundation`
+- predictor access: `presets="foundation"`, `presets="all"`, or
+  `enable_foundation_models=True`
+- benchmark access: `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`
+  provides a bounded no-HPO frozen TabPFN smoke path, and
+  `configs/benchmark/mitra_survival_no_hpo_smoke.yaml` provides a bounded
+  no-HPO Mitra smoke path; keep foundation adapters out of manuscript and local
+  feasible HPO claims until the evidence bundle is promoted
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
 
 TabPFN note:
@@ -37,6 +41,11 @@ Adapter-specific details:
 
 - `tabpfn_survival` uses frozen TabPFN preprocessing/embeddings and trains an MLP
   Cox head; `n_estimators_final_inference` controls inference ensemble breadth.
+- `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
+  learner with `fine_tune=false` by default, then calibrates survival curves
+  with the shared Breslow baseline survival adapter. AutoGluon's Mitra extra
+  requires `torch>=2.6`, which the default SurvArena dependency set now pins
+  through `torch==2.6.0`.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated

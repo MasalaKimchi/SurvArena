@@ -23,6 +23,7 @@ Useful overrides:
 - `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,kkbox ./scripts/setup_env.sh`
 
 ## Manual Setup
@@ -41,6 +42,13 @@ Optional foundation extras:
 python -m pip install -e ".[foundation]"
 python scripts/check_environment.py --include-foundation
 survarena foundation-check
+```
+
+Install only one foundation backend when isolating dependency issues:
+
+```bash
+python -m pip install -e ".[foundation-tabpfn]"
+python -m pip install -e ".[foundation-mitra]"
 ```
 
 Optional KKBox downloader extras:

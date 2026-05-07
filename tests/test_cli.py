@@ -191,6 +191,37 @@ def test_pilot_cli_repeated_uses_small_cv_defaults(monkeypatch) -> None:
     assert captured["benchmark_id"] == "user_pilot_cv"
 
 
+def test_pilot_cli_foundation_flag_includes_foundation_models(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {"benchmark_id": kwargs["benchmark_id"]}
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--foundation",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["presets"] == "fast"
+    assert captured["enable_foundation_models"] is True
+
+
 def test_foundation_check_cli_emits_runtime_status(monkeypatch, capsys) -> None:
     monkeypatch.setattr(
         cli,

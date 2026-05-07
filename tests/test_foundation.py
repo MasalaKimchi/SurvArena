@@ -11,6 +11,7 @@ import pytest
 
 from survarena.api.predictor import SurvivalPredictor
 from survarena.automl.presets import resolve_preset
+from survarena.config import read_yaml
 from survarena.methods.foundation.catalog import available_foundation_model_specs
 from survarena.methods.foundation.readiness import FoundationRuntimeStatus, foundation_runtime_status
 
@@ -20,7 +21,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 @lru_cache(maxsize=1)
 def _torch_backend_probe() -> tuple[bool, str | None]:
     completed = subprocess.run(
-        [sys.executable, "-c", "import torch"],
+        [sys.executable, "-c", "import torch; import torchsurv.loss.cox"],
         check=False,
         capture_output=True,
         cwd=str(REPO_ROOT),
@@ -40,13 +41,48 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
     catalog = predictor.foundation_model_catalog()
 
     assert "tabpfn_survival" in catalog["method_id"].tolist()
+    assert "mitra_survival" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
     assert "dependency_installed" in catalog.columns
     assert "runtime_ready" in catalog.columns
     assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
+    assert implemented["mitra_survival"] is True
     assert implemented["tabicl_survival"] is False
+
+
+def test_tabpfn_method_config_does_not_search_unsupported_finetuning() -> None:
+    spec = next(item for item in available_foundation_model_specs() if item.method_id == "tabpfn_survival")
+    method_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabpfn_survival.yaml")
+
+    assert spec.supports_finetune is False
+    assert method_cfg["search_space"]["backbone_training"]["choices"] == ["frozen"]
+    assert method_cfg["default_params"]["model_version"] == "v2.5"
+    assert method_cfg["default_params"]["backbone_task"] == "classification_event"
+    assert "n_estimators_finetune" not in method_cfg["search_space"]
+
+
+def test_foundation_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_tabpfn_frozen_smoke.yaml")
+    override = benchmark_cfg["hpo"]["method_overrides"]["tabpfn_survival"]
+
+    assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
+    assert benchmark_cfg["hpo"]["enabled"] is False
+    assert benchmark_cfg["datasets"][0] == "whas500"
+    assert benchmark_cfg["methods"] == ["coxph", "rsf", "tabpfn_survival"]
+    assert override["search_space"] is None
+    assert override["default_params"] == {
+        "model_version": "v2.5",
+        "backbone_task": "classification_event",
+        "backbone_training": "frozen",
+        "n_estimators": 1,
+        "n_estimators_final_inference": 1,
+        "hidden_layers": "64",
+        "dropout": 0.0,
+        "max_epochs": 25,
+        "patience": 5,
+    }
 
 
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:
@@ -141,6 +177,100 @@ def test_foundation_preset_adds_tabpfn_when_dependency_exists(monkeypatch) -> No
     )
 
     assert "tabpfn_survival" in preset.method_ids
+
+
+def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch) -> None:
+    torch_ready, probe_detail = _torch_backend_probe()
+    if not torch_ready:
+        pytest.skip(f"Torch foundation probe failed in this environment: {probe_detail}")
+
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+
+    class FakeBackbone:
+        init_kwargs: list[dict[str, object]] = []
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = dict(kwargs)
+            FakeBackbone.init_kwargs.append(self.kwargs)
+
+        @classmethod
+        def create_default_for_version(cls, version: object, **kwargs):
+            return cls(model_version=version, **kwargs)
+
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeBackbone":
+            self.X_fit_ = np.asarray(X, dtype=np.float32)
+            self.y_fit_ = np.asarray(y)
+            return self
+
+        def get_embeddings(self, X: np.ndarray, data_source: str = "test") -> np.ndarray:
+            X_np = np.asarray(X, dtype=np.float32)
+            base = np.column_stack(
+                [
+                    X_np[:, 0],
+                    X_np[:, 1],
+                    X_np[:, 2],
+                    X_np.mean(axis=1),
+                ]
+            ).astype(np.float32)
+            n_estimators = int(self.kwargs.get("n_estimators", 1))
+            return np.stack([base + (0.01 * i) for i in range(n_estimators)], axis=0)
+
+    fake_tabpfn = types.ModuleType("tabpfn")
+    fake_tabpfn.TabPFNClassifier = FakeBackbone
+    fake_tabpfn.TabPFNRegressor = FakeBackbone
+    fake_constants = types.ModuleType("tabpfn.constants")
+    fake_constants.ModelVersion = types.SimpleNamespace(V2="v2", V2_5="v2.5")
+
+    monkeypatch.setitem(sys.modules, "tabpfn", fake_tabpfn)
+    monkeypatch.setitem(sys.modules, "tabpfn.constants", fake_constants)
+    monkeypatch.setattr(
+        "survarena.methods.foundation.tabpfn_survival.ensure_foundation_runtime_ready",
+        lambda method_id, checkpoint_path=None: None,
+    )
+
+    X = np.asarray(
+        [
+            [0.10, 1.00, 0.20],
+            [0.20, 0.90, 0.10],
+            [0.35, 0.80, 0.30],
+            [0.40, 0.70, 0.25],
+            [0.55, 0.60, 0.40],
+            [0.65, 0.50, 0.35],
+            [0.70, 0.40, 0.50],
+            [0.80, 0.30, 0.45],
+            [0.85, 0.25, 0.60],
+            [0.95, 0.20, 0.55],
+            [1.05, 0.15, 0.70],
+            [1.10, 0.10, 0.65],
+        ],
+        dtype=np.float32,
+    )
+    time = np.asarray([4, 6, 7, 9, 10, 12, 13, 15, 16, 18, 20, 22], dtype=np.float64)
+    event = np.asarray([1, 0, 1, 1, 0, 1, 0, 1, 0, 1, 0, 1], dtype=np.int32)
+
+    method = TabPFNSurvivalMethod(
+        backbone_training="frozen",
+        n_estimators=1,
+        n_estimators_final_inference=1,
+        hidden_layers="64",
+        dropout=0.0,
+        max_epochs=2,
+        patience=1,
+        device="cpu",
+        seed=13,
+    )
+
+    method.fit(X, time, event)
+    risk = method.predict_risk(X[:4])
+    survival = method.predict_survival(X[:4], np.asarray([5.0, 10.0, 15.0]))
+
+    assert FakeBackbone.init_kwargs[-1]["n_estimators"] == 1
+    assert method.finetuned_estimator_ is None
+    assert risk.shape == (4,)
+    assert survival.shape == (4, 3)
+    assert np.isfinite(risk).all()
+    assert np.isfinite(survival).all()
+    assert ((survival >= 0.0) & (survival <= 1.0)).all()
 
 
 def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:

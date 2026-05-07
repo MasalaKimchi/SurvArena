@@ -5,7 +5,7 @@ import pandas as pd
 from survarena.logging.export import export_coverage_matrix
 
 
-def test_coverage_matrix_exports_csv_and_markdown(tmp_path) -> None:
+def test_coverage_matrix_exports_csv_only(tmp_path) -> None:
     fold_results = pd.DataFrame(
         [
             {
@@ -58,7 +58,7 @@ def test_coverage_matrix_exports_csv_and_markdown(tmp_path) -> None:
     )
 
     assert (tmp_path / "coxph_coverage_matrix.csv").exists()
-    assert (tmp_path / "coxph_coverage_matrix.md").exists()
+    assert not (tmp_path / "coxph_coverage_matrix.md").exists()
     by_method = coverage.set_index("method_id")
     assert by_method.loc["coxph", "coverage_status"] == "success"
     assert by_method.loc["coxnet", "coverage_status"] == "missing_metric"
@@ -68,4 +68,3 @@ def test_coverage_matrix_exports_csv_and_markdown(tmp_path) -> None:
     assert by_method.loc["coxnet", "failure_reason"] == "missing_primary_metric"
     assert by_method.loc["rsf", "failure_reason"] == "ValueError"
     assert by_method["artifact_path"].tolist() == ["coxph_fold_results.csv"] * 3
-    assert "Coverage Matrix" in (tmp_path / "coxph_coverage_matrix.md").read_text(encoding="utf-8")

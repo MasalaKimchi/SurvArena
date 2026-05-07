@@ -100,6 +100,27 @@ def foundation_runtime_status(
             blocked_reason=blocked_reason,
         )
 
+    if spec.method_id == "mitra_survival":
+        try:
+            importlib.import_module("autogluon.tabular.models.mitra.sklearn_interface")
+        except ImportError as exc:
+            blocked_reason = (
+                "AutoGluon's Mitra extra is not installed completely. "
+                "Install the foundation-mitra extra with `python -m pip install -e \".[foundation-mitra]\"`. "
+                + f" Original error: {exc}"
+            )
+            return FoundationRuntimeStatus(
+                method_id=spec.method_id,
+                dependency_module=spec.dependency_module,
+                install_extra=spec.install_extra,
+                dependency_installed=True,
+                runtime_ready=False,
+                requires_hf_auth=spec.requires_hf_auth,
+                auth_configured=auth_configured,
+                install_command=install_command,
+                blocked_reason=blocked_reason,
+            )
+
     if checkpoint_path is not None:
         checkpoint = Path(checkpoint_path).expanduser()
         if not checkpoint.exists():

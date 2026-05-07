@@ -58,6 +58,35 @@ def test_load_kkbox_uses_pycox_cache_and_drops_survival_and_identifier_columns(m
     np.testing.assert_array_equal(dataset.event, np.array([1, 0, 1]))
 
 
+def test_load_nwtco_pycox_matches_documented_shape_targets_and_feature_metadata() -> None:
+    dataset = load_dataset("nwtco", repo_root=Path(__file__).resolve().parents[1])
+
+    assert dataset.metadata.dataset_id == "nwtco"
+    assert dataset.metadata.source == "pycox"
+    assert dataset.metadata.time_col == "edrel"
+    assert dataset.metadata.event_col == "rel"
+    assert dataset.metadata.feature_types == ["numerical", "categorical"]
+    assert dataset.X.shape == (4028, 6)
+    assert dataset.X.columns.tolist() == ["stage", "age", "in.subcohort", "instit_2", "histol_2", "study_4"]
+    assert dataset.time.shape == (4028,)
+    assert dataset.event.shape == (4028,)
+    assert np.all(dataset.time > 0.0)
+    assert float(dataset.time.min()) == 4.0
+    assert float(dataset.time.max()) == 6209.0
+    assert int(dataset.event.sum()) == 571
+
+    feature_metadata = {feature.name: feature for feature in dataset.metadata.feature_metadata}
+    assert feature_metadata["stage"].inferred_type == "categorical"
+    assert feature_metadata["stage"].dtype == "category"
+    assert feature_metadata["age"].inferred_type == "numerical"
+    assert feature_metadata["in.subcohort"].inferred_type == "categorical"
+    assert feature_metadata["instit_2"].n_unique == 2
+    assert dataset.metadata.diagnostics is not None
+    assert dataset.metadata.diagnostics.n_events == 571
+    assert dataset.metadata.diagnostics.n_features == 6
+    assert dataset.metadata.diagnostics.event_rate == pytest.approx(571 / 4028)
+
+
 def test_load_kkbox_reports_missing_pycox_cache(monkeypatch) -> None:
     monkeypatch.setattr(loader_mod, "_read_kkbox_pycox_frame", lambda: None)
 

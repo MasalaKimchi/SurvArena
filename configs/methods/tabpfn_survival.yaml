@@ -1,7 +1,7 @@
 method_id: tabpfn_survival
 family: foundation
 library: tabpfn + scikit-survival
-notes: Experimental tabular foundation-model adapter using frozen TabPFN public features with a trainable MLP survival head optimized by Cox loss.
+notes: Experimental TabPFN-2.5 classifier embedding adapter using frozen TabPFN public features with a trainable MLP survival head optimized by Cox loss.
 search_space:
   n_estimators:
     type: categorical
@@ -17,7 +17,7 @@ search_space:
     choices: [classification_event, regression_time]
   backbone_training:
     type: categorical
-    choices: [frozen, finetune]
+    choices: [frozen]
   aggregate_estimators:
     type: categorical
     choices: [mean, concat]
@@ -55,16 +55,13 @@ search_space:
     type: int
     low: 10
     high: 40
-  n_estimators_finetune:
-    type: categorical
-    choices: [1, 2, 4]
   n_estimators_final_inference:
     type: categorical
     choices: [4, 8]
 default_params:
   n_estimators: 8
   fit_mode: fit_preprocessors
-  model_version: auto
+  model_version: v2.5
   checkpoint_path: null
   backbone_task: classification_event
   backbone_training: frozen

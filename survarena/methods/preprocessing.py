@@ -5,6 +5,7 @@ from typing import Any
 import pandas as pd
 
 from survarena.data.preprocess import MAX_DENSE_ONE_HOT_FEATURES
+from survarena.methods.registry import is_autogluon_method
 
 
 _NO_NUMERIC_SCALING_METHOD_IDS = frozenset(
@@ -13,21 +14,20 @@ _NO_NUMERIC_SCALING_METHOD_IDS = frozenset(
         "gradient_boosting_survival",
         "extra_survival_trees",
         "xgboost_cox",
-        "autogluon_survival",
         "catboost_cox",
         "xgboost_aft",
         "catboost_survival_aft",
     }
 )
-_NATIVE_CATEGORICAL_METHOD_IDS = frozenset({"autogluon_survival", "catboost_cox", "catboost_survival_aft"})
+_NATIVE_CATEGORICAL_METHOD_IDS = frozenset({"catboost_cox", "catboost_survival_aft"})
 
 
 def method_uses_scaled_numeric_features(method_id: str) -> bool:
-    return method_id not in _NO_NUMERIC_SCALING_METHOD_IDS
+    return not is_autogluon_method(method_id) and method_id not in _NO_NUMERIC_SCALING_METHOD_IDS
 
 
 def method_uses_native_categorical_features(method_id: str) -> bool:
-    return method_id in _NATIVE_CATEGORICAL_METHOD_IDS
+    return is_autogluon_method(method_id) or method_id in _NATIVE_CATEGORICAL_METHOD_IDS
 
 
 def method_preprocessor_kwargs(method_id: str) -> dict[str, Any]:

@@ -25,6 +25,7 @@ _REGISTRY_TARGETS = {
     "extra_survival_trees": ("survarena.methods.tree.extra_survival_trees", "ExtraSurvivalTreesMethod"),
     "xgboost_cox": ("survarena.methods.boosting.tabular_boosting", "XGBoostCoxMethod"),
     "xgboost_aft": ("survarena.methods.boosting.tabular_boosting", "XGBoostAFTMethod"),
+    "xgbse_kaplan_neighbors": ("survarena.methods.boosting.xgbse_models", "XGBSEKaplanNeighborsMethod"),
     "catboost_cox": ("survarena.methods.boosting.tabular_boosting", "CatBoostCoxMethod"),
     "catboost_survival_aft": ("survarena.methods.boosting.tabular_boosting", "CatBoostSurvivalAFTMethod"),
     "deepsurv": ("survarena.methods.deep.deepsurv", "DeepSurvMethod"),
@@ -36,12 +37,18 @@ _REGISTRY_TARGETS = {
     "pchazard": ("survarena.methods.deep.pycox_models", "PCHazardMethod"),
     "cox_time": ("survarena.methods.deep.pycox_models", "CoxTimeMethod"),
     "tabpfn_survival": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalMethod"),
-    "autogluon_survival": ("survarena.methods.automl.autogluon_survival", "AutoGluonSurvivalMethod"),
+    "mitra_survival": ("survarena.methods.automl.mitra_survival", "MitraSurvivalMethod"),
 }
+
+_AUTOGLUON_METHOD_IDS = frozenset({"mitra_survival"})
 
 
 def registered_method_ids() -> tuple[str, ...]:
     return tuple(_REGISTRY_TARGETS.keys())
+
+
+def is_autogluon_method(method_id: str) -> bool:
+    return method_id in _AUTOGLUON_METHOD_IDS
 
 
 @lru_cache(maxsize=None)

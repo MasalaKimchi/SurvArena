@@ -67,6 +67,36 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
+def _read_nwtco_pycox_raw_frame() -> pd.DataFrame:
+    from pycox.datasets import nwtco
+
+    return nwtco.read_df(processed=False)
+
+
+def _load_nwtco_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    frame = _read_nwtco_pycox_raw_frame()
+    required_columns = {"instit", "histol", "stage", "study", "age", "in.subcohort", "edrel", "rel"}
+    missing_columns = required_columns.difference(frame.columns)
+    if missing_columns:
+        missing = ", ".join(sorted(missing_columns))
+        raise ValueError(f"NWTCO pycox frame is missing required column(s): {missing}")
+
+    frame = frame.copy()
+    frame["instit_2"] = frame["instit"] - 1
+    frame["histol_2"] = frame["histol"] - 1
+    frame["study_4"] = frame["study"] - 3
+    frame["stage"] = frame["stage"].astype("category")
+    drop_columns = ["Unnamed: 0", "rownames", "seqno", "instit", "histol", "study"]
+    frame = frame.drop(columns=[column for column in drop_columns if column in frame.columns])
+    for column in frame.columns.drop("stage"):
+        frame[column] = frame[column].astype("float32")
+
+    event = frame["rel"].to_numpy(dtype=np.int32)
+    time = frame["edrel"].to_numpy(dtype=np.float64)
+    X = frame.drop(columns=["rel", "edrel"])
+    return X, time, event
+
+
 def _read_kkbox_pycox_frame() -> pd.DataFrame | None:
     from pycox.datasets import kkbox
 
@@ -101,6 +131,7 @@ def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,
         "metabric": _load_metabric_pycox,
+        "nwtco": _load_nwtco_pycox,
         "aids": lambda: _load_from_sksurv("aids"),
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),

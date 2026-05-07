@@ -284,7 +284,7 @@ def _resume_record(status: str = "success") -> dict[str, object]:
         ("rsf", "tree fit failed"),
         ("xgboost_cox", "boosting fit failed"),
         ("deepsurv", "deep fit failed"),
-        ("autogluon_survival", "automl fit failed"),
+        ("mitra_survival", "foundation AutoGluon fit failed"),
         ("tabpfn_survival", "Dependency 'tabpfn' is not installed."),
     ],
 )
@@ -521,7 +521,7 @@ def test_benchmark_profiling_manifest_and_artifact_emitted(tmp_path: Path, monke
     assert all(value >= 0.0 for value in manifest["profiling"]["phase_timings_sec"].values())
 
 
-def test_benchmark_run_emits_coverage_links(tmp_path: Path, monkeypatch) -> None:
+def test_benchmark_run_emits_compact_artifact_links(tmp_path: Path, monkeypatch) -> None:
     calls = {"count": 0}
     writes: dict[str, dict[str, object]] = {}
     _install_common_monkeypatches(monkeypatch, calls)
@@ -536,12 +536,12 @@ def test_benchmark_run_emits_coverage_links(tmp_path: Path, monkeypatch) -> None
     runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
 
     assert calls["count"] == 1
-    assert (tmp_path / "coxph_coverage_matrix.csv").exists()
-    assert (tmp_path / "coxph_coverage_matrix.md").exists()
     assert (tmp_path / "README.md").exists()
-    assert writes["experiment_navigator.json"]["artifacts"]["coverage_matrix_csv"] == "coxph_coverage_matrix.csv"
-    assert writes["experiment_manifest.json"]["artifacts"]["coverage_matrix_md"] == "coxph_coverage_matrix.md"
-    assert "coxph_coverage_matrix.md" in (tmp_path / "README.md").read_text(encoding="utf-8")
+    assert not (tmp_path / "coxph_coverage_matrix.csv").exists()
+    assert not (tmp_path / "coxph_coverage_matrix.md").exists()
+    assert "coverage_matrix" not in writes["experiment_navigator.json"]["artifacts"]
+    assert "coverage_matrix" not in writes["experiment_manifest.json"]["artifacts"]
+    assert "coverage_matrix" not in (tmp_path / "README.md").read_text(encoding="utf-8")
 
 
 def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: Path, monkeypatch) -> None:
@@ -616,10 +616,7 @@ def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: 
         "multi_model_fold_results.csv",
         "multi_model_leaderboard.csv",
         "multi_model_run_diagnostics.csv",
-        "multi_model_coverage_matrix.csv",
-        "multi_model_coverage_matrix.md",
         "multi_model_runtime_failure_summary.csv",
-        "multi_model_runtime_failure_summary.md",
         "experiment_navigator.json",
         "experiment_manifest.json",
         "README.md",

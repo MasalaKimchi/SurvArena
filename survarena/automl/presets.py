@@ -47,12 +47,6 @@ _PRESETS: dict[str, PresetConfig] = {
         holdout_frac=0.15,
         scale_limit_rows=10_000,
     ),
-    "autogluon": PresetConfig(
-        name="autogluon",
-        method_ids=("autogluon_survival",),
-        holdout_frac=0.15,
-        scale_limit_rows=100_000,
-    ),
 }
 
 

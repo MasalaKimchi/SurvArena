@@ -26,7 +26,7 @@ dependencies = [
     "catboost==1.2.10",
     "torchtuples==0.2.2",
     "torchsurv==0.1.5",
-    "torch==2.2.2",
+    "torch==2.6.0",
     "autogluon.tabular==1.5.0",
     "matplotlib==3.9.2",
     "seaborn==0.13.2",
@@ -36,12 +36,16 @@ dependencies = [
 
 [project.optional-dependencies]
 foundation-tabpfn = [
-    "torchvision==0.17.2",
+    "torchvision==0.21.0",
     "tabpfn==6.2.0",
 ]
+foundation-mitra = [
+    "autogluon.tabular[mitra]==1.5.0",
+]
 foundation = [
-    "torchvision==0.17.2",
+    "torchvision==0.21.0",
     "tabpfn==6.2.0",
+    "autogluon.tabular[mitra]==1.5.0",
 ]
 kkbox = [
     "kaggle>=2.1,<3",

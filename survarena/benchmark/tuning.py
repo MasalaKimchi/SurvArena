@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any, Callable
 
 from survarena.evaluation.statistics import metric_direction
@@ -105,6 +105,10 @@ def _build_hpo_metadata(
     if best_trial_score is not None:
         metadata["best_trial_score"] = float(best_trial_score)
     return metadata
+
+
+def _utc_timestamp() -> str:
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | None) -> dict[str, Any]:
@@ -265,7 +269,7 @@ def select_hyperparameters(
         pruner_name = str(resolved_hpo["pruner"])
         pruner = MedianPruner(n_startup_trials=int(resolved_hpo["n_startup_trials"])) if pruner_name == "median" else NopPruner()
 
-        started_at = datetime.utcnow().isoformat(timespec="seconds")
+        started_at = _utc_timestamp()
 
         def _objective(trial: Any) -> float:
             sampled_params = dict(defaults)
@@ -298,7 +302,7 @@ def select_hyperparameters(
             n_trials=int(resolved_hpo["max_trials"]),
             timeout=resolved_hpo["timeout_seconds"],
         )
-        finished_at = datetime.utcnow().isoformat(timespec="seconds")
+        finished_at = _utc_timestamp()
 
         completed_trials = [
             trial

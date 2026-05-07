@@ -66,7 +66,7 @@ def _synthetic_fold_results() -> pd.DataFrame:
     )
 
 
-def test_runtime_failure_summary_exports_csv_and_markdown(tmp_path: Path) -> None:
+def test_runtime_failure_summary_exports_csv_only(tmp_path: Path) -> None:
     run_records = [
         {
             "metrics": {
@@ -92,7 +92,7 @@ def test_runtime_failure_summary_exports_csv_and_markdown(tmp_path: Path) -> Non
     )
 
     assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
-    assert (tmp_path / "toy_runtime_failure_summary.md").exists()
+    assert not (tmp_path / "toy_runtime_failure_summary.md").exists()
     by_method = summary.set_index("method_id")
     assert by_method.loc["coxph", "failure_category"] == "success"
     assert by_method.loc["coxph", "missing_metric_columns"] == ""
@@ -102,10 +102,6 @@ def test_runtime_failure_summary_exports_csv_and_markdown(tmp_path: Path) -> Non
     assert by_method.loc["coxnet", "n_missing_metrics"] == 1
     assert by_method.loc["coxnet", "missing_metric_columns"] == "uno_c, td_auc_25, td_auc_50, td_auc_75"
     assert by_method.loc["coxph", "runtime_sec_mean"] == 1.2
-
-    markdown = (tmp_path / "toy_runtime_failure_summary.md").read_text(encoding="utf-8")
-    assert "Runtime and Failure Summary" in markdown
-    assert "Successful rows with missing metrics: 1" in markdown
 
 
 def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
@@ -121,7 +117,7 @@ def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
 
     assert (tmp_path / "toy_run_diagnostics.csv").exists()
     assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
-    assert (tmp_path / "toy_runtime_failure_summary.md").exists()
+    assert not (tmp_path / "toy_runtime_failure_summary.md").exists()
 
 
 def test_runtime_failure_summary_classifies_foundation_readiness_failures(tmp_path: Path) -> None:

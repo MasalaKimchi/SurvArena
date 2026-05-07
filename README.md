@@ -83,6 +83,7 @@ VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 # Install optional foundation-model or KKBox extras.
 INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-tabpfn PYTHON_BIN=python3.11 ./scripts/setup_env.sh
+INSTALL_EXTRAS=dev,foundation-mitra PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,kkbox PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 ```
 
@@ -107,6 +108,7 @@ Optional extras:
 ```bash
 python -m pip install -e ".[foundation]"
 python -m pip install -e ".[foundation-tabpfn]"
+python -m pip install -e ".[foundation-mitra]"
 python -m pip install -e ".[tracking]"
 ```
 
@@ -133,7 +135,7 @@ for the local MacBook used for the current feasibility run:
 - 18 GB unified memory
 - macOS 26.3.1
 - Python 3.12.2 in `.venv`
-- PyTorch 2.2.2, `torch.backends.mps.is_available() == True`,
+- PyTorch 2.6.0, `torch.backends.mps.is_available() == True`,
   `torch.cuda.is_available() == False`
 
 For manuscript-grade local ELO construction on this machine, use CPU defaults.
@@ -143,13 +145,13 @@ otherwise; they do not auto-select Apple MPS. A direct MPS probe of
 because PyTorch MPS does not implement `aten::_logcumsumexp`, so Cox-loss neural
 training remains CPU-only here.
 
-### Local Feasible HPO Elo Preview
+### Current Expansion Elo Preview
 
-The current local feasible HPO evidence bundle compares native Python adapters
-across paired no-HPO and HPO modes. Foundation-model adapters are not included
-in this run.
+The current local expansion evidence bundle adds the newly wired foundation and
+dataset smoke tracks to the Elo comparison. Keep older local probe figures out
+of the repository so the README points at one current benchmark view.
 
-![Paired no-HPO and HPO Elo ratings by SurvArena model](docs/assets/local_feasible_hpo_elo_uno_c.png)
+![Expansion Elo ratings by benchmark and mode](results/expansion_elo_smoke/figures/elo_expansion_by_benchmark_mode_uno_c.png)
 
 ### First Smoke Run
 
@@ -260,6 +262,22 @@ survarena fit \
 The CLI prints the fit summary JSON after training and writes predictor
 artifacts to disk.
 
+Minimal foundation-model pilot:
+
+```bash
+survarena foundation-check
+survarena pilot \
+  --data my_survival_data.csv \
+  --time-col time \
+  --event-col event \
+  --foundation \
+  --save-path results/my_foundation_pilot
+```
+
+For a more comprehensive but still compact evaluation, add `--repeated` to the
+same command. `--foundation` keeps the default fast native baselines and adds
+runtime-ready foundation adapters such as TabPFN and Mitra.
+
 ## Data Requirements
 
 Input data can be provided as:
@@ -361,6 +379,7 @@ require their documented extras and readiness checks before long runs.
 | `componentwise_gradient_boosting` | Componentwise gradient boosting survival analysis | Boosting | `scikit-survival` | Smoke, manuscript |
 | `xgboost_cox` | XGBoost Cox objective adapter | Boosting | `xgboost` | Smoke, manuscript |
 | `xgboost_aft` | XGBoost AFT objective adapter | Boosting | `xgboost` | Smoke, manuscript |
+| `xgbse_kaplan_neighbors` | XGBSE Kaplan-neighbors survival curves | Boosting | `xgbse` | Optional explicit runs |
 | `catboost_cox` | CatBoost Cox-style calibrated adapter | Boosting | `catboost` | Smoke, manuscript |
 | `catboost_survival_aft` | CatBoost survival AFT adapter | Boosting | `catboost` | Smoke, manuscript |
 | `deepsurv` | DeepSurv neural Cox model | Deep learning | `torchsurv` | Standard, smoke, manuscript |
@@ -371,94 +390,16 @@ require their documented extras and readiness checks before long runs.
 | `deephit_single` | DeepHit single-risk model | Deep learning | `pycox` | Smoke, manuscript |
 | `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Smoke, manuscript |
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `autogluon_survival` | AutoGluon event-risk survival adapter | AutoML | `autogluon.tabular` | Optional appendix runs |
+| `mitra_survival` | Mitra Survival Risk Adapter | Foundation | `autogluon.tabular` MITRA | Optional foundation runs |
 | `tabpfn_survival` | TabPFN embedding survival head | Foundation | `tabpfn` + `scikit-survival` | Optional foundation runs |
+
+`xgbse_kaplan_neighbors` is registered for explicit experiments, but is not in
+the maintained benchmark configs while the latest `xgbse` package requires an
+older `xgboost` major version than SurvArena currently pins.
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
 metric aggregation, and exported comparison artifacts, see
 [`docs/benchmarking_workflow.md`](docs/benchmarking_workflow.md).
-
-## AutoGluon Usage Contract
-
-SurvArena exposes AutoGluon through one adapter method id:
-`autogluon_survival`.
-The design intent is to use AutoGluon's tabular model portfolio as a training
-backend while keeping SurvArena's survival-centric evaluation and export
-contract unchanged.
-
-### Intent and adaptation boundary
-
-- `TabularPredictor.fit(...)` can train many tabular base models plus ensembles
-  (for example `WeightedEnsemble_L2`) under one predictor.
-- In this repository, that portfolio is adapted to survival by:
-  - fitting a binary event-risk model (`event` as label),
-  - using event probability as risk score,
-  - deriving survival curves via Breslow baseline calibration.
-- This is an adaptation layer for right-censored benchmarks, not native
-  censored-loss optimization inside `autogluon.tabular`.
-
-### What "all AutoGluon models" means in SurvArena
-
-- SurvArena benchmark rows are keyed by SurvArena `method_id`, not by every
-  AutoGluon internal submodel.
-- `autogluon_survival` may internally evaluate many AutoGluon tabular models,
-  but appears as one method in SurvArena fold/leaderboard CSVs.
-- Use two leaderboards for different questions:
-  - AutoGluon internal model ranking: `predictor.leaderboard(...)`.
-  - Benchmark-level cross-method ranking: `<model_name>_leaderboard.csv`.
-
-### Comparability contract (what to trust for benchmark claims)
-
-- For cross-method survival comparison, treat SurvArena survival exports as
-  authoritative (`uno_c`, `harrell_c`, `ibs`, horizon AUC/Brier/calibration/net
-  benefit where configured).
-- AutoGluon-native tabular task metrics (for example `accuracy`/`roc_auc` for
-  internal event modeling) are diagnostic and should not replace SurvArena's
-  survival metrics in benchmark conclusions.
-- The benchmark runner (`python -m survarena.run_benchmark`) is the canonical
-  path for producing comparable artifacts across methods and split geometry.
-
-### Runtime controls and HPO interaction
-
-AutoGluon-related benchmark YAML controls live under `autogluon:` (for example
-in `configs/benchmark/standard_v1.yaml`):
-
-- `presets`
-- `time_limit_seconds`
-- `hyperparameter_tune_kwargs`
-- `num_bag_folds`
-- `num_stack_levels`
-- `refit_full`
-
-Interpretation in outputs:
-
-- `training_backend=autogluon` indicates AutoGluon trained the model.
-- `hpo_backend=autogluon` indicates AutoGluon-internal tuning was used.
-- SurvArena's native HPO loop applies only when a method exposes a non-empty
-  SurvArena `search_space`.
-
-### Recommended usage patterns
-
-- **AutoGluon backend stress test**: Run only `autogluon_survival` to inspect
-  AutoGluon-managed behavior and internal leaderboard metadata.
-- **Fair benchmark comparison**: Run `autogluon_survival` alongside native
-  adapters on shared splits; compare only SurvArena survival metrics and
-  benchmark artifacts.
-
-For auditability, check exported fields such as:
-`training_backend`, `hpo_backend`, `autogluon_presets`,
-`autogluon_best_model`, `autogluon_model_count`, `autogluon_path`,
-`bagging_folds`, and `stack_levels`.
-
-### Limitations and open questions
-
-- Event-risk adaptation does not make `autogluon.tabular` a native censored
-  survival optimizer.
-- Per-AutoGluon-submodel survival rows are not yet first-class benchmark rows;
-  current reporting is method-level plus metadata.
-- Manuscript-grade claims should continue to rely on the maintained benchmark
-  protocol and configs; AutoGluon-heavy tracks are currently positioned as
-  dedicated comparison/appendix analyses.
 
 ## Compare API
 
@@ -511,6 +452,8 @@ Tracked benchmark configs:
   portfolio, repeated nested CV, no-HPO/default-policy only
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets and native manuscript methods
+- `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`: bounded no-HPO
+  smoke for the frozen `tabpfn_survival` path, starting on `whas500`
 - `configs/benchmark/local_feasible_hpo_v1.yaml`: MacBook-local native
   feasibility profile with paired `no_hpo` and bounded `hpo` tracks across the
   six standard datasets; foundation and AutoGluon adapters are intentionally
@@ -587,6 +530,7 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
+- `mitra_survival`
 
 Install and inspect foundation support:
 
@@ -607,6 +551,19 @@ TabPFN requires access to the gated model on Hugging Face:
 Foundation adapters are experimental. Smoke defaults keep pretrained backbones
 frozen and train only lightweight survival heads; check runtime readiness before
 including them in long benchmark runs.
+
+For user data, the shortest evaluation path is:
+
+```bash
+survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
+```
+
+Use `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml` for bounded
+`tabpfn_survival` budget checks, and
+`configs/benchmark/mitra_survival_no_hpo_smoke.yaml` for bounded Mitra
+foundation checks before expanding foundation coverage. AutoGluon's Mitra extra
+depends on `torch>=2.6`, which the default SurvArena environment now pins
+through `torch==2.6.0`.
 
 ## Outputs and Artifacts
 
@@ -665,7 +622,6 @@ python -m pip install -r requirements.txt
 - [Environment](docs/environment.md)
 - [Benchmark protocol](docs/protocol.md)
 - [Datasets](docs/datasets.md)
-- [AutoGluon backend](docs/autogluon_backend.md)
 - [AutoGluon comparison notes](docs/autogluon_comparison.md)
 - [Foundation models roadmap](docs/foundation_models.md)
 - [Benchmarking workflow](docs/benchmarking_workflow.md)

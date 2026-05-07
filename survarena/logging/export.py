@@ -62,7 +62,7 @@ def _artifact_paths(
     file_prefix: str | None,
     fallback: str,
     stem: str,
-) -> tuple[Path, Path]:
+) -> Path:
     if output_dir is None:
         base_dir = root / "results" / "tables"
         prefix = fallback
@@ -70,7 +70,7 @@ def _artifact_paths(
         base_dir = output_dir
         prefix = _artifact_prefix(file_prefix, fallback=fallback)
     base_dir.mkdir(parents=True, exist_ok=True)
-    return base_dir / f"{prefix}_{stem}.csv", base_dir / f"{prefix}_{stem}.md"
+    return base_dir / f"{prefix}_{stem}.csv"
 
 
 def _parse_split_geometry(split_id: object) -> tuple[int | None, int | None]:
@@ -82,37 +82,6 @@ def _parse_split_geometry(split_id: object) -> tuple[int | None, int | None]:
     if fixed:
         return 0, int(fixed.group("fold"))
     return None, None
-
-
-def _write_markdown_table(frame: pd.DataFrame, path: Path, *, title: str) -> None:
-    with path.open("w", encoding="utf-8") as handle:
-        handle.write(f"# {title}\n\n")
-        if frame.empty:
-            handle.write("No rows were exported.\n")
-            return
-        markdown_frame = frame.astype(object).where(pd.notna(frame), "")
-        columns = [str(col) for col in markdown_frame.columns]
-        handle.write("| " + " | ".join(columns) + " |\n")
-        handle.write("| " + " | ".join("---" for _ in columns) + " |\n")
-        for row in markdown_frame.itertuples(index=False, name=None):
-            values = [str(value).replace("|", "\\|") for value in row]
-            handle.write("| " + " | ".join(values) + " |\n")
-        handle.write("\n")
-
-
-def _markdown_table_lines(frame: pd.DataFrame) -> list[str]:
-    if frame.empty:
-        return ["No rows were exported."]
-    markdown_frame = frame.astype(object).where(pd.notna(frame), "")
-    columns = [str(col) for col in markdown_frame.columns]
-    lines = [
-        "| " + " | ".join(columns) + " |",
-        "| " + " | ".join("---" for _ in columns) + " |",
-    ]
-    for row in markdown_frame.itertuples(index=False, name=None):
-        values = [str(value).replace("|", "\\|") for value in row]
-        lines.append("| " + " | ".join(values) + " |")
-    return lines
 
 
 def create_experiment_dir(
@@ -221,7 +190,7 @@ def export_coverage_matrix(
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
     """Export one row per evaluated dataset-method-mode-seed-fold unit."""
-    csv_path, md_path = _artifact_paths(
+    csv_path = _artifact_paths(
         root,
         output_dir=output_dir,
         file_prefix=file_prefix,
@@ -231,7 +200,6 @@ def export_coverage_matrix(
     if fold_results.empty:
         coverage = pd.DataFrame()
         coverage.to_csv(csv_path, index=False)
-        _write_markdown_table(coverage, md_path, title="Coverage Matrix")
         return coverage
 
     frame = fold_results.copy()
@@ -294,7 +262,6 @@ def export_coverage_matrix(
         [col for col in ["dataset_id", "method_id", "hpo_mode", "seed", "repeat", "fold", "split_id"] if col in frame.columns]
     )
     coverage.to_csv(csv_path, index=False)
-    _write_markdown_table(coverage, md_path, title="Coverage Matrix")
     return coverage
 
 
@@ -443,48 +410,6 @@ def _runtime_failure_rows(
     return summary[output_columns]
 
 
-def _write_runtime_failure_markdown(path: Path, frame: pd.DataFrame) -> None:
-    if frame.empty:
-        path.write_text("# Runtime and Failure Summary\n\nNo runs were available to summarize.\n", encoding="utf-8")
-        return
-
-    total_runs = int(frame["n_runs"].sum())
-    total_crashed = int(frame["n_crashed"].sum())
-    total_missing = int(frame["n_missing_metrics"].sum())
-    category_counts = frame.groupby("failure_category", as_index=False)["n_runs"].sum().sort_values(
-        ["n_runs", "failure_category"],
-        ascending=[False, True],
-    )
-    display_cols = [
-        "dataset_id",
-        "method_id",
-        "hpo_mode",
-        "seed",
-        "fold",
-        "n_runs",
-        "n_crashed",
-        "n_missing_metrics",
-        "runtime_sec_mean",
-        "failure_category",
-    ]
-    lines = [
-        "# Runtime and Failure Summary",
-        "",
-        f"- Total rows summarized: {total_runs}",
-        f"- Crashed run rows: {total_crashed}",
-        f"- Successful rows with missing metrics: {total_missing}",
-        "",
-        "## Failure Categories",
-        "",
-    ]
-    category_md = category_counts.rename(columns={"failure_category": "category", "n_runs": "rows"})
-    detail_md = frame[display_cols]
-    lines.extend(_markdown_table_lines(category_md))
-    lines.extend(["", "## By Dataset, Method, Mode, Seed, And Fold", ""])
-    lines.extend(_markdown_table_lines(detail_md))
-    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-
-
 def export_runtime_failure_summary(
     root: Path,
     *,
@@ -498,15 +423,12 @@ def export_runtime_failure_summary(
     if output_dir is None:
         output_base = root / "results" / "summaries"
         csv_path = output_base / f"{benchmark_id}_runtime_failure_summary.csv"
-        md_path = output_base / f"{benchmark_id}_runtime_failure_summary.md"
     else:
         output_base = output_dir
         prefix = _artifact_prefix(file_prefix, fallback=benchmark_id)
         csv_path = output_base / f"{prefix}_runtime_failure_summary.csv"
-        md_path = output_base / f"{prefix}_runtime_failure_summary.md"
     output_base.mkdir(parents=True, exist_ok=True)
     frame.to_csv(csv_path, index=False)
-    _write_runtime_failure_markdown(md_path, frame)
     return frame
 
 

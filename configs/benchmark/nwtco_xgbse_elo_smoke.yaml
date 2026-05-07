@@ -1,0 +1,37 @@
+benchmark_id: nwtco_xgbse_elo_smoke
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 2
+outer_repeats: 1
+inner_folds: 2
+seeds: [11]
+primary_metric: uno_c
+profile: smoke
+comparison_modes: [no_hpo]
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+hpo:
+  enabled: false
+  method_overrides:
+    xgbse_kaplan_neighbors:
+      enabled: false
+      search_space: null
+      default_params:
+        num_boost_round: 40
+        max_depth: 3
+        min_child_weight: 10.0
+        n_neighbors: 20
+        early_stopping_rounds: null
+        risk_time_bins: 24
+datasets:
+  - nwtco
+methods:
+  - coxph
+  - rsf
+  - xgbse_kaplan_neighbors
+notes: >
+  Tiny paired benchmark for the newly added NWTCO dataset and optional XGBSE
+  Kaplan-neighbors adapter. Baselines are included so Elo-style ratings are
+  computed from matched folds rather than single-model smoke rows.

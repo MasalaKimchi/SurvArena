@@ -13,7 +13,7 @@ from survarena.methods.base import BaseSurvivalMethod
 from survarena.methods.survival_utils import fit_breslow_baseline_survival, predict_breslow_survival
 
 
-class AutoGluonSurvivalMethod(BaseSurvivalMethod):
+class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
         self.predictor_: Any | None = None
@@ -29,7 +29,7 @@ class AutoGluonSurvivalMethod(BaseSurvivalMethod):
         X_val: Any | None = None,
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
-    ) -> "AutoGluonSurvivalMethod":
+    ) -> "_AutoGluonEventRiskSurvivalBase":
         params = dict(self.params)
         self.predictor_, self.fit_metadata_ = fit_autogluon_event_predictor(
             X_train=X_train,
@@ -56,13 +56,13 @@ class AutoGluonSurvivalMethod(BaseSurvivalMethod):
 
     def predict_risk(self, X: Any) -> np.ndarray:
         if self.predictor_ is None:
-            raise RuntimeError("AutoGluonSurvivalMethod must be fit before prediction.")
+            raise RuntimeError(f"{self.__class__.__name__} must be fit before prediction.")
         probabilities = predict_event_probability(self.predictor_, X)
         return np.asarray(probabilities, dtype=float)
 
     def predict_survival(self, X: Any, times: np.ndarray) -> np.ndarray:
         if self.baseline_event_times_ is None or self.baseline_survival_ is None:
-            raise RuntimeError("AutoGluonSurvivalMethod must be fit before survival prediction.")
+            raise RuntimeError(f"{self.__class__.__name__} must be fit before survival prediction.")
         return predict_breslow_survival(
             risk_scores=self.predict_risk(X),
             times=np.asarray(times, dtype=float),
@@ -79,3 +79,33 @@ class AutoGluonSurvivalMethod(BaseSurvivalMethod):
             "autogluon_path": self.fit_metadata_.path,
             "autogluon_leaderboard": list(self.fit_metadata_.leaderboard),
         }
+
+
+class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
+    def __init__(self, **params: Any) -> None:
+        mitra_params = dict(params.pop("mitra_params", {}) or {})
+        mitra_params.setdefault("fine_tune", False)
+        resolved = {
+            **params,
+            "presets": params.pop("presets", None),
+            "hyperparameters": {"MITRA": mitra_params},
+        }
+        super().__init__(**resolved)
+
+    def fit(
+        self,
+        X_train: Any,
+        time_train: np.ndarray,
+        event_train: np.ndarray,
+        X_val: Any | None = None,
+        time_val: np.ndarray | None = None,
+        event_val: np.ndarray | None = None,
+    ) -> "MitraSurvivalMethod":
+        try:
+            from autogluon.tabular.models.mitra.sklearn_interface import MitraClassifier  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "Mitra Survival requires AutoGluon's Mitra extra. "
+                'Install it with `python -m pip install -e ".[foundation-mitra]"`.'
+            ) from exc
+        return super().fit(X_train, time_train, event_train, X_val, time_val, event_val)

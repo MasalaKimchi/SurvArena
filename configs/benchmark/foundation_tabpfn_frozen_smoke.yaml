@@ -1,0 +1,42 @@
+benchmark_id: foundation_tabpfn_frozen_smoke
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 2
+outer_repeats: 1
+inner_folds: 2
+seeds: [11]
+primary_metric: uno_c
+profile: smoke
+comparison_modes: [no_hpo]
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+hpo:
+  enabled: false
+  method_overrides:
+    tabpfn_survival:
+      enabled: false
+      search_space: null
+      default_params:
+        model_version: v2.5
+        backbone_task: classification_event
+        backbone_training: frozen
+        n_estimators: 1
+        n_estimators_final_inference: 1
+        hidden_layers: "64"
+        dropout: 0.0
+        max_epochs: 25
+        patience: 5
+datasets:
+  - whas500
+methods:
+  - coxph
+  - rsf
+  - tabpfn_survival
+notes: >
+  Bounded frozen-only TabPFN survival smoke config. This uses the smallest
+  built-in benchmark dataset first, disables HPO, and constrains the pretrained
+  backbone to one estimator with a compact survival head for budget validation.
+  CoxPH and RSF are included as paired baselines so Elo-style ratings have
+  matched opponents for the foundation method.

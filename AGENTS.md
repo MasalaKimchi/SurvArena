@@ -42,7 +42,7 @@ SurvArena is a Python benchmark toolkit for comparing survival analysis methods 
 - `scikit-survival==0.24.1` - Built-in dataset loading and model ecosystem bridge (`survarena/data/loaders.py`, `survarena/methods/classical/*.py`).
 - `pycox==0.3.0` - Deep survival adapters and built-in dataset access (`survarena/methods/deep/pycox_models.py`, `survarena/data/loaders.py`).
 - `torchsurv==0.1.5` - Metric computation backbone for protocol outputs (`docs/protocol.md`, `survarena/evaluation/metrics.py`).
-- `autogluon.tabular==1.5.0` - AutoGluon survival backend and optional foundation integration (`survarena/automl/autogluon_backend.py`, `survarena/methods/automl/autogluon_survival.py`).
+- `autogluon.tabular==1.5.0` - AutoGluon backend support for Mitra foundation integration (`survarena/automl/autogluon_backend.py`, `survarena/methods/automl/mitra_survival.py`).
 - `PyYAML==6.0.2` - YAML config parsing (`survarena/config.py`, `survarena/data/loaders.py`).
 - `psutil==5.9.8` - Process/hardware telemetry for manifests (`survarena/logging/tracker.py`, `survarena/utils/env.py`).
 - `pyarrow==20.0.0` - Parquet input support (`survarena/data/io.py`).

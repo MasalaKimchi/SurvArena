@@ -31,9 +31,11 @@ python -m pip install -e "${INSTALL_TARGET}"
 
 echo "Running environment check"
 CHECK_ARGS=()
-if [[ ",${INSTALL_EXTRAS}," == *",foundation,"* ]]; then
-    CHECK_ARGS+=(--include-foundation)
-fi
+case ",${INSTALL_EXTRAS}," in
+    *",foundation,"* | *",foundation-tabpfn,"* | *",foundation-mitra,"*)
+        CHECK_ARGS+=(--include-foundation)
+        ;;
+esac
 python scripts/check_environment.py "${CHECK_ARGS[@]}"
 
 echo "Environment setup complete"

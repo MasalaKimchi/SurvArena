@@ -7,7 +7,7 @@ import json
 from survarena.api import SurvivalPredictor, compare_survival_models
 from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
 
-_PRESET_CHOICES = ("fast", "medium", "best", "all", "foundation", "autogluon")
+_PRESET_CHOICES = ("fast", "medium", "best", "all", "foundation")
 _METRIC_CHOICES = ("harrell_c", "uno_c")
 _PILOT_REPEATED_DEFAULT_FOLDS = 3
 _PILOT_REPEATED_DEFAULT_REPEATS = 2
@@ -50,6 +50,15 @@ def _hpo_config_from_args(args: argparse.Namespace) -> dict[str, object]:
         "pruner": "median",
         "n_startup_trials": 8,
     }
+
+
+def _add_foundation_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--foundation",
+        dest="enable_foundation_models",
+        action="store_true",
+        help="Include supported tabular foundation-model adapters.",
+    )
 
 
 def parse_args() -> argparse.Namespace:
@@ -124,11 +133,7 @@ def parse_args() -> argparse.Namespace:
         help="Whether to refit retained models on all available non-test data after selection.",
     )
     fit_parser.add_argument("--verbose", action="store_true", help="Show underlying tuning logs.")
-    fit_parser.add_argument(
-        "--enable-foundation-models",
-        action="store_true",
-        help="Include experimental tabular foundation-model adapters when supported.",
-    )
+    _add_foundation_flag(fit_parser)
 
     compare_parser = subparsers.add_parser(
         "compare",
@@ -178,11 +183,7 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated decision thresholds for net-benefit reporting.",
     )
     compare_parser.add_argument("--save-path", default=None, help="Optional directory for benchmark outputs.")
-    compare_parser.add_argument(
-        "--enable-foundation-models",
-        action="store_true",
-        help="Include experimental tabular foundation-model adapters when supported.",
-    )
+    _add_foundation_flag(compare_parser)
     compare_parser.add_argument("--dry-run", action="store_true", help="Show resolved compare settings without fitting.")
 
     pilot_parser = subparsers.add_parser(
@@ -248,11 +249,7 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated decision thresholds for net-benefit reporting.",
     )
     pilot_parser.add_argument("--save-path", default=None, help="Optional directory for pilot outputs.")
-    pilot_parser.add_argument(
-        "--enable-foundation-models",
-        action="store_true",
-        help="Include experimental tabular foundation-model adapters when supported.",
-    )
+    _add_foundation_flag(pilot_parser)
     pilot_parser.add_argument("--dry-run", action="store_true", help="Show resolved pilot settings without fitting.")
 
     foundation_check_parser = subparsers.add_parser(

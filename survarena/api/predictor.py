@@ -53,7 +53,7 @@ from survarena.evaluation.metrics import (
 from survarena.methods.foundation.catalog import foundation_model_catalog
 from survarena.methods.foundation.readiness import foundation_runtime_status
 from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
-from survarena.methods.registry import get_method_class, registered_method_ids
+from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
 
 
@@ -967,10 +967,10 @@ class SurvivalPredictor:
             )
 
     def _training_backend_for_method(self, method_id: str) -> str:
-        return "autogluon" if method_id == "autogluon_survival" else "native"
+        return "autogluon" if is_autogluon_method(method_id) else "native"
 
     def _hpo_backend_for_method(self, method_id: str, params: dict[str, Any]) -> str:
-        if method_id == "autogluon_survival" and params.get("hyperparameter_tune_kwargs"):
+        if is_autogluon_method(method_id) and params.get("hyperparameter_tune_kwargs"):
             return "autogluon"
         return "none"
 
@@ -982,7 +982,7 @@ class SurvivalPredictor:
         time_limit: float | None,
         tune_kwargs: dict[str, Any] | None,
     ) -> dict[str, Any]:
-        if method_id != "autogluon_survival":
+        if not is_autogluon_method(method_id):
             return method_cfg
         resolved = dict(method_cfg)
         defaults = dict(method_cfg.get("default_params", {}))
