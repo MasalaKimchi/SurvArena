@@ -49,8 +49,10 @@ Adapter-specific details:
   with the shared Breslow baseline survival adapter. AutoGluon's Mitra extra
   requires `torch>=2.6`, which the default SurvArena dependency set now pins
   through `torch==2.6.0`.
-  `mitra_survival_frozen` and `mitra_survival_finetune` expose the fine-tuning
-  policy as distinct method IDs so Elo tables do not mix budget regimes.
+  `mitra_survival_frozen` exposes the bounded frozen-backbone policy as a
+  distinct method ID for Elo tables. Full-backbone fine-tuning is intentionally
+  excluded from the unified Elo track because CPU-only runs can exceed the
+  conventional model wall-clock budget.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated

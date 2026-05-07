@@ -41,10 +41,9 @@ _REGISTRY_TARGETS = {
     "tabpfn_survival_regressor": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalRegressorMethod"),
     "mitra_survival": ("survarena.methods.automl.mitra_survival", "MitraSurvivalMethod"),
     "mitra_survival_frozen": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFrozenMethod"),
-    "mitra_survival_finetune": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFineTuneMethod"),
 }
 
-_AUTOGLUON_METHOD_IDS = frozenset({"mitra_survival", "mitra_survival_frozen", "mitra_survival_finetune"})
+_AUTOGLUON_METHOD_IDS = frozenset({"mitra_survival", "mitra_survival_frozen"})
 
 
 def registered_method_ids() -> tuple[str, ...]:

@@ -127,10 +127,3 @@ class MitraSurvivalFrozenMethod(MitraSurvivalMethod):
         mitra_params = dict(params.pop("mitra_params", {}) or {})
         mitra_params["fine_tune"] = False
         super().__init__(**params, mitra_params=mitra_params)
-
-
-class MitraSurvivalFineTuneMethod(MitraSurvivalMethod):
-    def __init__(self, **params: Any) -> None:
-        mitra_params = dict(params.pop("mitra_params", {}) or {})
-        mitra_params["fine_tune"] = True
-        super().__init__(**params, mitra_params=mitra_params)

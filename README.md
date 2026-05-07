@@ -539,7 +539,6 @@ Currently wired foundation adapters:
 - `tabpfn_survival_regressor`
 - `mitra_survival`
 - `mitra_survival_frozen`
-- `mitra_survival_finetune`
 
 Install and inspect foundation support:
 
@@ -572,8 +571,8 @@ Use `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml` for bounded
 `configs/benchmark/mitra_survival_no_hpo_smoke.yaml` for bounded Mitra
 foundation checks before running `configs/benchmark/foundation_unified_elo_v1.yaml`.
 The unified Elo track includes frozen/lightweight-head variants only; the Mitra
-fine-tuning method is available as a distinct method ID but remains
-appendix-only until a bounded smoke proves comparable wall-clock behavior.
+fine-tuning path is intentionally excluded because CPU-only full-backbone
+updates can blow past the conventional model wall-clock budget.
 AutoGluon's Mitra extra depends on `torch>=2.6`, which the default SurvArena
 environment now pins through `torch==2.6.0`.
 

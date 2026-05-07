@@ -96,11 +96,11 @@ def test_foundation_unified_elo_config_uses_budgeted_method_variants() -> None:
     assert "tabpfn_survival_classifier" in benchmark_cfg["methods"]
     assert "tabpfn_survival_regressor" in benchmark_cfg["methods"]
     assert "mitra_survival_frozen" in benchmark_cfg["methods"]
-    assert "mitra_survival_finetune" not in benchmark_cfg["methods"]
+    assert "mitra_survival_finetune" not in overrides
     assert overrides["tabpfn_survival_classifier"]["default_params"]["backbone_task"] == "classification_event"
     assert overrides["tabpfn_survival_regressor"]["default_params"]["backbone_task"] == "regression_time"
     assert overrides["mitra_survival_frozen"]["default_params"]["time_limit"] == 120
-    assert overrides["mitra_survival_finetune"]["default_params"]["mitra_params"]["fine_tune"] is True
+    assert "fine-tuning is intentionally excluded" in benchmark_cfg["notes"]
 
 
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:
