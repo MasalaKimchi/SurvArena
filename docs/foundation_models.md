@@ -13,8 +13,9 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 - benchmark access: `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`
   provides a bounded no-HPO frozen TabPFN smoke path, and
   `configs/benchmark/mitra_survival_no_hpo_smoke.yaml` provides a bounded
-  no-HPO Mitra smoke path; keep foundation adapters out of manuscript and local
-  feasible HPO claims until the evidence bundle is promoted
+  no-HPO Mitra smoke path; `configs/benchmark/foundation_unified_elo_v1.yaml`
+  is the promoted dry-run-ready unified Elo expansion track, but keep claims
+  appendix/exploratory until the evidence bundle completes
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
 
 TabPFN note:
@@ -41,11 +42,15 @@ Adapter-specific details:
 
 - `tabpfn_survival` uses frozen TabPFN preprocessing/embeddings and trains an MLP
   Cox head; `n_estimators_final_inference` controls inference ensemble breadth.
+  `tabpfn_survival_classifier` and `tabpfn_survival_regressor` are budgeted Elo
+  variants that fix the surrogate target while sharing the same frozen adapter.
 - `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
   learner with `fine_tune=false` by default, then calibrates survival curves
   with the shared Breslow baseline survival adapter. AutoGluon's Mitra extra
   requires `torch>=2.6`, which the default SurvArena dependency set now pins
   through `torch==2.6.0`.
+  `mitra_survival_frozen` and `mitra_survival_finetune` expose the fine-tuning
+  policy as distinct method IDs so Elo tables do not mix budget regimes.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated
@@ -57,7 +62,7 @@ requested evaluation times.
 
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
-- richer foundation-specific artifact fields
+- run and promote the unified Elo evidence bundle once both smoke tracks pass
 - broader backbone coverage once the adapter contract is stable
 
 Foundation models stay optional members of the same `SurvivalPredictor`

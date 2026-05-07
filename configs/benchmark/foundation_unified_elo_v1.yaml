@@ -1,0 +1,99 @@
+benchmark_id: foundation_unified_elo_v1
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 3
+outer_repeats: 3
+inner_folds: 2
+seeds:
+  - 11
+  - 22
+  - 33
+primary_metric: uno_c
+profile: standard
+comparison_modes:
+  - no_hpo
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+execution:
+  n_jobs: 1
+autogluon:
+  enabled: true
+  presets: null
+  time_limit_seconds: 120
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+hpo:
+  enabled: false
+  max_trials: 0
+  timeout_seconds: 120
+  sampler: random
+  pruner: none
+  n_startup_trials: 0
+  method_overrides:
+    tabpfn_survival_classifier:
+      enabled: false
+      search_space: null
+      default_params:
+        n_estimators: 1
+        n_estimators_final_inference: 1
+        backbone_task: classification_event
+        backbone_training: frozen
+        hidden_layers: "64"
+        dropout: 0.0
+        max_epochs: 25
+        patience: 5
+    tabpfn_survival_regressor:
+      enabled: false
+      search_space: null
+      default_params:
+        n_estimators: 1
+        n_estimators_final_inference: 1
+        backbone_task: regression_time
+        backbone_training: frozen
+        hidden_layers: "64"
+        dropout: 0.0
+        max_epochs: 25
+        patience: 5
+    mitra_survival_frozen:
+      enabled: false
+      search_space: null
+      default_params:
+        time_limit: 120
+        mitra_params:
+          fine_tune: false
+          ag.max_memory_usage_ratio: 1.3
+    mitra_survival_finetune:
+      enabled: false
+      search_space: null
+      default_params:
+        time_limit: 120
+        mitra_params:
+          fine_tune: true
+          ag.max_memory_usage_ratio: 1.3
+datasets:
+  - nwtco
+  - gbsg2
+  - aids
+  - metabric
+  - support
+  - whas500
+methods:
+  - coxph
+  - rsf
+  - xgboost_cox
+  - xgboost_aft
+  - catboost_cox
+  - catboost_survival_aft
+  - tabpfn_survival_classifier
+  - tabpfn_survival_regressor
+  - mitra_survival_frozen
+notes: >
+  Unified no-HPO Elo expansion track for budget-matched tabular foundation
+  adapters. The main track includes frozen/lightweight-head variants only.
+  The `mitra_survival_finetune` method config is intentionally available but
+  omitted from this method list until a bounded smoke proves comparable
+  per-fold wall-clock behavior.

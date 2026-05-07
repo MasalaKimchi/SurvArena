@@ -129,6 +129,18 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         self._train_surrogate_target_: np.ndarray | None = None
         self._uses_prediction_features_: bool = False
 
+    def foundation_metadata(self) -> dict[str, Any]:
+        return {
+            "foundation_backbone": "TabPFN",
+            "foundation_backbone_task": str(self.params["backbone_task"]),
+            "foundation_backbone_training": str(self.params["backbone_training"]),
+            "foundation_n_estimators": int(self.params["n_estimators"]),
+            "foundation_n_estimators_final_inference": int(self.params["n_estimators_final_inference"]),
+            "foundation_max_epochs": int(self.params["max_epochs"]),
+            "foundation_patience": int(self.params["patience"]),
+            "foundation_used_prediction_features": bool(self._uses_prediction_features_),
+        }
+
     def _resolve_device(self) -> torch.device:
         torch = _import_torch()
         raw_device = str(self.params["device"])
@@ -699,3 +711,17 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         )
         survival = np.power(np.clip(baseline_at_times, 1e-8, 1.0)[None, :], rel_risk[:, None])
         return np.clip(survival, 1e-8, 1.0).astype(np.float64)
+
+
+class TabPFNSurvivalClassifierMethod(TabPFNSurvivalMethod):
+    def __init__(self, **params: Any) -> None:
+        params.setdefault("backbone_task", "classification_event")
+        params.setdefault("backbone_training", "frozen")
+        super().__init__(**params)
+
+
+class TabPFNSurvivalRegressorMethod(TabPFNSurvivalMethod):
+    def __init__(self, **params: Any) -> None:
+        params.setdefault("backbone_task", "regression_time")
+        params.setdefault("backbone_training", "frozen")
+        super().__init__(**params)

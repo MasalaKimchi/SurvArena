@@ -69,6 +69,67 @@ def test_elo_ratings_are_order_independent_with_bootstrap_ci() -> None:
     assert (first["elo_rating"] <= first["elo_rating_ci95_high"]).all()
 
 
+def test_elo_ratings_treat_foundation_variants_as_methods_with_mode_strata() -> None:
+    frame = pd.DataFrame(
+        [
+            {
+                "benchmark_id": "foundation_unified_elo_v1",
+                "dataset_id": "d1",
+                "split_id": "s1",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "method_id": "tabpfn_survival_classifier",
+                "uno_c": 0.72,
+            },
+            {
+                "benchmark_id": "foundation_unified_elo_v1",
+                "dataset_id": "d1",
+                "split_id": "s1",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "method_id": "tabpfn_survival_regressor",
+                "uno_c": 0.68,
+            },
+            {
+                "benchmark_id": "foundation_unified_elo_v1",
+                "dataset_id": "d1",
+                "split_id": "s1",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "method_id": "rsf",
+                "uno_c": 0.70,
+            },
+            {
+                "benchmark_id": "foundation_unified_elo_v1",
+                "dataset_id": "d1",
+                "split_id": "s1",
+                "seed": 11,
+                "hpo_mode": "foundation_finetune",
+                "method_id": "mitra_survival_finetune",
+                "uno_c": 0.74,
+            },
+            {
+                "benchmark_id": "foundation_unified_elo_v1",
+                "dataset_id": "d1",
+                "split_id": "s1",
+                "seed": 11,
+                "hpo_mode": "foundation_finetune",
+                "method_id": "rsf",
+                "uno_c": 0.70,
+            },
+        ]
+    )
+
+    result = elo_ratings(frame, metric="uno_c", n_bootstrap=0)
+
+    assert set(result["hpo_mode"]) == {"no_hpo", "foundation_finetune"}
+    no_hpo = result[result["hpo_mode"] == "no_hpo"]
+    assert set(no_hpo["method_id"]) == {"tabpfn_survival_classifier", "tabpfn_survival_regressor", "rsf"}
+    assert int(no_hpo.set_index("method_id").loc["tabpfn_survival_classifier", "elo_matches"]) == 2
+    finetune = result[result["hpo_mode"] == "foundation_finetune"]
+    assert set(finetune["method_id"]) == {"mitra_survival_finetune", "rsf"}
+
+
 def test_pairwise_significance_produces_corrected_p_values() -> None:
     rows = []
     rng = np.random.default_rng(0)

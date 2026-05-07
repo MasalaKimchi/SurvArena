@@ -85,6 +85,24 @@ def test_foundation_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None
     }
 
 
+def test_foundation_unified_elo_config_uses_budgeted_method_variants() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_unified_elo_v1.yaml")
+    overrides = benchmark_cfg["hpo"]["method_overrides"]
+
+    assert benchmark_cfg["primary_metric"] == "uno_c"
+    assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
+    assert benchmark_cfg["outer_folds"] == 3
+    assert benchmark_cfg["outer_repeats"] == 3
+    assert "tabpfn_survival_classifier" in benchmark_cfg["methods"]
+    assert "tabpfn_survival_regressor" in benchmark_cfg["methods"]
+    assert "mitra_survival_frozen" in benchmark_cfg["methods"]
+    assert "mitra_survival_finetune" not in benchmark_cfg["methods"]
+    assert overrides["tabpfn_survival_classifier"]["default_params"]["backbone_task"] == "classification_event"
+    assert overrides["tabpfn_survival_regressor"]["default_params"]["backbone_task"] == "regression_time"
+    assert overrides["mitra_survival_frozen"]["default_params"]["time_limit"] == 120
+    assert overrides["mitra_survival_finetune"]["default_params"]["mitra_params"]["fine_tune"] is True
+
+
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:
     spec = next(item for item in available_foundation_model_specs() if item.method_id == "tabpfn_survival")
 
@@ -271,6 +289,40 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
     assert np.isfinite(risk).all()
     assert np.isfinite(survival).all()
     assert ((survival >= 0.0) & (survival <= 1.0)).all()
+
+
+def test_tabpfn_survival_regressor_variant_uses_regression_surrogate() -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalRegressorMethod
+    from survarena.methods.registry import get_method_class
+
+    method = TabPFNSurvivalRegressorMethod()
+    target = method._build_surrogate_target(
+        np.asarray([1.0, 3.0, 7.0]),
+        np.asarray([1, 0, 1]),
+    )
+
+    assert get_method_class("tabpfn_survival_regressor") is TabPFNSurvivalRegressorMethod
+    assert method.params["backbone_task"] == "regression_time"
+    assert method.params["backbone_training"] == "frozen"
+    np.testing.assert_allclose(target, np.log1p([1.0, 3.0, 7.0]).astype(np.float32))
+    assert method.foundation_metadata()["foundation_backbone_task"] == "regression_time"
+
+
+def test_tabpfn_survival_classifier_variant_uses_event_surrogate() -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalClassifierMethod
+    from survarena.methods.registry import get_method_class
+
+    method = TabPFNSurvivalClassifierMethod()
+    target = method._build_surrogate_target(
+        np.asarray([1.0, 3.0, 7.0]),
+        np.asarray([1, 0, 1]),
+    )
+
+    assert get_method_class("tabpfn_survival_classifier") is TabPFNSurvivalClassifierMethod
+    assert method.params["backbone_task"] == "classification_event"
+    assert method.params["backbone_training"] == "frozen"
+    np.testing.assert_array_equal(target, np.asarray([1, 0, 1], dtype=np.int32))
+    assert method.foundation_metadata()["foundation_backbone_task"] == "classification_event"
 
 
 def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:

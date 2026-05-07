@@ -1,0 +1,18 @@
+method_id: mitra_survival_frozen
+family: foundation
+library: autogluon.tabular MITRA
+display_name: Mitra Survival Frozen
+notes: AutoGluon MITRA event-risk adapter with fine_tune=false and Breslow survival calibration.
+default_params:
+  presets: null
+  time_limit: 120
+  hyperparameters: null
+  hyperparameter_tune_kwargs: null
+  mitra_params:
+    fine_tune: false
+    ag.max_memory_usage_ratio: 1.3
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+  verbosity: 0
+search_space: {}

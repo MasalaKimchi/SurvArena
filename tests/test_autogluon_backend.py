@@ -6,7 +6,11 @@ import numpy as np
 import pandas as pd
 
 from survarena.automl.autogluon_backend import fit_autogluon_event_predictor, predict_event_probability
-from survarena.methods.automl.mitra_survival import MitraSurvivalMethod
+from survarena.methods.automl.mitra_survival import (
+    MitraSurvivalFineTuneMethod,
+    MitraSurvivalFrozenMethod,
+    MitraSurvivalMethod,
+)
 from survarena.methods.registry import get_method_class, registered_method_ids
 
 
@@ -92,3 +96,15 @@ def test_mitra_survival_method_forces_mitra_hyperparameters(monkeypatch, tmp_pat
     assert FakeTabularPredictor.fit_kwargs["hyperparameters"] == {"MITRA": {"fine_tune": False}}
     np.testing.assert_allclose(model.predict_risk(pd.DataFrame({"x": [5.0, 6.0]})), [0.75, 0.75])
     assert model.predict_survival(pd.DataFrame({"x": [5.0, 6.0]}), np.asarray([1.0, 2.0, 3.0])).shape == (2, 3)
+
+
+def test_mitra_survival_variants_encode_finetuning_policy() -> None:
+    frozen = MitraSurvivalFrozenMethod(time_limit=12, mitra_params={"ag.max_memory_usage_ratio": 1.1})
+    finetune = MitraSurvivalFineTuneMethod(time_limit=12, mitra_params={"ag.max_memory_usage_ratio": 1.1})
+
+    assert get_method_class("mitra_survival_frozen") is MitraSurvivalFrozenMethod
+    assert get_method_class("mitra_survival_finetune") is MitraSurvivalFineTuneMethod
+    assert frozen.params["hyperparameters"] == {"MITRA": {"ag.max_memory_usage_ratio": 1.1, "fine_tune": False}}
+    assert finetune.params["hyperparameters"] == {"MITRA": {"ag.max_memory_usage_ratio": 1.1, "fine_tune": True}}
+    assert frozen.foundation_metadata()["foundation_backbone_training"] == "frozen"
+    assert finetune.foundation_metadata()["foundation_backbone_training"] == "finetune"

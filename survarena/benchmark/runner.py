@@ -313,6 +313,7 @@ def evaluate_split(
         peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
         autogluon_metadata = _autogluon_metadata(model)
+        foundation_metadata = _foundation_metadata(model)
         autogluon_backed = is_autogluon_method(method_id)
         training_backend = "autogluon" if autogluon_backed else "native"
         hpo_backend = str(hpo_metadata.get("backend", "none"))
@@ -364,9 +365,11 @@ def evaluate_split(
                 "best_params": best_params,
                 "hpo_status": hpo_metadata.get("status", "disabled"),
                 "hpo_trial_count": hpo_metadata.get("trial_count", 0),
+                **foundation_metadata,
             },
             "backend_metadata": {
                 "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
+                "foundation": foundation_metadata,
             },
             "hpo_metadata": hpo_metadata,
             "hpo_trials": hpo_trials,
@@ -397,6 +400,7 @@ def evaluate_split(
             "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
             "hpo_status": hpo_metadata.get("status", "disabled"),
             "hpo_trial_count": hpo_metadata.get("trial_count", 0),
+            **foundation_metadata,
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
@@ -478,6 +482,13 @@ def evaluate_split(
 
 def _autogluon_metadata(model: Any) -> dict[str, Any]:
     metadata_getter = getattr(model, "autogluon_metadata", None)
+    if callable(metadata_getter):
+        return dict(metadata_getter())
+    return {}
+
+
+def _foundation_metadata(model: Any) -> dict[str, Any]:
+    metadata_getter = getattr(model, "foundation_metadata", None)
     if callable(metadata_getter):
         return dict(metadata_getter())
     return {}

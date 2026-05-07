@@ -454,6 +454,11 @@ Tracked benchmark configs:
   standard built-in datasets and native manuscript methods
 - `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`: bounded no-HPO
   smoke for the frozen `tabpfn_survival` path, starting on `whas500`
+- `configs/benchmark/mitra_survival_no_hpo_smoke.yaml`: bounded no-HPO smoke
+  for the frozen Mitra event-risk adapter, starting on `whas500`
+- `configs/benchmark/foundation_unified_elo_v1.yaml`: unified no-HPO Elo
+  expansion track with budgeted frozen foundation variants and paired
+  conventional baselines
 - `configs/benchmark/local_feasible_hpo_v1.yaml`: MacBook-local native
   feasibility profile with paired `no_hpo` and bounded `hpo` tracks across the
   six standard datasets; foundation and AutoGluon adapters are intentionally
@@ -530,7 +535,11 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
+- `tabpfn_survival_classifier`
+- `tabpfn_survival_regressor`
 - `mitra_survival`
+- `mitra_survival_frozen`
+- `mitra_survival_finetune`
 
 Install and inspect foundation support:
 
@@ -561,9 +570,12 @@ survarena pilot --data my_survival_data.csv --time-col time --event-col event --
 Use `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml` for bounded
 `tabpfn_survival` budget checks, and
 `configs/benchmark/mitra_survival_no_hpo_smoke.yaml` for bounded Mitra
-foundation checks before expanding foundation coverage. AutoGluon's Mitra extra
-depends on `torch>=2.6`, which the default SurvArena environment now pins
-through `torch==2.6.0`.
+foundation checks before running `configs/benchmark/foundation_unified_elo_v1.yaml`.
+The unified Elo track includes frozen/lightweight-head variants only; the Mitra
+fine-tuning method is available as a distinct method ID but remains
+appendix-only until a bounded smoke proves comparable wall-clock behavior.
+AutoGluon's Mitra extra depends on `torch>=2.6`, which the default SurvArena
+environment now pins through `torch==2.6.0`.
 
 ## Outputs and Artifacts
 

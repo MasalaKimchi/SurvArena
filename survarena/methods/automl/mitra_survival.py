@@ -80,6 +80,17 @@ class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
             "autogluon_leaderboard": list(self.fit_metadata_.leaderboard),
         }
 
+    def foundation_metadata(self) -> dict[str, Any]:
+        hyperparameters = dict(self.params.get("hyperparameters", {}) or {})
+        mitra_params = dict(hyperparameters.get("MITRA", {}) or {})
+        return {
+            "foundation_backbone": "Mitra",
+            "foundation_backbone_task": "classification_event",
+            "foundation_backbone_training": "finetune" if bool(mitra_params.get("fine_tune", False)) else "frozen",
+            "foundation_time_limit_sec": self.params.get("time_limit"),
+            "foundation_mitra_fine_tune": bool(mitra_params.get("fine_tune", False)),
+        }
+
 
 class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
     def __init__(self, **params: Any) -> None:
@@ -109,3 +120,17 @@ class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
                 'Install it with `python -m pip install -e ".[foundation-mitra]"`.'
             ) from exc
         return super().fit(X_train, time_train, event_train, X_val, time_val, event_val)
+
+
+class MitraSurvivalFrozenMethod(MitraSurvivalMethod):
+    def __init__(self, **params: Any) -> None:
+        mitra_params = dict(params.pop("mitra_params", {}) or {})
+        mitra_params["fine_tune"] = False
+        super().__init__(**params, mitra_params=mitra_params)
+
+
+class MitraSurvivalFineTuneMethod(MitraSurvivalMethod):
+    def __init__(self, **params: Any) -> None:
+        mitra_params = dict(params.pop("mitra_params", {}) or {})
+        mitra_params["fine_tune"] = True
+        super().__init__(**params, mitra_params=mitra_params)
