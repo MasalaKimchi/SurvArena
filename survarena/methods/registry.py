@@ -61,8 +61,3 @@ def get_method_class(method_id: str) -> Any:
     module_name, symbol_name = _REGISTRY_TARGETS[method_id]
     module = import_module(module_name)
     return getattr(module, symbol_name)
-
-
-@lru_cache(maxsize=1)
-def method_registry() -> dict[str, Any]:
-    return {method_id: get_method_class(method_id) for method_id in _REGISTRY_TARGETS}

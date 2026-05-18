@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import gzip
 import json
 import sys
 from hashlib import sha256
@@ -43,10 +42,3 @@ def payload_sha256(payload: Any) -> str:
     data = canonical_json_dumps(payload).encode("utf-8")
     return sha256(data).hexdigest()
 
-
-def write_jsonl_gz(path: Path, records: list[dict[str, Any]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with gzip.open(path, "wt", encoding="utf-8") as handle:
-        for record in records:
-            handle.write(canonical_json_dumps(record))
-            handle.write("\n")

@@ -7,12 +7,12 @@ WORK_DIR="${WORK_DIR:-results/summary/protocol_validation}"
 
 echo "[protocol] Running dry-run config validation"
 "$PYTHON_BIN" -m survarena.run_benchmark \
-  --benchmark-config "$BENCHMARK_CONFIG" \
+  --config "$BENCHMARK_CONFIG" \
   --dry-run
 
 echo "[protocol] Running focused benchmark execution"
 "$PYTHON_BIN" -m survarena.run_benchmark \
-  --benchmark-config "$BENCHMARK_CONFIG" \
+  --config "$BENCHMARK_CONFIG" \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1 \

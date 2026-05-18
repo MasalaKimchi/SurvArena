@@ -331,6 +331,16 @@ def parse_args() -> argparse.Namespace:
 
     benchmark_doctor_parser = benchmark_subparsers.add_parser("doctor", help="Validate benchmark config readiness.")
     _add_benchmark_common_args(benchmark_doctor_parser)
+    benchmark_doctor_parser.add_argument(
+        "--check-imports",
+        action="store_true",
+        help="Import selected method adapters to catch missing optional dependencies before fitting.",
+    )
+    benchmark_doctor_parser.add_argument(
+        "--load-datasets",
+        action="store_true",
+        help="Load selected datasets and include health summaries in the readiness report.",
+    )
 
     benchmark_run_parser = benchmark_subparsers.add_parser("run", help="Run a benchmark YAML config.")
     _add_benchmark_common_args(benchmark_run_parser)
@@ -449,7 +459,15 @@ def main() -> None:
             _print_json(benchmark_plan(repo_root, benchmark_cfg, **_benchmark_plan_kwargs(args)))
             return
         if args.benchmark_command == "doctor":
-            _print_json(benchmark_doctor(repo_root, benchmark_cfg, **_benchmark_plan_kwargs(args)))
+            _print_json(
+                benchmark_doctor(
+                    repo_root,
+                    benchmark_cfg,
+                    **_benchmark_plan_kwargs(args),
+                    check_imports=args.check_imports,
+                    load_datasets=args.load_datasets,
+                )
+            )
             return
         if args.benchmark_command == "run":
             selected_cfg, dataset_override, method_override = _benchmark_run_config_and_overrides(benchmark_cfg, args)

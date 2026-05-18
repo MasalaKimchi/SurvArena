@@ -85,7 +85,7 @@ def test_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None:
     }
 
 
-def test_foundation_unified_elo_config_uses_budgeted_method_variants() -> None:
+def test_foundation_elo_config_uses_budgeted_method_variants() -> None:
     benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_elo_v1.yaml")
     overrides = benchmark_cfg["hpo"]["method_overrides"]
 

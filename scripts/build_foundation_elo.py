@@ -13,9 +13,9 @@ from survarena.evaluation.statistics import elo_ratings, pairwise_win_rate
 
 DEFAULT_CONVENTIONAL = Path("results/local_feasible_hpo_v1_all/combined_fold_results_success.csv")
 DEFAULT_FOUNDATION = Path("results/tabpfn_frozen_repeated/combined_fold_results.csv")
-DEFAULT_OUTPUT = Path("results/unified_foundation_elo")
+DEFAULT_OUTPUT = Path("results/foundation_elo")
 FOUNDATION_METHODS = ("tabpfn_survival_classifier", "tabpfn_survival_regressor")
-BENCHMARK_ID = "unified_foundation_vs_conventional"
+BENCHMARK_ID = "foundation_vs_conventional"
 MODE_NO_HPO = "no_hpo"
 MODE_HPO_REFERENCE = "hpo_reference"
 
@@ -126,10 +126,10 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path) -> None:
         axis.set_xlabel("Elo rating from paired Uno C win rate")
         axis.grid(axis="x", color="#e5e7eb", linewidth=0.8)
 
-    fig.suptitle("Unified Foundation vs Conventional Elo", fontsize=14, fontweight="bold")
+    fig.suptitle("Foundation vs Conventional Elo", fontsize=14, fontweight="bold")
     fig.tight_layout()
-    fig.savefig(output_dir / "unified_elo_by_mode_uno_c.png", dpi=180, bbox_inches="tight")
-    fig.savefig(output_dir / "unified_elo_by_mode_uno_c.pdf", bbox_inches="tight")
+    fig.savefig(output_dir / "elo_by_mode_uno_c.png", dpi=180, bbox_inches="tight")
+    fig.savefig(output_dir / "elo_by_mode_uno_c.pdf", bbox_inches="tight")
     plt.close(fig)
 
 
@@ -152,7 +152,7 @@ def build_unified_outputs(
         output_mode=MODE_HPO_REFERENCE,
     )
     combined = pd.concat([no_hpo, hpo_reference], ignore_index=True, sort=False)
-    combined_path = output_dir / "unified_fold_results.csv"
+    combined_path = output_dir / "fold_results.csv"
     combined.to_csv(combined_path, index=False)
 
     method_ids = sorted(combined["method_id"].dropna().astype(str).unique())
@@ -160,11 +160,11 @@ def build_unified_outputs(
 
     elo = elo_ratings(combined, metric="uno_c", n_bootstrap=1000, seed=33)
     elo = elo.merge(metadata, on="method_id", how="left")
-    elo_path = output_dir / "unified_elo_ratings_uno_c.csv"
+    elo_path = output_dir / "elo_ratings_uno_c.csv"
     elo.to_csv(elo_path, index=False)
 
     wins = pairwise_win_rate(combined, metric="uno_c")
-    wins_path = output_dir / "unified_pairwise_win_rate_uno_c.csv"
+    wins_path = output_dir / "pairwise_win_rate_uno_c.csv"
     wins.to_csv(wins_path, index=False)
 
     summary = (
@@ -178,7 +178,7 @@ def build_unified_outputs(
         )
         .merge(metadata, on="method_id", how="left")
     )
-    summary_path = output_dir / "unified_method_summary.csv"
+    summary_path = output_dir / "method_summary.csv"
     summary.to_csv(summary_path, index=False)
 
     coverage = (
@@ -190,7 +190,7 @@ def build_unified_outputs(
         )
         .sort_values(["hpo_mode", "source_run", "base_dataset_id"])
     )
-    coverage_path = output_dir / "unified_coverage_summary.csv"
+    coverage_path = output_dir / "coverage_summary.csv"
     coverage.to_csv(coverage_path, index=False)
 
     _write_plot(elo, output_dir)
@@ -201,8 +201,8 @@ def build_unified_outputs(
         "pairwise": wins_path,
         "summary": summary_path,
         "coverage": coverage_path,
-        "figure_png": output_dir / "unified_elo_by_mode_uno_c.png",
-        "figure_pdf": output_dir / "unified_elo_by_mode_uno_c.pdf",
+        "figure_png": output_dir / "elo_by_mode_uno_c.png",
+        "figure_pdf": output_dir / "elo_by_mode_uno_c.pdf",
     }
 
 

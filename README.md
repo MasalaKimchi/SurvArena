@@ -189,9 +189,15 @@ survarena benchmark plan \
   --method coxph \
   --limit-seeds 1
 
-# Validate config, dataset/method references, and optional foundation readiness.
+# Fast readiness check: config shape, dataset/method references, and foundation readiness.
 survarena benchmark doctor \
   --config configs/benchmark/smoke.yaml
+
+# Deeper preflight before a costly run: import adapters and load datasets.
+survarena benchmark doctor \
+  --config configs/benchmark/smoke.yaml \
+  --check-imports \
+  --load-datasets
 
 # Run through the unified benchmark CLI.
 survarena benchmark run \
@@ -200,7 +206,7 @@ survarena benchmark run \
   --method coxph \
   --limit-seeds 1
 
-# Summarize fold-result artifacts from a completed output directory.
+# Summarize fold-result artifacts, top methods, coverage, and failures.
 survarena benchmark report results/summary/whas500/smoke/coxph
 ```
 

@@ -8,8 +8,9 @@ import pandas as pd
 from survarena.benchmark.governance import resolve_comparison_modes
 from survarena.benchmark.runner import validate_benchmark_profile_contract
 from survarena.config import read_yaml
+from survarena.evaluation.statistics import metric_direction
 from survarena.methods.foundation import foundation_runtime_status_for_method
-from survarena.methods.registry import registered_method_ids
+from survarena.methods.registry import get_method_class, registered_method_ids
 
 
 FOUNDATION_METHOD_PREFIXES = ("tabpfn_", "mitra_")
@@ -103,6 +104,8 @@ def benchmark_doctor(
     dataset_overrides: list[str] | None = None,
     method_overrides: list[str] | None = None,
     limit_seeds: int | None = None,
+    check_imports: bool = False,
+    load_datasets: bool = False,
 ) -> dict[str, Any]:
     plan = benchmark_plan(
         repo_root,
@@ -115,13 +118,23 @@ def benchmark_doctor(
     )
     issues: list[dict[str, str]] = []
     _append_profile_issues(benchmark_cfg, issues)
-    _append_method_issues(repo_root, plan["methods"], issues)
-    _append_dataset_issues(repo_root, plan["datasets"], issues)
+    _append_method_issues(repo_root, plan["methods"], issues, check_imports=check_imports)
+    dataset_summaries = _append_dataset_issues(
+        repo_root,
+        plan["datasets"],
+        issues,
+        load_datasets=load_datasets,
+    )
     _append_plan_issues(plan, issues)
 
     return {
         "status": "ok" if not any(issue["severity"] == "error" for issue in issues) else "error",
         "plan": plan,
+        "checks": {
+            "method_imports": bool(check_imports),
+            "dataset_load": bool(load_datasets),
+        },
+        "dataset_summaries": dataset_summaries,
         "issues": issues,
     }
 
@@ -133,7 +146,13 @@ def _append_profile_issues(benchmark_cfg: dict[str, Any], issues: list[dict[str,
         issues.append({"severity": "error", "check": "profile_contract", "message": str(exc)})
 
 
-def _append_method_issues(repo_root: Path, methods: list[str], issues: list[dict[str, str]]) -> None:
+def _append_method_issues(
+    repo_root: Path,
+    methods: list[str],
+    issues: list[dict[str, str]],
+    *,
+    check_imports: bool,
+) -> None:
     registered = set(registered_method_ids())
     for method_id in methods:
         method_path = repo_root / "configs" / "methods" / f"{method_id}.yaml"
@@ -155,15 +174,67 @@ def _append_method_issues(repo_root: Path, methods: list[str], issues: list[dict
                 )
             if status.warning_reason:
                 issues.append({"severity": "warning", "check": "foundation_runtime", "message": status.warning_reason})
+        if check_imports and method_id in registered:
+            try:
+                get_method_class(str(method_id))
+            except Exception as exc:  # noqa: BLE001
+                issues.append(
+                    {
+                        "severity": "error",
+                        "check": "method_import",
+                        "message": f"{method_id} adapter import failed: {type(exc).__name__}: {exc}",
+                    }
+                )
 
 
-def _append_dataset_issues(repo_root: Path, datasets: list[str], issues: list[dict[str, str]]) -> None:
+def _append_dataset_issues(
+    repo_root: Path,
+    datasets: list[str],
+    issues: list[dict[str, str]],
+    *,
+    load_datasets: bool,
+) -> list[dict[str, Any]]:
+    summaries: list[dict[str, Any]] = []
     for dataset_id in datasets:
         dataset_path = repo_root / "configs" / "datasets" / f"{dataset_id}.yaml"
         if not dataset_path.exists():
             issues.append(
                 {"severity": "error", "check": "dataset_config", "message": f"Missing dataset config: {dataset_path}"}
             )
+            continue
+        if load_datasets:
+            try:
+                summaries.append(_dataset_summary(repo_root, str(dataset_id)))
+            except Exception as exc:  # noqa: BLE001
+                issues.append(
+                    {
+                        "severity": "error",
+                        "check": "dataset_load",
+                        "message": f"{dataset_id} failed to load: {type(exc).__name__}: {exc}",
+                    }
+                )
+    return summaries
+
+
+def _dataset_summary(repo_root: Path, dataset_id: str) -> dict[str, Any]:
+    from survarena.data.loaders import load_dataset
+
+    dataset = load_dataset(dataset_id, repo_root)
+    event_count = int(dataset.event.sum())
+    row_count = int(len(dataset.X))
+    event_rate = float(dataset.event.mean()) if row_count else 0.0
+    summary = {
+        "dataset_id": dataset_id,
+        "n_rows": row_count,
+        "n_features": int(dataset.X.shape[1]),
+        "n_events": event_count,
+        "event_rate": event_rate,
+        "censoring_rate": float(1.0 - event_rate),
+    }
+    diagnostics = getattr(dataset.metadata, "diagnostics", None)
+    if diagnostics is not None:
+        summary["diagnostics"] = diagnostics.to_dict()
+    return summary
 
 
 def _append_plan_issues(plan: dict[str, Any], issues: list[dict[str, str]]) -> None:
@@ -195,4 +266,28 @@ def benchmark_report(output_dir: Path) -> dict[str, Any]:
     if metric_candidates and {"method_id"}.issubset(fold_results.columns):
         grouped = fold_results.groupby("method_id", as_index=False)[metric_candidates].mean(numeric_only=True)
         summary["method_means"] = grouped.to_dict(orient="records")
+        primary_metric = _infer_primary_report_metric(fold_results)
+        if primary_metric is not None:
+            ascending = metric_direction(primary_metric) == "minimize"
+            summary["primary_metric"] = primary_metric
+            summary["top_methods"] = (
+                grouped.sort_values([primary_metric, "method_id"], ascending=[ascending, True])
+                .head(10)
+                .to_dict(orient="records")
+            )
+    if {"dataset_id", "method_id", "status"}.issubset(fold_results.columns):
+        coverage = (
+            fold_results.assign(success=fold_results["status"].astype(str).eq("success"))
+            .groupby(["dataset_id", "method_id"], as_index=False)
+            .agg(n_runs=("status", "size"), n_success=("success", "sum"))
+        )
+        coverage["success_rate"] = coverage["n_success"] / coverage["n_runs"].clip(lower=1)
+        summary["coverage"] = coverage.to_dict(orient="records")
     return summary
+
+
+def _infer_primary_report_metric(frame: pd.DataFrame) -> str | None:
+    for metric in ("uno_c", "harrell_c", "ibs"):
+        if metric in frame.columns and frame[metric].notna().any():
+            return metric
+    return None

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 from dataclasses import dataclass
 
 from survarena.methods.foundation.catalog import available_foundation_model_specs
@@ -48,15 +47,6 @@ _PRESETS: dict[str, PresetConfig] = {
         scale_limit_rows=10_000,
     ),
 }
-
-
-def _has_dependency(module_name: str | None) -> bool:
-    if module_name is None:
-        return True
-    try:
-        return importlib.util.find_spec(module_name) is not None
-    except ModuleNotFoundError:
-        return False
 
 
 def _foundation_runtime_status(spec):  # type: ignore[no-untyped-def]

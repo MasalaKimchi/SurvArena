@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 
 from survarena import cli
+from survarena.benchmark import overview
 from survarena.methods.foundation.readiness import FoundationRuntimeStatus
 
 
@@ -313,6 +314,47 @@ def test_benchmark_doctor_cli_reports_missing_dataset(monkeypatch, capsys) -> No
     assert "Missing dataset config" in output
 
 
+def test_benchmark_doctor_cli_supports_deeper_checks(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(overview, "get_method_class", lambda method_id: object())
+    monkeypatch.setattr(
+        overview,
+        "_dataset_summary",
+        lambda repo_root, dataset_id: {
+            "dataset_id": dataset_id,
+            "n_rows": 10,
+            "n_features": 3,
+            "n_events": 4,
+            "event_rate": 0.4,
+            "censoring_rate": 0.6,
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "doctor",
+            "--config",
+            "configs/benchmark/smoke.yaml",
+            "--dataset",
+            "whas500",
+            "--method",
+            "coxph",
+            "--check-imports",
+            "--load-datasets",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"method_imports": true' in output
+    assert '"dataset_load": true' in output
+    assert '"dataset_summaries"' in output
+    assert '"dataset_id": "whas500"' in output
+
+
 def test_benchmark_run_cli_delegates_to_runner(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -367,6 +409,14 @@ def test_benchmark_report_cli_summarizes_fold_results(monkeypatch, tmp_path, cap
                 "status": "success",
                 "uno_c": 0.7,
                 "runtime_sec": 1.5,
+            },
+            {
+                "dataset_id": "toy",
+                "method_id": "rsf",
+                "hpo_mode": "no_hpo",
+                "status": "failed",
+                "uno_c": 0.6,
+                "runtime_sec": 2.5,
             }
         ]
     ).to_csv(tmp_path / "coxph_fold_results.csv", index=False)
@@ -375,6 +425,10 @@ def test_benchmark_report_cli_summarizes_fold_results(monkeypatch, tmp_path, cap
     cli.main()
 
     output = capsys.readouterr().out
-    assert '"n_rows": 1' in output
+    assert '"n_rows": 2' in output
     assert '"success": 1' in output
+    assert '"failed": 1' in output
+    assert '"primary_metric": "uno_c"' in output
+    assert '"top_methods"' in output
+    assert '"coverage"' in output
     assert '"method_id": "coxph"' in output
