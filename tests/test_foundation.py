@@ -44,14 +44,14 @@ def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
     assert "n_estimators_final_inference" not in method_cfg["default_params"]
 
 
-def test_tabpfn_frozen_smoke_config_forces_bounded_horizon_defaults() -> None:
-    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "tabpfn_frozen_smoke.yaml")
+def test_smoke_config_integrates_bounded_tabpfn_defaults() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "smoke.yaml")
     override = benchmark_cfg["hpo"]["method_overrides"]["tabpfn_survival"]
 
     assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
     assert benchmark_cfg["hpo"]["enabled"] is False
-    assert benchmark_cfg["datasets"][0] == "whas500"
-    assert benchmark_cfg["methods"] == ["coxph", "rsf", "tabpfn_survival"]
+    assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "aids", "gbsg2", "flchain", "whas500"}
+    assert "tabpfn_survival" in benchmark_cfg["methods"]
     assert override["search_space"] is None
     assert override["default_params"] == {
         "model_version": "v2.5",

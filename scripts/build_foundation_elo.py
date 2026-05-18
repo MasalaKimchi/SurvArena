@@ -12,7 +12,7 @@ from survarena.evaluation.statistics import elo_ratings, pairwise_win_rate
 
 
 DEFAULT_CONVENTIONAL = Path("results/local_feasible_hpo_v1_all/combined_fold_results_success.csv")
-DEFAULT_FOUNDATION = Path("results/tabpfn_frozen_repeated/combined_fold_results.csv")
+DEFAULT_FOUNDATION = Path("results/foundation_elo_v1/combined_fold_results.csv")
 DEFAULT_OUTPUT = Path("results/foundation_elo")
 FOUNDATION_METHODS = ("tabpfn_survival",)
 BENCHMARK_ID = "foundation_vs_conventional"
@@ -142,7 +142,7 @@ def build_unified_outputs(
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     conventional = _prepare_frame(pd.read_csv(conventional_path), source_run="local_feasible_hpo_v1_all")
-    foundation = _prepare_frame(pd.read_csv(foundation_path), source_run="tabpfn_frozen_repeated")
+    foundation = _prepare_frame(pd.read_csv(foundation_path), source_run="foundation_elo_v1")
 
     no_hpo = _build_mode_frame(conventional, foundation, conventional_mode="no_hpo", output_mode=MODE_NO_HPO)
     hpo_reference = _build_mode_frame(

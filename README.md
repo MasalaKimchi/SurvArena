@@ -484,8 +484,6 @@ Tracked benchmark configs:
   portfolio, repeated nested CV, no-HPO/default-policy only
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets and native manuscript methods
-- `configs/benchmark/tabpfn_frozen_smoke.yaml`: bounded no-HPO
-  smoke for the frozen `tabpfn_survival` path, starting on `whas500`
 - `configs/benchmark/mitra_no_hpo_smoke.yaml`: bounded no-HPO smoke
   for the frozen Mitra event-risk adapter, starting on `whas500`
 - `configs/benchmark/foundation_elo_v1.yaml`: unified no-HPO Elo
@@ -596,10 +594,9 @@ For user data, the shortest evaluation path is:
 survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
 ```
 
-Use `configs/benchmark/tabpfn_frozen_smoke.yaml` for bounded
-`tabpfn_survival` budget checks, and
-`configs/benchmark/mitra_no_hpo_smoke.yaml` for bounded Mitra
-foundation checks before running `configs/benchmark/foundation_elo_v1.yaml`.
+Use `configs/benchmark/smoke.yaml` for bounded `tabpfn_survival` budget checks,
+and `configs/benchmark/mitra_no_hpo_smoke.yaml` for bounded Mitra foundation
+checks before running `configs/benchmark/foundation_elo_v1.yaml`.
 The unified Elo track includes frozen/lightweight-head variants only; the Mitra
 fine-tuning path is intentionally excluded because CPU-only full-backbone
 updates can blow past the conventional model wall-clock budget.
