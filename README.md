@@ -12,6 +12,13 @@ The project is designed around practical survival modeling workflows: explicit
 time/event labels, consistent preprocessing, comparable validation splits,
 leaderboards, persisted artifacts, and manuscript-friendly benchmark summaries.
 
+## Benchmark Preview
+
+Quick view of the current local expansion Elo evidence bundle, comparing
+foundation and conventional survival methods by benchmark track and HPO mode:
+
+![Expansion Elo ratings by benchmark and mode](docs/assets/elo_expansion_by_benchmark_mode_uno_c.png)
+
 ## Features
 
 - Fit from a pandas `DataFrame`, CSV file, or Parquet file.
@@ -151,7 +158,7 @@ The current local expansion evidence bundle adds the newly wired foundation and
 dataset smoke tracks to the Elo comparison. Keep older local probe figures out
 of the repository so the README points at one current benchmark view.
 
-![Expansion Elo ratings by benchmark and mode](results/expansion_elo_smoke/figures/elo_expansion_by_benchmark_mode_uno_c.png)
+![Expansion Elo ratings by benchmark and mode](docs/assets/elo_expansion_by_benchmark_mode_uno_c.png)
 
 ### First Smoke Run
 
