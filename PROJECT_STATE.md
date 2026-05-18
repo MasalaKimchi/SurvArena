@@ -60,7 +60,7 @@ Current evidence:
 
 - Six standard datasets are documented and configured: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
 - `kkbox` is configured and documented as a large/local-only track, but remains outside the ready manuscript suite until credentials, cache preparation, runtime, and dataset statistics are reproducible.
-- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `local_feasible_hpo_v1.yaml`, `foundation_tabpfn_frozen_smoke.yaml`, `mitra_survival_no_hpo_smoke.yaml`, and `foundation_unified_elo_v1.yaml`. Removed docs references to absent `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, and `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
+- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `local_feasible_hpo_v1.yaml`, `tabpfn_frozen_smoke.yaml`, `mitra_no_hpo_smoke.yaml`, and `foundation_elo_v1.yaml`. Removed docs references to absent `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, and `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
 - Method configs include native methods plus optional foundation variants for TabPFN classifier/regressor frozen heads and Mitra frozen/fine-tune policies. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
 - Export code/tests cover fold results, leaderboards, run diagnostics, coverage matrices, runtime/failure summaries, manifests, and navigators. Checked-in run evidence is only a tiny `whas500`/`smoke`/`weibull_aft` no-HPO result with two successful folds.
 - Local milestone probe on 2026-05-04 passed environment validation, `smoke.yaml` dry-run, `manuscript_v1.yaml` dry-run, a targeted `standard_v1.yaml` dry-run, and the six-dataset native smoke matrix: 138/138 native dataset-method combinations completed with 276/276 successful folds under `results/local_milestone_probe/`.
@@ -91,7 +91,7 @@ Remaining blockers:
 - No checked-in manuscript report artifact or obvious source generator is present for final paper tables.
 - Benchmark config references are now aligned across README/docs/project state versus `configs/benchmark/`.
 - Current result evidence includes smoke-scale native coverage plus a complete local feasible paired no-HPO/HPO benchmark. It supports exporter/config/runtime assessment and preliminary HPO-vs-default analysis, but still needs manuscript table generation before final claims.
-- Optional foundation variants should stay out of default smoke/manuscript claims until `foundation_tabpfn_frozen_smoke.yaml`, `mitra_survival_no_hpo_smoke.yaml`, and `foundation_unified_elo_v1.yaml` produce a complete evidence bundle under their bounded budgets.
+- Optional foundation variants should stay out of default smoke/manuscript claims until `tabpfn_frozen_smoke.yaml`, `mitra_no_hpo_smoke.yaml`, and `foundation_elo_v1.yaml` produce a complete evidence bundle under their bounded budgets.
 - Runtime/failure summaries no longer treat blank no-HPO `validation_score` as a missing metric; remaining missing-metric signals should reflect benchmark/test metrics.
 - KKBox, AutoGluon, and foundation paths should remain optional/appendix/exploratory until dedicated configs and evidence are completed and promoted.
 
@@ -99,7 +99,7 @@ Targeted experiments needed, in order:
 
 1. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
 2. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
-3. Run the foundation smoke configs, then `foundation_unified_elo_v1.yaml`, before making any appendix claim about foundation-model Elo rankings.
+3. Run the foundation smoke configs, then `foundation_elo_v1.yaml`, before making any appendix claim about foundation-model Elo rankings.
 
 Exit criteria:
 

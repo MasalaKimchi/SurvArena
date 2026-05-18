@@ -63,8 +63,8 @@ def test_tabpfn_method_config_does_not_search_unsupported_finetuning() -> None:
     assert "n_estimators_finetune" not in method_cfg["search_space"]
 
 
-def test_foundation_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None:
-    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_tabpfn_frozen_smoke.yaml")
+def test_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "tabpfn_frozen_smoke.yaml")
     override = benchmark_cfg["hpo"]["method_overrides"]["tabpfn_survival"]
 
     assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
@@ -86,7 +86,7 @@ def test_foundation_tabpfn_frozen_smoke_config_forces_bounded_defaults() -> None
 
 
 def test_foundation_unified_elo_config_uses_budgeted_method_variants() -> None:
-    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_unified_elo_v1.yaml")
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_elo_v1.yaml")
     overrides = benchmark_cfg["hpo"]["method_overrides"]
 
     assert benchmark_cfg["primary_metric"] == "uno_c"

@@ -1,4 +1,4 @@
-benchmark_id: foundation_tabpfn_frozen_all_smoke
+benchmark_id: tabpfn_frozen_all_smoke
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2

@@ -10,7 +10,9 @@ from survarena.config import read_yaml
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run SurvArena benchmark.")
     parser.add_argument(
+        "--config",
         "--benchmark-config",
+        dest="benchmark_config",
         type=str,
         default="configs/benchmark/standard_v1.yaml",
         help="Path to benchmark YAML config.",

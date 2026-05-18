@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict
 import json
+from pathlib import Path
 
 from survarena.api import SurvivalPredictor, compare_survival_models
+from survarena.benchmark.overview import benchmark_doctor, benchmark_plan, benchmark_report, load_benchmark_config
+from survarena.benchmark.runner import run_benchmark
 from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
 
 _PRESET_CHOICES = ("fast", "medium", "best", "all", "foundation")
@@ -59,6 +62,60 @@ def _add_foundation_flag(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="Include supported tabular foundation-model adapters.",
     )
+
+
+def _add_benchmark_common_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        "--benchmark-config",
+        dest="benchmark_config",
+        default="configs/benchmark/standard_v1.yaml",
+        help="Path to benchmark YAML config.",
+    )
+    dataset_group = parser.add_mutually_exclusive_group()
+    dataset_group.add_argument("--dataset", default=None, help="Optional single dataset override.")
+    dataset_group.add_argument("--datasets", type=_parse_csv_list, default=None, help="Optional comma-separated dataset ids.")
+    method_group = parser.add_mutually_exclusive_group()
+    method_group.add_argument("--method", default=None, help="Optional single method override.")
+    method_group.add_argument("--methods", type=_parse_csv_list, default=None, help="Optional comma-separated method ids.")
+    parser.add_argument("--limit-seeds", type=int, default=None, help="Use first N seeds only.")
+
+
+def _print_json(payload: object) -> None:
+    print(json.dumps(payload, indent=2, sort_keys=True))
+
+
+def _benchmark_plan_kwargs(args: argparse.Namespace) -> dict[str, object]:
+    return {
+        "dataset_override": args.dataset,
+        "method_override": args.method,
+        "dataset_overrides": args.datasets,
+        "method_overrides": args.methods,
+        "limit_seeds": args.limit_seeds,
+    }
+
+
+def _benchmark_run_config_and_overrides(
+    benchmark_cfg: dict[str, object],
+    args: argparse.Namespace,
+) -> tuple[dict[str, object], str | None, str | None]:
+    selected_cfg = dict(benchmark_cfg)
+    dataset_override = args.dataset
+    method_override = args.method
+    if args.datasets is not None:
+        selected_cfg["datasets"] = args.datasets
+        dataset_override = None
+    if args.methods is not None:
+        selected_cfg["methods"] = args.methods
+        method_override = None
+    return selected_cfg, dataset_override, method_override
+
+
+def _resolve_optional_repo_path(repo_root: Path, value: str | None) -> Path | None:
+    if value is None:
+        return None
+    path = Path(value)
+    return path if path.is_absolute() else repo_root / path
 
 
 def parse_args() -> argparse.Namespace:
@@ -262,6 +319,33 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional comma-separated foundation method ids to inspect.",
     )
+
+    benchmark_parser = subparsers.add_parser(
+        "benchmark",
+        help="Plan, inspect, run, and summarize config-driven benchmark experiments.",
+    )
+    benchmark_subparsers = benchmark_parser.add_subparsers(dest="benchmark_command", required=True)
+
+    benchmark_plan_parser = benchmark_subparsers.add_parser("plan", help="Print benchmark run-unit counts.")
+    _add_benchmark_common_args(benchmark_plan_parser)
+
+    benchmark_doctor_parser = benchmark_subparsers.add_parser("doctor", help="Validate benchmark config readiness.")
+    _add_benchmark_common_args(benchmark_doctor_parser)
+
+    benchmark_run_parser = benchmark_subparsers.add_parser("run", help="Run a benchmark YAML config.")
+    _add_benchmark_common_args(benchmark_run_parser)
+    benchmark_run_parser.add_argument("--output-dir", default=None, help="Optional benchmark output directory.")
+    benchmark_run_parser.add_argument("--resume", action="store_true", help="Resume from an existing output directory.")
+    benchmark_run_parser.add_argument("--max-retries", type=int, default=0, help="Retry failed runs this many times.")
+    benchmark_run_parser.add_argument(
+        "--regenerate-splits",
+        action="store_true",
+        help="Allow split artifact regeneration when an existing manifest payload mismatches.",
+    )
+    benchmark_run_parser.add_argument("--dry-run", action="store_true", help="Validate setup without fitting models.")
+
+    benchmark_report_parser = benchmark_subparsers.add_parser("report", help="Summarize benchmark output artifacts.")
+    benchmark_report_parser.add_argument("output_dir", help="Benchmark output directory to summarize.")
     return parser.parse_args()
 
 
@@ -300,7 +384,7 @@ def main() -> None:
             num_bag_folds=args.num_bag_folds,
             num_bag_sets=args.num_bag_sets,
         )
-        print(json.dumps(predictor.fit_summary(), indent=2, sort_keys=True))
+        _print_json(predictor.fit_summary())
         return
 
     if args.command in {"compare", "pilot"}:
@@ -343,7 +427,7 @@ def main() -> None:
             benchmark_id=benchmark_id,
             dry_run=args.dry_run,
         )
-        print(json.dumps(summary, indent=2, sort_keys=True))
+        _print_json(summary)
         return
 
     if args.command == "foundation-check":
@@ -351,8 +435,37 @@ def main() -> None:
             statuses = list(foundation_runtime_catalog())
         else:
             statuses = [foundation_runtime_status_for_method(method_id) for method_id in args.models]
-        print(json.dumps([asdict(status) for status in statuses], indent=2, sort_keys=True))
+        _print_json([asdict(status) for status in statuses])
         return
+
+    if args.command == "benchmark":
+        repo_root = Path(__file__).resolve().parents[1]
+        if args.benchmark_command == "report":
+            _print_json(benchmark_report(Path(args.output_dir)))
+            return
+
+        benchmark_cfg = load_benchmark_config(repo_root, args.benchmark_config)
+        if args.benchmark_command == "plan":
+            _print_json(benchmark_plan(repo_root, benchmark_cfg, **_benchmark_plan_kwargs(args)))
+            return
+        if args.benchmark_command == "doctor":
+            _print_json(benchmark_doctor(repo_root, benchmark_cfg, **_benchmark_plan_kwargs(args)))
+            return
+        if args.benchmark_command == "run":
+            selected_cfg, dataset_override, method_override = _benchmark_run_config_and_overrides(benchmark_cfg, args)
+            run_benchmark(
+                repo_root=repo_root,
+                benchmark_cfg=selected_cfg,
+                dataset_override=dataset_override,
+                method_override=method_override,
+                limit_seeds=args.limit_seeds,
+                dry_run=args.dry_run,
+                output_dir=_resolve_optional_repo_path(repo_root, args.output_dir),
+                resume=bool(args.resume),
+                max_retries=max(int(args.max_retries), 0),
+                regenerate_splits=bool(args.regenerate_splits),
+            )
+            return
 
     raise ValueError(f"Unsupported command '{args.command}'.")
 

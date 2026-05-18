@@ -1,4 +1,4 @@
-benchmark_id: foundation_unified_elo_v1
+benchmark_id: tabpfn_frozen_repeated
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 3
@@ -18,18 +18,10 @@ secondary_metrics:
   - td_auc
 execution:
   n_jobs: 1
-autogluon:
-  enabled: true
-  presets: null
-  time_limit_seconds: 120
-  hyperparameter_tune_kwargs: null
-  num_bag_folds: 0
-  num_stack_levels: 0
-  refit_full: false
 hpo:
   enabled: false
   max_trials: 0
-  timeout_seconds: 120
+  timeout_seconds: 60
   sampler: random
   pruner: none
   n_startup_trials: 0
@@ -44,8 +36,8 @@ hpo:
         backbone_training: frozen
         hidden_layers: "64"
         dropout: 0.0
-        max_epochs: 25
-        patience: 5
+        max_epochs: 10
+        patience: 3
     tabpfn_survival_regressor:
       enabled: false
       search_space: null
@@ -56,16 +48,8 @@ hpo:
         backbone_training: frozen
         hidden_layers: "64"
         dropout: 0.0
-        max_epochs: 25
-        patience: 5
-    mitra_survival_frozen:
-      enabled: false
-      search_space: null
-      default_params:
-        time_limit: 120
-        mitra_params:
-          fine_tune: false
-          ag.max_memory_usage_ratio: 1.3
+        max_epochs: 10
+        patience: 3
 datasets:
   - nwtco
   - gbsg2
@@ -76,15 +60,9 @@ datasets:
 methods:
   - coxph
   - rsf
-  - xgboost_cox
-  - xgboost_aft
-  - catboost_cox
-  - catboost_survival_aft
   - tabpfn_survival_classifier
   - tabpfn_survival_regressor
-  - mitra_survival_frozen
 notes: >
-  Unified no-HPO Elo expansion track for budget-matched tabular foundation
-  adapters. The main track includes frozen/lightweight-head variants only.
-  Full backbone fine-tuning is intentionally excluded because it can exceed
-  the conventional model wall-clock budget on CPU-only runs.
+  Repeated standard-dataset frozen TabPFN benchmark for a more stable Elo
+  estimate than the smoke profile. It keeps backbones frozen, trains compact
+  Cox heads only, and runs sequentially to avoid overcommitting local CPU/RAM.

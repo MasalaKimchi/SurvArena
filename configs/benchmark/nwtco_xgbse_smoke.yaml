@@ -1,4 +1,4 @@
-benchmark_id: nwtco_xgbse_elo_smoke
+benchmark_id: nwtco_xgbse_smoke
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2

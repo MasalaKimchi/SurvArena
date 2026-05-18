@@ -166,16 +166,42 @@ python scripts/check_environment.py
 
 # Inspect the smoke benchmark plan without fitting models.
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/smoke.yaml \
   --dry-run
 
 # Run the smallest practical built-in benchmark: one dataset, one method,
 # one seed/repeat, and the smoke fold geometry.
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/smoke.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
+```
+
+The same benchmark workflow is available through the main CLI with explicit
+planning and inspection commands:
+
+```bash
+# Estimate run units, splits, HPO inner fits, and output layout.
+survarena benchmark plan \
+  --config configs/benchmark/smoke.yaml \
+  --dataset whas500 \
+  --method coxph \
+  --limit-seeds 1
+
+# Validate config, dataset/method references, and optional foundation readiness.
+survarena benchmark doctor \
+  --config configs/benchmark/smoke.yaml
+
+# Run through the unified benchmark CLI.
+survarena benchmark run \
+  --config configs/benchmark/smoke.yaml \
+  --dataset whas500 \
+  --method coxph \
+  --limit-seeds 1
+
+# Summarize fold-result artifacts from a completed output directory.
+survarena benchmark report results/summary/whas500/smoke/coxph
 ```
 
 The one-dataset smoke run writes a timestamped folder under
@@ -452,11 +478,11 @@ Tracked benchmark configs:
   portfolio, repeated nested CV, no-HPO/default-policy only
 - `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
   standard built-in datasets and native manuscript methods
-- `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`: bounded no-HPO
+- `configs/benchmark/tabpfn_frozen_smoke.yaml`: bounded no-HPO
   smoke for the frozen `tabpfn_survival` path, starting on `whas500`
-- `configs/benchmark/mitra_survival_no_hpo_smoke.yaml`: bounded no-HPO smoke
+- `configs/benchmark/mitra_no_hpo_smoke.yaml`: bounded no-HPO smoke
   for the frozen Mitra event-risk adapter, starting on `whas500`
-- `configs/benchmark/foundation_unified_elo_v1.yaml`: unified no-HPO Elo
+- `configs/benchmark/foundation_elo_v1.yaml`: unified no-HPO Elo
   expansion track with budgeted frozen foundation variants and paired
   conventional baselines
 - `configs/benchmark/local_feasible_hpo_v1.yaml`: MacBook-local native
@@ -483,19 +509,19 @@ Simple smoke examples:
 ```bash
 # Dry run only: parse config and print resolved datasets/methods/modes.
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/smoke.yaml \
   --dry-run
 
 # Tiny end-to-end run.
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/smoke.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
 
 # Slightly broader smoke on one dataset and all smoke methods.
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/smoke.yaml \
   --dataset whas500 \
   --limit-seeds 1
 ```
@@ -566,10 +592,10 @@ For user data, the shortest evaluation path is:
 survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
 ```
 
-Use `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml` for bounded
+Use `configs/benchmark/tabpfn_frozen_smoke.yaml` for bounded
 `tabpfn_survival` budget checks, and
-`configs/benchmark/mitra_survival_no_hpo_smoke.yaml` for bounded Mitra
-foundation checks before running `configs/benchmark/foundation_unified_elo_v1.yaml`.
+`configs/benchmark/mitra_no_hpo_smoke.yaml` for bounded Mitra
+foundation checks before running `configs/benchmark/foundation_elo_v1.yaml`.
 The unified Elo track includes frozen/lightweight-head variants only; the Mitra
 fine-tuning path is intentionally excluded because CPU-only full-backbone
 updates can blow past the conventional model wall-clock budget.

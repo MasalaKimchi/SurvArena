@@ -10,10 +10,10 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 - CLI access: `--foundation`
 - predictor access: `presets="foundation"`, `presets="all"`, or
   `enable_foundation_models=True`
-- benchmark access: `configs/benchmark/foundation_tabpfn_frozen_smoke.yaml`
+- benchmark access: `configs/benchmark/tabpfn_frozen_smoke.yaml`
   provides a bounded no-HPO frozen TabPFN smoke path, and
-  `configs/benchmark/mitra_survival_no_hpo_smoke.yaml` provides a bounded
-  no-HPO Mitra smoke path; `configs/benchmark/foundation_unified_elo_v1.yaml`
+  `configs/benchmark/mitra_no_hpo_smoke.yaml` provides a bounded
+  no-HPO Mitra smoke path; `configs/benchmark/foundation_elo_v1.yaml`
   is the promoted dry-run-ready unified Elo expansion track, but keep claims
   appendix/exploratory until the evidence bundle completes
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints

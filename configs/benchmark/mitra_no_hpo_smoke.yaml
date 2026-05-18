@@ -1,4 +1,4 @@
-benchmark_id: mitra_survival_no_hpo_smoke
+benchmark_id: mitra_no_hpo_smoke
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 2

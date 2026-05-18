@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import sys
 
+import pandas as pd
+
 from survarena import cli
 from survarena.methods.foundation.readiness import FoundationRuntimeStatus
 
@@ -255,3 +257,124 @@ def test_foundation_check_cli_emits_runtime_status(monkeypatch, capsys) -> None:
     output = capsys.readouterr().out
     assert '"method_id": "tabpfn_survival"' in output
     assert '"warning_reason": "Run `hf auth login` first."' in output
+
+
+def test_benchmark_plan_cli_emits_run_unit_counts(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "plan",
+            "--config",
+            "configs/benchmark/smoke.yaml",
+            "--datasets",
+            "whas500,gbsg2",
+            "--methods",
+            "coxph,rsf",
+            "--limit-seeds",
+            "1",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"benchmark_id": "smoke"' in output
+    assert '"whas500"' in output
+    assert '"gbsg2"' in output
+    assert '"coxph"' in output
+    assert '"rsf"' in output
+    assert '"planned_run_units"' in output
+
+
+def test_benchmark_doctor_cli_reports_missing_dataset(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "doctor",
+            "--benchmark-config",
+            "configs/benchmark/smoke.yaml",
+            "--dataset",
+            "not_a_dataset",
+            "--method",
+            "coxph",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"status": "error"' in output
+    assert "Missing dataset config" in output
+
+
+def test_benchmark_run_cli_delegates_to_runner(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_benchmark(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "run_benchmark", fake_run_benchmark)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "run",
+            "--config",
+            "configs/benchmark/smoke.yaml",
+            "--datasets",
+            "whas500,gbsg2",
+            "--methods",
+            "coxph,rsf",
+            "--limit-seeds",
+            "1",
+            "--output-dir",
+            "tmp/benchmark",
+            "--resume",
+            "--max-retries",
+            "2",
+            "--dry-run",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["benchmark_cfg"]["datasets"] == ["whas500", "gbsg2"]
+    assert captured["benchmark_cfg"]["methods"] == ["coxph", "rsf"]
+    assert captured["dataset_override"] is None
+    assert captured["method_override"] is None
+    assert captured["limit_seeds"] == 1
+    assert captured["resume"] is True
+    assert captured["max_retries"] == 2
+    assert captured["dry_run"] is True
+    assert str(captured["output_dir"]).endswith("tmp/benchmark")
+
+
+def test_benchmark_report_cli_summarizes_fold_results(monkeypatch, tmp_path, capsys) -> None:
+    pd.DataFrame(
+        [
+            {
+                "dataset_id": "toy",
+                "method_id": "coxph",
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.7,
+                "runtime_sec": 1.5,
+            }
+        ]
+    ).to_csv(tmp_path / "coxph_fold_results.csv", index=False)
+    monkeypatch.setattr(sys, "argv", ["survarena", "benchmark", "report", str(tmp_path)])
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"n_rows": 1' in output
+    assert '"success": 1' in output
+    assert '"method_id": "coxph"' in output

@@ -73,7 +73,7 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
     frame = pd.DataFrame(
         [
             {
-                "benchmark_id": "foundation_unified_elo_v1",
+                "benchmark_id": "foundation_elo_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
@@ -82,7 +82,7 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
                 "uno_c": 0.72,
             },
             {
-                "benchmark_id": "foundation_unified_elo_v1",
+                "benchmark_id": "foundation_elo_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
@@ -91,7 +91,7 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
                 "uno_c": 0.68,
             },
             {
-                "benchmark_id": "foundation_unified_elo_v1",
+                "benchmark_id": "foundation_elo_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
@@ -100,7 +100,7 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
                 "uno_c": 0.70,
             },
             {
-                "benchmark_id": "foundation_unified_elo_v1",
+                "benchmark_id": "foundation_elo_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
