@@ -22,6 +22,21 @@ class FoundationModelSpec:
 
 _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
     FoundationModelSpec(
+        method_id="tabpfn_survival_horizon",
+        backbone="TabPFN",
+        provider="Prior Labs",
+        task_support=("regression", "classification"),
+        supports_finetune=False,
+        supports_pretrained_weights=True,
+        status="implemented",
+        notes="Censored-aware horizon classification adapter with monotone survival reconstruction.",
+        dependency_module="tabpfn",
+        install_extra="foundation-tabpfn",
+        max_rows_hint=10_000,
+        max_features_hint=500,
+        requires_hf_auth=True,
+    ),
+    FoundationModelSpec(
         method_id="tabpfn_survival",
         backbone="TabPFN",
         provider="Prior Labs",
@@ -29,7 +44,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         supports_finetune=False,
         supports_pretrained_weights=True,
         status="implemented",
-        notes="Supports explicit TabPFN v2/v2.5 selection plus custom checkpoint paths.",
+        notes="Legacy surrogate-target adapter supporting explicit TabPFN v2/v2.5 selection plus custom checkpoint paths.",
         dependency_module="tabpfn",
         install_extra="foundation-tabpfn",
         max_rows_hint=10_000,
@@ -92,7 +107,7 @@ def foundation_model_catalog() -> tuple[FoundationModelSpec, ...]:
     return _FOUNDATION_MODEL_SPECS
 
 
-_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival", "mitra_survival"})
+_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival_horizon", "tabpfn_survival", "mitra_survival"})
 
 
 def available_foundation_model_specs() -> tuple[FoundationModelSpec, ...]:

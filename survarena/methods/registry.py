@@ -39,6 +39,7 @@ _REGISTRY_TARGETS = {
     "tabpfn_survival": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalMethod"),
     "tabpfn_survival_classifier": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalClassifierMethod"),
     "tabpfn_survival_regressor": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalRegressorMethod"),
+    "tabpfn_survival_horizon": ("survarena.methods.foundation.tabpfn_survival", "TabPFNHorizonSurvivalMethod"),
     "mitra_survival": ("survarena.methods.automl.mitra_survival", "MitraSurvivalMethod"),
     "mitra_survival_frozen": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFrozenMethod"),
 }

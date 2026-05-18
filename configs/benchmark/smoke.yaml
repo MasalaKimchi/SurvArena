@@ -71,7 +71,7 @@ methods:
   - deephit_single
   - pchazard
   - cox_time
-  - tabpfn_survival
+  - tabpfn_survival_horizon
 notes: >
   Quick no-HPO smoke across all standard built-in datasets; one seed and small
   folds; exercises every manuscript default model once per dataset plus optional

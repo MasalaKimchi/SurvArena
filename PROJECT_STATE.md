@@ -100,6 +100,7 @@ Targeted experiments needed, in order:
 1. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
 2. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
 3. Run the foundation smoke configs, then `foundation_elo_v1.yaml`, before making any appendix claim about foundation-model Elo rankings.
+4. Compare legacy `tabpfn_survival` versus preferred `tabpfn_survival_horizon` across the six standard datasets with matched splits, runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics before promoting a TabPFN manuscript claim.
 
 Exit criteria:
 

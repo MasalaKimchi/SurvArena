@@ -195,7 +195,7 @@ def rewrite_foundation_runtime_error(
     lower_message = message.lower()
     if status.blocked_reason is not None and message == status.blocked_reason:
         return RuntimeError(message)
-    if method_id == "tabpfn_survival" and checkpoint_path is None:
+    if method_id.startswith("tabpfn_survival") and checkpoint_path is None:
         if any(token in lower_message for token in ("huggingface", "gated", "401", "403", "tabpfn_2_5")):
             return RuntimeError(
                 "TabPFN access is not ready for the default gated checkpoint. "

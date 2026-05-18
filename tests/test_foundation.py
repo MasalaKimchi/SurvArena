@@ -194,7 +194,7 @@ def test_foundation_preset_adds_tabpfn_when_dependency_exists(monkeypatch) -> No
         event_fraction=0.2,
     )
 
-    assert "tabpfn_survival" in preset.method_ids
+    assert "tabpfn_survival_horizon" in preset.method_ids
 
 
 def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch) -> None:
@@ -323,6 +323,104 @@ def test_tabpfn_survival_classifier_variant_uses_event_surrogate() -> None:
     assert method.params["backbone_training"] == "frozen"
     np.testing.assert_array_equal(target, np.asarray([1, 0, 1], dtype=np.int32))
     assert method.foundation_metadata()["foundation_backbone_task"] == "classification_event"
+
+
+def test_tabpfn_horizon_method_config_and_registry() -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNHorizonSurvivalMethod
+    from survarena.methods.registry import get_method_class
+
+    method_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabpfn_survival_horizon.yaml")
+
+    assert get_method_class("tabpfn_survival_horizon") is TabPFNHorizonSurvivalMethod
+    assert method_cfg["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert method_cfg["default_params"]["aggregate_risk"] == "mean_event_probability"
+
+
+def test_tabpfn_horizon_labels_exclude_unknown_censored_rows() -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNHorizonSurvivalMethod
+
+    known, labels = TabPFNHorizonSurvivalMethod._horizon_known_labels(
+        time_train=np.asarray([2.0, 3.0, 5.0, 7.0, 9.0]),
+        event_train=np.asarray([0, 1, 0, 1, 0]),
+        horizon=5.0,
+    )
+
+    np.testing.assert_array_equal(known, np.asarray([False, True, False, True, True]))
+    np.testing.assert_array_equal(labels, np.asarray([1, 0, 0], dtype=np.int32))
+
+
+def test_tabpfn_horizon_frozen_path_fit_predicts_with_fake_backbone(monkeypatch) -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNHorizonSurvivalMethod
+
+    class FakeBackbone:
+        fit_labels: list[np.ndarray] = []
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = dict(kwargs)
+
+        @classmethod
+        def create_default_for_version(cls, version: object, **kwargs):
+            return cls(model_version=version, **kwargs)
+
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeBackbone":
+            self.offset_ = float(np.mean(y))
+            self.classes_ = np.asarray([0, 1])
+            FakeBackbone.fit_labels.append(np.asarray(y, dtype=np.int32))
+            return self
+
+        def predict_proba(self, X: np.ndarray) -> np.ndarray:
+            X_np = np.asarray(X, dtype=np.float32)
+            logits = X_np[:, 0] + self.offset_
+            positive = 1.0 / (1.0 + np.exp(-logits))
+            return np.column_stack([1.0 - positive, positive])
+
+    fake_tabpfn = types.ModuleType("tabpfn")
+    fake_tabpfn.TabPFNClassifier = FakeBackbone
+    fake_constants = types.ModuleType("tabpfn.constants")
+    fake_constants.ModelVersion = types.SimpleNamespace(V2="v2", V2_5="v2.5")
+
+    monkeypatch.setitem(sys.modules, "tabpfn", fake_tabpfn)
+    monkeypatch.setitem(sys.modules, "tabpfn.constants", fake_constants)
+    monkeypatch.setattr(
+        "survarena.methods.foundation.tabpfn_survival.ensure_foundation_runtime_ready",
+        lambda method_id, checkpoint_path=None: None,
+    )
+
+    X = np.asarray(
+        [
+            [-1.0, 0.0],
+            [-0.5, 0.1],
+            [0.0, 0.2],
+            [0.3, 0.3],
+            [0.7, 0.4],
+            [1.0, 0.5],
+            [1.2, 0.6],
+            [1.5, 0.7],
+        ],
+        dtype=np.float32,
+    )
+    time = np.asarray([2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0, 13.0], dtype=np.float64)
+    event = np.asarray([1, 0, 1, 0, 1, 0, 1, 0], dtype=np.int32)
+
+    method = TabPFNHorizonSurvivalMethod(
+        n_estimators=1,
+        horizon_quantiles=[0.25, 0.5, 0.75],
+        min_known_per_horizon=1,
+        device="cpu",
+        seed=13,
+    )
+    method.fit(X, time, event)
+    risk = method.predict_risk(X[:4])
+    survival = method.predict_survival(X[:4], np.asarray([1.0, 5.0, 8.0, 12.0]))
+
+    assert len(FakeBackbone.fit_labels) == 3
+    assert risk.shape == (4,)
+    assert survival.shape == (4, 4)
+    assert np.isfinite(risk).all()
+    assert np.isfinite(survival).all()
+    assert ((survival >= 0.0) & (survival <= 1.0)).all()
+    assert (np.diff(survival, axis=1) <= 1e-8).all()
+    assert method.foundation_metadata()["foundation_backbone_task"] == "censored_aware_horizon_classification"
 
 
 def test_tabpfn_embedding_extraction_supports_tensor_outputs_without_optional_kwarg() -> None:

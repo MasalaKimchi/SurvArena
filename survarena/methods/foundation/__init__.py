@@ -1,5 +1,7 @@
 """Foundation-model based survival methods."""
 
+from importlib import import_module
+
 from survarena.methods.foundation.catalog import FoundationModelSpec, available_foundation_model_specs, foundation_model_catalog
 from survarena.methods.foundation.readiness import (
     FoundationRuntimeStatus,
@@ -13,7 +15,10 @@ from survarena.methods.foundation.readiness import (
 __all__ = [
     "FoundationModelSpec",
     "FoundationRuntimeStatus",
+    "TabPFNHorizonSurvivalMethod",
+    "TabPFNSurvivalClassifierMethod",
     "TabPFNSurvivalMethod",
+    "TabPFNSurvivalRegressorMethod",
     "available_foundation_model_specs",
     "ensure_foundation_runtime_ready",
     "foundation_runtime_catalog",
@@ -25,8 +30,12 @@ __all__ = [
 
 
 def __getattr__(name: str):
-    if name == "TabPFNSurvivalMethod":
-        from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
-
-        return TabPFNSurvivalMethod
+    if name in {
+        "TabPFNHorizonSurvivalMethod",
+        "TabPFNSurvivalClassifierMethod",
+        "TabPFNSurvivalMethod",
+        "TabPFNSurvivalRegressorMethod",
+    }:
+        module = import_module("survarena.methods.foundation.tabpfn_survival")
+        return getattr(module, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

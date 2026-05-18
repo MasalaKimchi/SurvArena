@@ -115,7 +115,10 @@ def resolve_preset(
 
     eligible_foundation_methods: list[str] = []
     if foundation_requested and foundation_supported:
-        for spec in available_foundation_model_specs():
+        foundation_specs = list(available_foundation_model_specs())
+        if any(spec.method_id == "tabpfn_survival_horizon" for spec in foundation_specs):
+            foundation_specs = [spec for spec in foundation_specs if spec.method_id != "tabpfn_survival"]
+        for spec in foundation_specs:
             runtime_status = _foundation_runtime_status(spec)
             if not runtime_status.runtime_ready:
                 portfolio_notes.append(f"Skipped {spec.method_id} because {runtime_status.blocked_reason}")

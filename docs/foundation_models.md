@@ -4,7 +4,7 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `mitra_survival`
+- implemented adapters: `tabpfn_survival_horizon`, `tabpfn_survival`, `mitra_survival`
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
@@ -40,8 +40,15 @@ contract.
 
 Adapter-specific details:
 
+- `tabpfn_survival_horizon` is the preferred manuscript-facing TabPFN adapter.
+  It trains one frozen TabPFN classifier per event-time horizon using only rows
+  with known event status at that horizon, falls back to Kaplan-Meier event
+  probabilities when a horizon is under-supported, and reconstructs monotone
+  survival curves from cumulative event probabilities.
 - `tabpfn_survival` uses frozen TabPFN preprocessing/embeddings and trains an MLP
   Cox head; `n_estimators_final_inference` controls inference ensemble breadth.
+  Treat this as a legacy surrogate-target ablation because the backbone is fit
+  to observed event or observed-time targets before the survival head.
   `tabpfn_survival_classifier` and `tabpfn_survival_regressor` are budgeted Elo
   variants that fix the surrogate target while sharing the same frozen adapter.
 - `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
@@ -62,6 +69,11 @@ requested evaluation times.
 
 ## Next Steps
 
+- TODO: compare legacy `tabpfn_survival` versus preferred
+  `tabpfn_survival_horizon` across the standard datasets (`support`,
+  `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`) with matched splits,
+  runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics
+  before promoting any TabPFN manuscript claim.
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
 - run and promote the unified Elo evidence bundle once both smoke tracks pass
