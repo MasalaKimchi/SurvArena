@@ -66,7 +66,7 @@ def test_foundation_preset_requests_foundation_models_without_extra_flag() -> No
     )
     monkeypatch.undo()
 
-    assert preset.method_ids == ("coxph", "tabpfn_survival_horizon", "mitra_survival")
+    assert preset.method_ids == ("coxph", "tabpfn_survival", "mitra_survival")
 
 
 def test_foundation_preset_reports_when_no_current_adapter_is_eligible() -> None:
@@ -114,7 +114,7 @@ def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> Non
         "rsf",
         "deepsurv",
         "deepsurv_moco",
-        "tabpfn_survival_horizon",
+        "tabpfn_survival",
         "mitra_survival",
     )
 
@@ -129,9 +129,9 @@ def test_resolve_preset_surfaces_foundation_runtime_warnings(monkeypatch) -> Non
             dependency_installed=True,
             runtime_ready=True,
             requires_hf_auth=spec.requires_hf_auth,
-            auth_configured=False if spec.method_id == "tabpfn_survival_horizon" else True,
+            auth_configured=False if spec.method_id == "tabpfn_survival" else True,
             install_command=None,
-            warning_reason="Run `hf auth login` first." if spec.method_id == "tabpfn_survival_horizon" else None,
+            warning_reason="Run `hf auth login` first." if spec.method_id == "tabpfn_survival" else None,
         ),
     )
 
@@ -143,5 +143,5 @@ def test_resolve_preset_surfaces_foundation_runtime_warnings(monkeypatch) -> Non
         event_fraction=0.3,
     )
 
-    assert "tabpfn_survival_horizon" in preset.method_ids
+    assert "tabpfn_survival" in preset.method_ids
     assert any("hf auth login" in note for note in preset.portfolio_notes)

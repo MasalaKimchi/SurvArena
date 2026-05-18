@@ -61,11 +61,11 @@ Current evidence:
 - Six standard datasets are documented and configured: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
 - `kkbox` is configured and documented as a large/local-only track, but remains outside the ready manuscript suite until credentials, cache preparation, runtime, and dataset statistics are reproducible.
 - Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `local_feasible_hpo_v1.yaml`, `tabpfn_frozen_smoke.yaml`, `mitra_no_hpo_smoke.yaml`, and `foundation_elo_v1.yaml`. Removed docs references to absent `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, and `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
-- Method configs include native methods plus optional foundation variants for TabPFN classifier/regressor frozen heads and Mitra frozen/fine-tune policies. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
+- Method configs include native methods plus optional foundation variants for the TabPFN horizon adapter and Mitra frozen/fine-tune policies. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
 - Export code/tests cover fold results, leaderboards, run diagnostics, coverage matrices, runtime/failure summaries, manifests, and navigators. Checked-in run evidence is only a tiny `whas500`/`smoke`/`weibull_aft` no-HPO result with two successful folds.
 - Local milestone probe on 2026-05-04 passed environment validation, `smoke.yaml` dry-run, `manuscript_v1.yaml` dry-run, a targeted `standard_v1.yaml` dry-run, and the six-dataset native smoke matrix: 138/138 native dataset-method combinations completed with 276/276 successful folds under `results/local_milestone_probe/`.
 - Local feasible paired no-HPO/HPO benchmark on 2026-05-05 ran all six standard datasets x 23 native methods with 3 outer folds x 3 repeats/seeds x 2 modes under `results/local_feasible_hpo_v1_all/`. Final artifacts now cover 138/138 dataset-method combinations, 2,484/2,484 successful fold rows, and plot-ready mode summaries/deltas after fixing and rerunning the `flchain` neural-adapter batch-normalization singleton-batch edge case.
-- Optional `tabpfn_survival` previously timed out on `support`; the unified foundation Elo config now uses capped frozen classifier/regressor variants and excludes Mitra fine-tuning until separate bounded evidence exists.
+- Optional `tabpfn_survival` previously timed out on `support` under the removed surrogate-head adapter; the unified foundation Elo config now uses the retained censored-aware horizon adapter and excludes Mitra fine-tuning until separate bounded evidence exists.
 - Dataset and method contribution guides exist.
 
 Checklist:
@@ -100,7 +100,7 @@ Targeted experiments needed, in order:
 1. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
 2. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
 3. Run the foundation smoke configs, then `foundation_elo_v1.yaml`, before making any appendix claim about foundation-model Elo rankings.
-4. Compare legacy `tabpfn_survival` versus preferred `tabpfn_survival_horizon` across the six standard datasets with matched splits, runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics before promoting a TabPFN manuscript claim.
+4. Run the retained `tabpfn_survival` horizon adapter across the six standard datasets with matched splits, runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics before promoting a TabPFN manuscript claim.
 
 Exit criteria:
 

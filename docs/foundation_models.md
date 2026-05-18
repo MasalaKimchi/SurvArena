@@ -4,7 +4,7 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival_horizon`, `tabpfn_survival`, `mitra_survival`
+- implemented adapters: `tabpfn_survival`, `mitra_survival`
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
@@ -25,14 +25,14 @@ TabPFN note:
 
 ## Survival Adaptation Pattern
 
-SurvArena treats tabular foundation models as pretrained feature extractors by
+SurvArena treats tabular foundation models as frozen tabular learners by
 default, not as full survival models that must be fine-tuned end to end. The
-current adapters use a two-stage contract:
+current adapters use a horizon/event-risk contract:
 
 1. fit or load the tabular backbone under `backbone_training: frozen`
-2. transform each row into a compact representation or surrogate prediction
-3. train a lightweight survival head on the benchmark training split only
-4. calibrate survival curves from the fitted Cox-style baseline hazard
+2. train TabPFN horizon classifiers or Mitra event-risk learners on the benchmark training split only
+3. exclude rows whose event status is unknown at a TabPFN horizon
+4. reconstruct or calibrate survival curves from training-side estimates
 5. emit the same `predict_risk` and `predict_survival` outputs as native methods
 
 This keeps smoke runs practical and preserves the shared-split benchmark
@@ -40,17 +40,11 @@ contract.
 
 Adapter-specific details:
 
-- `tabpfn_survival_horizon` is the preferred manuscript-facing TabPFN adapter.
+- `tabpfn_survival` is a censored-aware TabPFN horizon adapter.
   It trains one frozen TabPFN classifier per event-time horizon using only rows
   with known event status at that horizon, falls back to Kaplan-Meier event
   probabilities when a horizon is under-supported, and reconstructs monotone
   survival curves from cumulative event probabilities.
-- `tabpfn_survival` uses frozen TabPFN preprocessing/embeddings and trains an MLP
-  Cox head; `n_estimators_final_inference` controls inference ensemble breadth.
-  Treat this as a legacy surrogate-target ablation because the backbone is fit
-  to observed event or observed-time targets before the survival head.
-  `tabpfn_survival_classifier` and `tabpfn_survival_regressor` are budgeted Elo
-  variants that fix the surrogate target while sharing the same frozen adapter.
 - `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
   learner with `fine_tune=false` by default, then calibrates survival curves
   with the shared Breslow baseline survival adapter. AutoGluon's Mitra extra
@@ -69,11 +63,10 @@ requested evaluation times.
 
 ## Next Steps
 
-- TODO: compare legacy `tabpfn_survival` versus preferred
-  `tabpfn_survival_horizon` across the standard datasets (`support`,
-  `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`) with matched splits,
-  runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics
-  before promoting any TabPFN manuscript claim.
+- TODO: run the retained `tabpfn_survival` horizon adapter across the standard
+  datasets (`support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`) with
+  matched splits, runtime, ranking metrics, IBS/calibration, and
+  censoring-stress diagnostics before promoting any TabPFN manuscript claim.
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
 - run and promote the unified Elo evidence bundle once both smoke tracks pass

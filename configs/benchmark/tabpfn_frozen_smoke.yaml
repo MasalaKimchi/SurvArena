@@ -20,14 +20,9 @@ hpo:
       search_space: null
       default_params:
         model_version: v2.5
-        backbone_task: classification_event
-        backbone_training: frozen
         n_estimators: 1
-        n_estimators_final_inference: 1
-        hidden_layers: "64"
-        dropout: 0.0
-        max_epochs: 25
-        patience: 5
+        horizon_quantiles: "0.25-0.5-0.75"
+        min_known_per_horizon: 20
 datasets:
   - whas500
 methods:
@@ -37,6 +32,6 @@ methods:
 notes: >
   Bounded frozen-only TabPFN survival smoke config. This uses the smallest
   built-in benchmark dataset first, disables HPO, and constrains the pretrained
-  backbone to one estimator with a compact survival head for budget validation.
+  backbone to one estimator with horizon classifiers for budget validation.
   CoxPH and RSF are included as paired baselines so Elo-style ratings have
   matched opponents for the foundation method.

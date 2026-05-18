@@ -69,7 +69,7 @@ def test_elo_ratings_are_order_independent_with_bootstrap_ci() -> None:
     assert (first["elo_rating"] <= first["elo_rating_ci95_high"]).all()
 
 
-def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
+def test_elo_ratings_treat_foundation_methods_as_methods() -> None:
     frame = pd.DataFrame(
         [
             {
@@ -78,17 +78,8 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
                 "split_id": "s1",
                 "seed": 11,
                 "hpo_mode": "no_hpo",
-                "method_id": "tabpfn_survival_classifier",
+                "method_id": "tabpfn_survival",
                 "uno_c": 0.72,
-            },
-            {
-                "benchmark_id": "foundation_elo_v1",
-                "dataset_id": "d1",
-                "split_id": "s1",
-                "seed": 11,
-                "hpo_mode": "no_hpo",
-                "method_id": "tabpfn_survival_regressor",
-                "uno_c": 0.68,
             },
             {
                 "benchmark_id": "foundation_elo_v1",
@@ -116,12 +107,11 @@ def test_elo_ratings_treat_frozen_foundation_variants_as_methods() -> None:
     assert set(result["hpo_mode"]) == {"no_hpo"}
     no_hpo = result[result["hpo_mode"] == "no_hpo"]
     assert set(no_hpo["method_id"]) == {
-        "tabpfn_survival_classifier",
-        "tabpfn_survival_regressor",
+        "tabpfn_survival",
         "mitra_survival_frozen",
         "rsf",
     }
-    assert int(no_hpo.set_index("method_id").loc["tabpfn_survival_classifier", "elo_matches"]) == 3
+    assert int(no_hpo.set_index("method_id").loc["tabpfn_survival", "elo_matches"]) == 2
 
 
 def test_pairwise_significance_produces_corrected_p_values() -> None:

@@ -423,7 +423,7 @@ require their documented extras and readiness checks before long runs.
 | `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Smoke, manuscript |
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
 | `mitra_survival` | Mitra Survival Risk Adapter | Foundation | `autogluon.tabular` MITRA | Optional foundation runs |
-| `tabpfn_survival` | TabPFN embedding survival head | Foundation | `tabpfn` + `scikit-survival` | Optional foundation runs |
+| `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Optional foundation runs |
 
 `xgbse_kaplan_neighbors` is registered for explicit experiments, but is not in
 the maintained benchmark configs while the latest `xgbse` package requires an
@@ -567,8 +567,6 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
-- `tabpfn_survival_classifier`
-- `tabpfn_survival_regressor`
 - `mitra_survival`
 - `mitra_survival_frozen`
 
@@ -589,7 +587,7 @@ TabPFN requires access to the gated model on Hugging Face:
   `HUGGINGFACE_HUB_TOKEN`
 
 Foundation adapters are experimental. Smoke defaults keep pretrained backbones
-frozen and train only lightweight survival heads; check runtime readiness before
+frozen and train horizon/event-risk heads; check runtime readiness before
 including them in long benchmark runs.
 
 For user data, the shortest evaluation path is:

@@ -1,84 +1,38 @@
 method_id: tabpfn_survival
 family: foundation
-library: tabpfn + scikit-survival
-notes: Experimental TabPFN-2.5 classifier embedding adapter using frozen TabPFN public features with a trainable MLP survival head optimized by Cox loss.
+library: tabpfn
+display_name: TabPFN Survival Horizon Frozen
+notes: >
+  Censored-aware TabPFN classifier adapter. It trains one frozen TabPFN
+  classifier per survival horizon using only rows with known event status at
+  that horizon and reconstructs monotone survival curves from cumulative event
+  probabilities.
 search_space:
   n_estimators:
     type: categorical
-    choices: [4, 8]
+    choices: [1, 4, 8]
   fit_mode:
     type: categorical
     choices: [fit_preprocessors, fit_with_cache]
   model_version:
     type: categorical
     choices: [auto, v2, v2.5]
-  backbone_task:
+  horizon_quantiles:
     type: categorical
-    choices: [classification_event, regression_time]
-  backbone_training:
+    choices: ["0.25-0.5-0.75", "0.2-0.4-0.6-0.8"]
+  min_known_per_horizon:
     type: categorical
-    choices: [frozen]
-  aggregate_estimators:
+    choices: [20, 40]
+  aggregate_risk:
     type: categorical
-    choices: [mean, concat]
-  hidden_layers:
-    type: categorical
-    choices: ["64", "128", "128-64", "256-128"]
-  activation:
-    type: categorical
-    choices: [relu, selu, gelu]
-  dropout:
-    type: float
-    low: 0.0
-    high: 0.5
-  optimizer:
-    type: categorical
-    choices: [adamw, adam]
-  lr:
-    type: float
-    low: 0.0001
-    high: 0.005
-    log: true
-  weight_decay:
-    type: float
-    low: 0.0000001
-    high: 0.01
-    log: true
-  batch_size:
-    type: categorical
-    choices: [64, 128, 256]
-  max_epochs:
-    type: int
-    low: 50
-    high: 250
-  patience:
-    type: int
-    low: 10
-    high: 40
-  n_estimators_final_inference:
-    type: categorical
-    choices: [4, 8]
+    choices: [mean_event_probability, last_event_probability]
 default_params:
-  n_estimators: 8
+  n_estimators: 4
   fit_mode: fit_preprocessors
   model_version: v2.5
   checkpoint_path: null
-  backbone_task: classification_event
-  backbone_training: frozen
-  aggregate_estimators: mean
-  hidden_layers: "128-64"
-  activation: relu
-  dropout: 0.1
-  optimizer: adamw
-  lr: 0.001
-  weight_decay: 0.0001
-  batch_size: 128
-  max_epochs: 150
-  patience: 20
-  grad_clip_value: 1.0
-  n_estimators_finetune: 2
-  n_estimators_final_inference: 8
-  finetune_ctx_plus_query_samples: 10000
-  finetune_ctx_query_split_ratio: 0.2
+  horizon_quantiles: "0.25-0.5-0.75"
+  min_known_per_horizon: 20
+  aggregate_risk: mean_event_probability
   device: auto
   seed: 0

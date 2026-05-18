@@ -14,7 +14,7 @@ from survarena.evaluation.statistics import elo_ratings, pairwise_win_rate
 DEFAULT_CONVENTIONAL = Path("results/local_feasible_hpo_v1_all/combined_fold_results_success.csv")
 DEFAULT_FOUNDATION = Path("results/tabpfn_frozen_repeated/combined_fold_results.csv")
 DEFAULT_OUTPUT = Path("results/foundation_elo")
-FOUNDATION_METHODS = ("tabpfn_survival_classifier", "tabpfn_survival_regressor")
+FOUNDATION_METHODS = ("tabpfn_survival",)
 BENCHMARK_ID = "foundation_vs_conventional"
 MODE_NO_HPO = "no_hpo"
 MODE_HPO_REFERENCE = "hpo_reference"
