@@ -4,6 +4,8 @@ SurvArena compares full pipelines, not single lucky runs. The contract is:
 shared splits, shared budgets, training-side preprocessing only, and disk-first
 artifacts.
 
+Last reviewed against the benchmark configs: 2026-05-18.
+
 ## Standard Benchmark
 
 `configs/benchmark/standard_v1.yaml` defines the default standard track:
@@ -23,6 +25,10 @@ usual time-horizon and decision-curve settings for those outputs.
 `configs/benchmark/local_feasible_hpo_v1.yaml` is the MacBook-local paired
 no-HPO/HPO feasibility profile across the six standard built-in datasets with
 the core ranking metrics (`uno_c`, `harrell_c`, `ibs`, and `td_auc`).
+`configs/benchmark/foundation_elo_v1.yaml` is a no-HPO, budget-matched
+foundation expansion track over conventional tabular baselines plus frozen or
+horizon-head foundation adapters; keep it exploratory until the evidence bundle
+is promoted.
 
 Benchmark profiles (see `validate_benchmark_profile_contract` in
 `survarena/benchmark/runner.py`):
@@ -102,12 +108,22 @@ one-method execution against a benchmark config (default:
 summary artifacts exist. Set `BENCHMARK_CONFIG`, `WORK_DIR`, or `PYTHON_BIN` to
 override defaults.
 
+The same checks are available through the CLI surface:
+
+```bash
+survarena benchmark plan --config configs/benchmark/smoke.yaml
+survarena benchmark doctor --config configs/benchmark/smoke.yaml --load-datasets
+survarena benchmark run --config configs/benchmark/smoke.yaml --dry-run
+```
+
 ## Output Contract
 
 Benchmark-style runs write to
 `results/summary/<dataset_id>/<benchmark_id>/<model_name>/`.
 If that model folder already contains CSV artifacts, a timestamp suffix is
 added (`<model_name>_<YYYYMMDD_HHMMSS>`) to prevent overwrites.
+When `--output-dir` is provided, artifacts are written directly into that
+directory, which is useful for protocol validation and resumable focused runs.
 Outputs are always core CSV artifacts and each run writes:
 
 - `<model_name>_fold_results.csv`: atomic split/method rows with metrics,

@@ -1,5 +1,7 @@
 # Environment
 
+Last reviewed against `pyproject.toml` and setup scripts: 2026-05-18.
+
 ## Supported Python
 
 - 3.11 preferred
@@ -57,6 +59,12 @@ Optional KKBox downloader extras:
 python -m pip install -e ".[kkbox]"
 ```
 
+Optional tracking extras:
+
+```bash
+python -m pip install -e ".[tracking]"
+```
+
 KKBox data still requires Kaggle credentials and competition access. Create a
 Kaggle API token at `~/.kaggle/kaggle.json`, accept the
 `kkbox-churn-prediction-challenge` terms on Kaggle, then run:
@@ -79,6 +87,8 @@ python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
 ```bash
 python -m compileall survarena
 python -m survarena.run_benchmark --dry-run
+survarena benchmark plan --config configs/benchmark/smoke.yaml
+survarena benchmark doctor --config configs/benchmark/smoke.yaml --check-imports
 ```
 
 Use `python scripts/check_environment.py --include-foundation` and

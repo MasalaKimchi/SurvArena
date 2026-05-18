@@ -4,6 +4,8 @@ Built-in benchmark dataset configs live in `configs/datasets/`.
 User datasets can also be passed directly to `SurvivalPredictor.fit(...)` or
 `compare_survival_models(...)` from a `DataFrame`, CSV, or Parquet file.
 
+Last reviewed against `configs/datasets/` and benchmark configs: 2026-05-18.
+
 ## User Dataset Pilot
 
 Use `survarena pilot` when you want to substitute your own dataset and get a
@@ -34,6 +36,12 @@ leaderboard metrics in the CLI summary. Use `--id-col patient_id` or
 | `whas500` | Standard | 500 | 14 | 43.00% | scikit-survival | Small cardiovascular cohort. |
 | `nwtco` | Expansion | 4,028 | 6 | 14.18% | pycox/Rdatasets | National Wilms Tumor Study relapse dataset; not in default benchmark configs yet. |
 | `kkbox` | Large | N/A | N/A | N/A | pycox/Kaggle | Large-scale local-cache dataset prepared through pycox with Kaggle credentials. |
+
+The six `Standard` datasets are the default suite for `smoke`, `standard_v1`,
+`manuscript_v1`, and `local_feasible_hpo_v1`. `nwtco` is wired for expansion
+profiles such as `foundation_elo_v1` and `nwtco_xgbse_smoke`; it is intentionally
+kept out of the default manuscript suite until promoted. `kkbox` remains a
+local-cache large-data track.
 
 ## Notes
 

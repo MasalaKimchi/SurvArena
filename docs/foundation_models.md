@@ -2,6 +2,8 @@
 
 Living roadmap for optional tabular foundation adapters (not a blocking issue list).
 
+Last reviewed against foundation configs and extras: 2026-05-18.
+
 ## Current State
 
 - implemented adapters: `tabpfn_survival`, `mitra_survival`
@@ -14,9 +16,11 @@ Living roadmap for optional tabular foundation adapters (not a blocking issue li
   no-HPO TabPFN coverage by default, and
   `configs/benchmark/mitra_no_hpo_smoke.yaml` provides a bounded
   no-HPO Mitra smoke path; `configs/benchmark/foundation_elo_v1.yaml`
-  is the promoted dry-run-ready unified Elo expansion track, but keep claims
+  is the dry-run-ready unified Elo expansion track over `nwtco`, `gbsg2`,
+  `aids`, `metabric`, `support`, and `whas500`, but keep claims
   appendix/exploratory until the evidence bundle completes
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
+- dependency extras: `foundation-tabpfn`, `foundation-mitra`, or `foundation`
 
 TabPFN note:
 
@@ -47,9 +51,9 @@ Adapter-specific details:
   survival curves from cumulative event probabilities.
 - `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
   learner with `fine_tune=false` by default, then calibrates survival curves
-  with the shared Breslow baseline survival adapter. AutoGluon's Mitra extra
-  requires `torch>=2.6`, which the default SurvArena dependency set now pins
-  through `torch==2.6.0`.
+  with the shared Breslow baseline survival adapter. The default SurvArena
+  dependency set pins `torch==2.6.0`, matching the current Mitra compatibility
+  path.
   `mitra_survival_frozen` exposes the bounded frozen-backbone policy as a
   distinct method ID for Elo tables. Full-backbone fine-tuning is intentionally
   excluded from the unified Elo track because CPU-only runs can exceed the

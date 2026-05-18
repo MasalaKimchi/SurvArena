@@ -3,6 +3,8 @@
 SurvArena exposes a uniform adapter interface for heterogeneous survival modeling backends. Adding a new method is
 intentionally config-driven and test-gated so benchmark runs remain comparable.
 
+Last reviewed against the method registry and benchmark CLI: 2026-05-18.
+
 This guide documents the minimal contract for adding a new method adapter that can be used in:
 
 - `SurvivalPredictor` (AutoML-style workflow)
@@ -48,14 +50,14 @@ ensembles, or `survarena/methods/classical/coxph.py` for classical models).
 
 ## Adding a New Method (Step-by-Step)
 
-1) **Pick a stable `method_id`**
+1. **Pick a stable `method_id`**
 
 The `method_id` is the identifier used in benchmark configs and CLI flags. Keep it:
 
 - short, lowercase, snake_case
 - stable across releases (avoid renaming once published)
 
-2) **Implement the adapter**
+2. **Implement the adapter**
 
 Add a new module under the appropriate family folder (for example: `survarena/methods/boosting/my_new_method.py`).
 
@@ -65,12 +67,12 @@ Common expectations:
 - deterministic behavior when possible
 - consistent preprocessing integration with SurvArena's preprocessing utilities
 
-3) **Register the method**
+3. **Register the method**
 
 Update the method registry so the new `method_id` resolves to your adapter. Prefer the existing registry pattern (lazy
 imports) and keep changes minimal.
 
-4) **Add `configs/methods/<method_id>.yaml`**
+4. **Add `configs/methods/<method_id>.yaml`**
 
 Include:
 
@@ -83,7 +85,7 @@ Include:
 If a method requires non-default optional dependencies, ensure SurvArena fails fast with a clear message when those
 dependencies are missing.
 
-5) **Add tests**
+5. **Add tests**
 
 Add a focused test file under `tests/` that checks:
 
@@ -91,6 +93,13 @@ Add a focused test file under `tests/` that checks:
 - a tiny synthetic fit/predict round-trip (keep runtime low)
 
 Avoid integration tests that require large datasets or long fits unless absolutely necessary.
+
+Useful readiness checks before opening a PR:
+
+```bash
+survarena benchmark doctor --config configs/benchmark/smoke.yaml --method <method_id> --check-imports
+survarena benchmark run --config configs/benchmark/smoke.yaml --dataset whas500 --method <method_id> --dry-run
+```
 
 ## Optional Dependencies and Failure Modes
 
@@ -112,4 +121,3 @@ When adding a method:
 
 - keep it out of manuscript configs by default unless it is stable and well-understood
 - add it to smoke configs only if runtime is small and dependencies are available in CI/dev environments
-

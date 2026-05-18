@@ -4,6 +4,8 @@ This note explains how SurvArena trains and evaluates models under the benchmark
 YAML profiles. It focuses on the distinction between outer folds, inner folds,
 no-HPO evaluation, and HPO evaluation.
 
+Last reviewed against `configs/benchmark/`: 2026-05-18.
+
 ## Core Structure
 
 SurvArena uses repeated nested cross-validation for benchmark profiles:
@@ -27,6 +29,7 @@ test rows.
 | `configs/benchmark/standard_v1.yaml` | `standard` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo`, `hpo` |
 | `configs/benchmark/manuscript_v1.yaml` | `manuscript` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo` |
 | `configs/benchmark/local_feasible_hpo_v1.yaml` | `standard` | 6 | 3 | 3 | 2 | `[11, 22, 33]` | `no_hpo`, `hpo` |
+| `configs/benchmark/foundation_elo_v1.yaml` | `standard` | 6 | 3 | 3 | 2 | `[11, 22, 33]` | `no_hpo` |
 
 Although standard and manuscript configs list five seeds, the repeated outer
 loop uses three repeats by default. That gives 15 outer splits per dataset:
@@ -37,7 +40,8 @@ loop uses three repeats by default. That gives 15 outer splits per dataset:
 ```
 
 Use `--limit-seeds` for exploratory runs. With `--limit-seeds 1`, repeated
-nested CV is reduced to one repeat.
+nested CV is reduced to one repeat. The `survarena benchmark plan` command is
+the quickest way to inspect run units before fitting anything.
 
 ## No-HPO Mode
 
@@ -91,6 +95,8 @@ hpo:
 Optuna receives both `n_trials` and `timeout`. Search stops when either 30
 trials complete or 1800 seconds elapse. The timeout is checked between trials,
 so a long in-progress trial can run beyond the nominal timeout.
+Local feasibility configs may override this per method with smaller trial and
+timeout budgets; read the selected YAML before estimating wall-clock cost.
 
 Per outer split with `inner_folds: 3` and `max_trials: 30`:
 

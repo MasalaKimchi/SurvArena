@@ -5,6 +5,8 @@ shared protocol. A run starts from YAML configuration, resolves datasets and
 method adapters, creates reusable split definitions, and writes compact
 experiment artifacts for downstream reporting.
 
+Last reviewed against the CLI and benchmark configs: 2026-05-18.
+
 ```mermaid
 flowchart TD
     A["Benchmark YAML<br/>datasets, methods, metrics, budgets"] --> B["Resolve configs<br/>dataset metadata + method search spaces"]
@@ -54,6 +56,19 @@ strength:
 tracks. No-HPO fits configured defaults directly. HPO uses the configured inner
 folds and budget, then refits the selected configuration before outer-test
 evaluation.
+
+Use the benchmark subcommands for a staged run:
+
+```bash
+survarena benchmark plan --config configs/benchmark/standard_v1.yaml
+survarena benchmark doctor --config configs/benchmark/standard_v1.yaml --check-imports
+survarena benchmark run --config configs/benchmark/standard_v1.yaml --limit-seeds 1
+survarena benchmark report results/summary/<dataset_id>/<benchmark_id>/<model_name>
+```
+
+`python -m survarena.run_benchmark` remains the thin module entry point for
+batch workers and scripts that do not need the broader `survarena benchmark`
+command group.
 
 ## Output Flow
 

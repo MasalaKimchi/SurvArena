@@ -2,11 +2,13 @@
 
 SurvArena benchmarks are config-driven. Adding a dataset means:
 
-1) defining a stable dataset id and metadata contract
-2) implementing (or selecting) a loader
-3) ensuring splits, preprocessing, and evaluation assumptions remain comparable
+1. defining a stable dataset id and metadata contract
+2. implementing (or selecting) a loader
+3. ensuring splits, preprocessing, and evaluation assumptions remain comparable
 
 This guide covers built-in datasets under `configs/datasets/` as well as local-only datasets that cannot be redistributed.
+
+Last reviewed against the dataset loaders and benchmark CLI: 2026-05-18.
 
 ## Quick Checklist
 
@@ -68,11 +70,11 @@ This is the intended status for placeholder large-track datasets until a reprodu
 
 ## Adding a Dataset (Step-by-Step)
 
-1) **Add a config**
+1. **Add a config**
 
 Create `configs/datasets/<dataset_id>.yaml` describing the metadata above.
 
-2) **Implement or extend a loader**
+2. **Implement or extend a loader**
 
 If the dataset is available via an upstream Python package, add a loader entry using that package.
 
@@ -82,7 +84,7 @@ If it is local-only, implement a loader that:
 - validates columns/types
 - provides a clear error describing the required local files and schema
 
-3) **Add to benchmark configs (optional)**
+3. **Add to benchmark configs (optional)**
 
 Only include a new dataset in benchmark configs once:
 
@@ -91,6 +93,12 @@ Only include a new dataset in benchmark configs once:
 - censoring/time unit semantics are documented
 
 Start by adding it to a smoke config for a single method + seed, then broaden.
+Before broadening, run:
+
+```bash
+survarena benchmark doctor --config configs/benchmark/smoke.yaml --load-datasets
+survarena benchmark run --config configs/benchmark/smoke.yaml --dataset <dataset_id> --method coxph --dry-run
+```
 
 ## Minimum Tests
 
@@ -99,4 +107,3 @@ Prefer small, fast tests. Suitable patterns:
 - loader validation: missing required columns triggers `ValueError`
 - missing local files: dataset is skipped or produces a clear error without crashing dry-run planning
 - schema checks: returned dataset includes `time_col` + `event_col` and non-empty features
-
