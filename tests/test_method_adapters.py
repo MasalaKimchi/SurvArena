@@ -131,6 +131,30 @@ def test_xgbse_kaplan_neighbors_defaults_follow_config() -> None:
     assert method_cls().params == expected_defaults
 
 
+def test_fast_survival_svm_normalizes_risk_direction_for_ranking_and_mixed_objectives() -> None:
+    from sksurv.metrics import concordance_index_censored
+
+    X_train, _, _, X_test = _toy_survival_arrays()
+    full_X = np.vstack([X_train, X_test])
+    linear_risk = 1.2 * full_X[:, 0] - 0.8 * full_X[:, 1] + 0.4 * full_X[:, 2]
+    full_time = np.exp(1.5 - linear_risk).astype(np.float64)
+    full_event = np.ones(full_X.shape[0], dtype=np.int32)
+
+    for rank_ratio, fit_intercept in [(1.0, False), (0.5, True)]:
+        model = get_method_class("fast_survival_svm")(
+            alpha=1.0,
+            rank_ratio=rank_ratio,
+            fit_intercept=fit_intercept,
+            max_iter=300,
+            tol=0.001,
+            seed=0,
+        )
+        model.fit(full_X, full_time, full_event)
+
+        risk = model.predict_risk(full_X)
+        assert concordance_index_censored(full_event.astype(bool), full_time, risk)[0] >= 0.65
+
+
 @pytest.mark.parametrize(
     ("method_id", "params"),
     [
@@ -356,6 +380,23 @@ def test_deepsurv_moco_fit_predict_works_without_momentum_encoder() -> None:
     assert np.isfinite(survival).all()
     assert np.all((survival >= 0.0) & (survival <= 1.0))
     assert np.all(np.diff(survival, axis=1) <= 1e-8)
+
+
+def test_deepsurv_moco_uses_torchsurv_momentum_memory_bank() -> None:
+    X_train, time_train, event_train, X_test, time_test, event_test = _toy_moco_survival_arrays()
+    method = get_method_class("deepsurv_moco")(
+        hidden_layers="16-8",
+        batch_size=16,
+        max_epochs=2,
+        patience=1,
+        queue_size=32,
+        seed=0,
+    )
+
+    method.fit(X_train, time_train, event_train, X_test, time_test, event_test)
+
+    assert method.model is not None
+    assert len(method.model.memory_k) > 0
 
 
 def test_deepsurv_moco_requires_observed_events() -> None:

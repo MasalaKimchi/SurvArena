@@ -67,10 +67,10 @@ requested evaluation times.
 
 ## Next Steps
 
-- TODO: run the retained `tabpfn_survival` horizon adapter across the standard
-  datasets (`support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`) with
-  matched splits, runtime, ranking metrics, IBS/calibration, and
-  censoring-stress diagnostics before promoting any TabPFN manuscript claim.
+- retained-track benchmark config added: `configs/benchmark/tabpfn_retained_v1.yaml` covers
+  `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500` with matched splits, runtime
+  tracking, ranking metrics, IBS/calibration, and censoring-stress diagnostics inputs before
+  promoting any TabPFN manuscript claim.
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
 - run and promote the unified Elo evidence bundle once both smoke tracks pass

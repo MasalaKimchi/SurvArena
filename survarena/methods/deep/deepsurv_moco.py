@@ -10,7 +10,7 @@ from torchsurv.loss.cox import neg_partial_log_likelihood
 from torchsurv.loss.momentum import Momentum
 
 from survarena.methods.base import BaseSurvivalMethod
-from survarena.methods.deep.batching import resolve_torch_training_device
+from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
 from survarena.methods.deep.deepsurv import _activation_cls, _parse_hidden_layers
 
 
@@ -105,6 +105,18 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         return self.model.target if bool(self.params["use_momentum_encoder"]) else self.model.online
 
     @staticmethod
+    def _iter_minibatches(n_rows: int, batch_size: int, *, seed: int) -> list[torch.Tensor]:
+        generator = torch.Generator(device="cpu")
+        generator.manual_seed(int(seed))
+        indices = torch.randperm(n_rows, generator=generator)
+        batches: list[torch.Tensor] = []
+        for start in range(0, n_rows, batch_size):
+            batch = indices[start : start + batch_size]
+            if batch.numel() == batch_size or not batches:
+                batches.append(batch)
+        return batches
+
+    @staticmethod
     def _fit_baseline_survival(time_train: np.ndarray, event_train: np.ndarray, train_log_risk: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         event_mask = event_train.astype(bool)
         event_times = np.unique(time_train[event_mask])
@@ -145,7 +157,11 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             t_val_t = torch.as_tensor(time_val.astype(np.float32), dtype=torch.float32, device=self.device)
             e_val_t = torch.as_tensor(event_val.astype(bool), dtype=torch.bool, device=self.device)
 
-        batch_size = int(self.params["batch_size"])
+        batch_size = batch_norm_safe_batch_size(
+            len(X_train_t),
+            int(self.params["batch_size"]),
+            batch_norm=bool(self.params["batch_norm"]),
+        )
         queue_size = int(self.params["queue_size"])
         steps = max(1, int(np.ceil(queue_size / max(batch_size, 1))))
         backbone = self._build_network(X_train.shape[1]).to(self.device)
@@ -175,20 +191,19 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         best_score = float("inf")
         stale_epochs = 0
 
-        for _ in range(max_epochs):
+        for epoch in range(max_epochs):
             self.model.train()
-            optimizer.zero_grad(set_to_none=True)
-            online_log_hz = self.model.online(X_train_t).squeeze(-1)
-            train_loss = loss_fn(online_log_hz, e_train_t, t_train_t)
-            train_loss.backward()
-            optimizer.step()
-            if use_momentum:
-                rate = float(self.params["momentum"])
-                with torch.no_grad():
-                    for target_param, online_param in zip(self.model.target.parameters(), self.model.online.parameters()):
-                        target_param.data.mul_(rate).add_(online_param.data, alpha=1.0 - rate)
-            else:
-                self.model.target.load_state_dict(self.model.online.state_dict())
+            train_losses: list[float] = []
+            for batch_idx in self._iter_minibatches(len(X_train_t), batch_size, seed=int(self.params["seed"]) + epoch):
+                batch_idx = batch_idx.to(self.device)
+                optimizer.zero_grad(set_to_none=True)
+                self.model.memory_q.clear()
+                train_loss = self.model(X_train_t[batch_idx], e_train_t[batch_idx], t_train_t[batch_idx])
+                train_loss.backward()
+                optimizer.step()
+                if not use_momentum:
+                    self.model.target.load_state_dict(self.model.online.state_dict())
+                train_losses.append(float(train_loss.detach().cpu().item()))
 
             with torch.no_grad():
                 if X_val_t is not None and t_val_t is not None and e_val_t is not None:
@@ -196,7 +211,7 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
                     val_log_hz = self._inference_model()(X_val_t).squeeze(-1)
                     monitor = float(loss_fn(val_log_hz, e_val_t, t_val_t).item())
                 else:
-                    monitor = float(train_loss.item())
+                    monitor = float(np.mean(train_losses)) if train_losses else float("inf")
 
             if monitor + 1e-8 < best_score:
                 best_score = monitor

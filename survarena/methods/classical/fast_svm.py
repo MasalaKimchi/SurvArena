@@ -59,7 +59,10 @@ class FastSurvivalSVMMethod(BaseSurvivalMethod):
     def predict_risk(self, X: np.ndarray) -> np.ndarray:
         if self.model is None:
             raise RuntimeError("FastSurvivalSVMMethod must be fit before prediction.")
-        return (-self.model.predict(X)).astype(np.float64)
+        prediction = self.model.predict(X).astype(np.float64)
+        if float(self.params["rank_ratio"]) >= 1.0:
+            return prediction
+        return -prediction
 
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
         if self.baseline_event_times_ is None or self.baseline_survival_ is None:
