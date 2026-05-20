@@ -23,7 +23,16 @@ def test_parse_hpo_config_enables_with_space() -> None:
 def test_parse_hpo_config_normalizes_uniform_budget_fields() -> None:
     cfg = tuning._parse_hpo_config(
         {"search_space": {"alpha": {"type": "float", "low": 0.1, "high": 0.9}}},
-        {"enabled": True, "max_trials": 9, "timeout_seconds": 120, "sampler": "TPE", "pruner": "MEDIAN"},
+        {
+            "enabled": True,
+            "max_trials": 9,
+            "timeout_seconds": 120,
+            "sampler": "TPE",
+            "pruner": "MEDIAN",
+            "hpo_budget_tier": "reduced",
+            "hpo_config_target": 20,
+            "hpo_cap_reason": "runtime cap",
+        },
     )
 
     assert cfg["enabled"] is True
@@ -32,6 +41,9 @@ def test_parse_hpo_config_normalizes_uniform_budget_fields() -> None:
     assert cfg["sampler"] == "tpe"
     assert cfg["pruner"] == "median"
     assert cfg["n_startup_trials"] == 8
+    assert cfg["hpo_budget_tier"] == "reduced"
+    assert cfg["hpo_config_target"] == 20
+    assert cfg["hpo_cap_reason"] == "runtime cap"
 
 
 def test_parse_hpo_config_keeps_trials_and_timeout_together() -> None:
@@ -85,6 +97,7 @@ def test_select_hyperparameters_emits_requested_and_realized_budget_metadata(mon
     assert metadata["requested_pruner"] == "nop"
     assert metadata["realized_trial_count"] == 0
     assert metadata["trial_count"] == 0
+    assert metadata["hpo_config_target"] == 9
 
 
 def test_select_hyperparameters_can_skip_default_inner_cv_when_disabled(monkeypatch) -> None:

@@ -3,8 +3,11 @@ from __future__ import annotations
 import argparse
 import platform
 import sys
+from pathlib import Path
 
-from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
+REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 CORE_REQUIRED = [
@@ -57,6 +60,8 @@ def _check_imports(required: list[str], *, label: str) -> None:
 
 
 def _check_foundation_runtime(method_ids: list[str] | None = None) -> None:
+    from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
+
     statuses = (
         [foundation_runtime_status_for_method(method_id) for method_id in method_ids]
         if method_ids is not None

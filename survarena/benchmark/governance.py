@@ -47,6 +47,20 @@ def normalize_hpo_budget_telemetry(
     normalized["requested_timeout_seconds"] = None if timeout_value is None else float(timeout_value)
     normalized["requested_sampler"] = str(normalized.get("requested_sampler", hpo_cfg.get("sampler", "tpe"))).lower()
     normalized["requested_pruner"] = str(normalized.get("requested_pruner", hpo_cfg.get("pruner", "median"))).lower()
+    normalized["hpo_budget_tier"] = normalized.get("hpo_budget_tier", hpo_cfg.get("hpo_budget_tier"))
+    target = normalized.get("hpo_config_target", hpo_cfg.get("hpo_config_target", normalized["requested_max_trials"]))
+    normalized["hpo_config_target"] = None if target is None else int(target)
+    normalized["hpo_cap_reason"] = normalized.get("hpo_cap_reason", hpo_cfg.get("hpo_cap_reason"))
+    cap_reason = normalized.get("hpo_cap_reason")
+    target_value = normalized.get("hpo_config_target")
+    normalized["hpo_capped"] = bool(
+        cap_reason
+        or (
+            target_value is not None
+            and normalized["requested_max_trials"] < int(target_value)
+            and normalized["requested_max_trials"] > 0
+        )
+    )
     return normalized
 
 

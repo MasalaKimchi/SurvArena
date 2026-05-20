@@ -19,11 +19,13 @@ from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
 
 
-_CANONICAL_PROFILES = ("smoke", "standard", "manuscript")
+_CANONICAL_PROFILES = ("smoke", "standard", "manuscript", "local_hpo", "cloud_hpo")
 _PROFILE_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "smoke": ("outer_repeats",),
     "standard": ("outer_folds", "outer_repeats"),
     "manuscript": ("outer_folds", "outer_repeats"),
+    "local_hpo": ("outer_folds", "outer_repeats"),
+    "cloud_hpo": ("outer_folds", "outer_repeats"),
 }
 
 
@@ -106,18 +108,24 @@ def validate_benchmark_profile_contract(benchmark_cfg: dict[str, Any]) -> None:
             f"Profile '{profile}' requires outer_repeats=1. Received: {outer_repeats}."
         )
 
-    if profile in {"standard", "manuscript"}:
+    if profile in {"standard", "manuscript", "local_hpo", "cloud_hpo"}:
         outer_folds = _require_int(benchmark_cfg, "outer_folds")
         if outer_folds < 3:
             raise ValueError(
                 f"Profile '{profile}' requires outer_folds>=3 for deterministic comparability. "
                 f"Received: {outer_folds}."
             )
+    if profile in {"standard", "manuscript", "cloud_hpo"}:
         if outer_repeats < 3:
             raise ValueError(
                 f"Profile '{profile}' requires outer_repeats>=3 for deterministic comparability. "
                 f"Received: {outer_repeats}."
             )
+    if profile == "local_hpo" and outer_repeats < 2:
+        raise ValueError(
+            f"Profile '{profile}' requires outer_repeats>=2 for local HPO comparability. "
+            f"Received: {outer_repeats}."
+        )
 
 
 def _resolve_execution_n_jobs(benchmark_cfg: dict[str, Any]) -> int:
@@ -567,6 +575,10 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
         run_payload["metrics"]["requested_pruner"] = hpo_metadata["requested_pruner"]
         run_payload["metrics"]["realized_trial_count"] = realized_trial_count
         run_payload["metrics"]["hpo_trial_count"] = realized_trial_count
+        run_payload["metrics"]["hpo_budget_tier"] = hpo_metadata.get("hpo_budget_tier")
+        run_payload["metrics"]["hpo_config_target"] = hpo_metadata.get("hpo_config_target")
+        run_payload["metrics"]["hpo_cap_reason"] = hpo_metadata.get("hpo_cap_reason")
+        run_payload["metrics"]["hpo_capped"] = hpo_metadata.get("hpo_capped", False)
         for trial in list(run_payload.get("hpo_trials", [])):
             hpo_trial_rows.append(
                 {
@@ -595,6 +607,10 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
         record["requested_sampler"] = hpo_metadata["requested_sampler"]
         record["requested_pruner"] = hpo_metadata["requested_pruner"]
         record["realized_trial_count"] = realized_trial_count
+        record["hpo_budget_tier"] = hpo_metadata.get("hpo_budget_tier")
+        record["hpo_config_target"] = hpo_metadata.get("hpo_config_target")
+        record["hpo_cap_reason"] = hpo_metadata.get("hpo_cap_reason")
+        record["hpo_capped"] = hpo_metadata.get("hpo_capped", False)
         records.append(record)
         if record["status"] == "success" or attempt >= unit.max_retries:
             log_lines.append(
@@ -645,6 +661,7 @@ def _benchmark_artifact_names(model_name: str) -> dict[str, str]:
     return {
         "fold_results_csv": f"{model_name}_fold_results.csv",
         "leaderboard_csv": f"{model_name}_leaderboard.csv",
+        "hpo_budget_summary_csv": f"{model_name}_hpo_budget_summary.csv",
         "run_diagnostics_csv": f"{model_name}_run_diagnostics.csv",
         "runtime_failure_summary_csv": f"{model_name}_runtime_failure_summary.csv",
     }
@@ -664,6 +681,11 @@ def _benchmark_readme_lines(
         f"- Model set: `{model_name}`",
         f"- Fold results: [{artifact_names['fold_results_csv']}]({artifact_names['fold_results_csv']})",
         f"- Leaderboard: [{artifact_names['leaderboard_csv']}]({artifact_names['leaderboard_csv']})",
+        (
+            "- HPO budget summary: "
+            f"[{artifact_names['hpo_budget_summary_csv']}]"
+            f"({artifact_names['hpo_budget_summary_csv']})"
+        ),
         (
             "- Runtime and failure summary CSV: "
             f"[{artifact_names['runtime_failure_summary_csv']}]"
@@ -802,6 +824,7 @@ def run_benchmark(
     from survarena.logging.export import (
         create_experiment_dir,
         export_fold_results,
+        export_hpo_budget_summary,
         export_leaderboard,
         export_run_diagnostics,
     )
@@ -1011,6 +1034,12 @@ def run_benchmark(
             repo_root,
             frame,
             primary_metric=primary_metric,
+            output_dir=experiment_dir,
+            file_prefix=model_name,
+        )
+        export_hpo_budget_summary(
+            repo_root,
+            frame,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )

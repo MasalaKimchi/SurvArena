@@ -99,6 +99,9 @@ def _build_hpo_metadata(
         "sampler": str(resolved_hpo["sampler"]),
         "pruner": str(resolved_hpo["pruner"]),
         "n_startup_trials": int(resolved_hpo["n_startup_trials"]),
+        "hpo_budget_tier": resolved_hpo.get("hpo_budget_tier"),
+        "hpo_config_target": resolved_hpo.get("hpo_config_target", resolved_hpo["max_trials"]),
+        "hpo_cap_reason": resolved_hpo.get("hpo_cap_reason"),
     }
     if best_trial_number is not None:
         metadata["best_trial_number"] = int(best_trial_number)
@@ -119,6 +122,9 @@ def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | N
         "sampler": "tpe",
         "pruner": "median",
         "n_startup_trials": 8,
+        "hpo_budget_tier": None,
+        "hpo_config_target": None,
+        "hpo_cap_reason": None,
     }
     cfg = dict(base)
     if hpo_config:
@@ -130,6 +136,12 @@ def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | N
     cfg["timeout_seconds"] = None if timeout_seconds is None else max(float(timeout_seconds), 0.0)
     cfg["sampler"] = str(cfg.get("sampler", "tpe")).lower()
     cfg["pruner"] = str(cfg.get("pruner", "median")).lower()
+    if cfg.get("hpo_config_target") is None:
+        cfg["hpo_config_target"] = int(cfg["max_trials"])
+    else:
+        cfg["hpo_config_target"] = max(int(cfg["hpo_config_target"]), 0)
+    cfg["hpo_budget_tier"] = None if cfg.get("hpo_budget_tier") is None else str(cfg["hpo_budget_tier"])
+    cfg["hpo_cap_reason"] = None if cfg.get("hpo_cap_reason") is None else str(cfg["hpo_cap_reason"])
     return cfg
 
 

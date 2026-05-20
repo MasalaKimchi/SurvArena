@@ -30,7 +30,13 @@ BENCHMARK_METRIC_COLUMNS = CORE_METRIC_COLUMNS + MANUSCRIPT_METRIC_COLUMNS + EFF
 GOVERNANCE_COLUMNS = [
     "requested_max_trials",
     "requested_timeout_seconds",
+    "requested_sampler",
+    "requested_pruner",
     "realized_trial_count",
+    "hpo_budget_tier",
+    "hpo_config_target",
+    "hpo_cap_reason",
+    "hpo_capped",
 ]
 
 
@@ -49,6 +55,8 @@ def expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
 
 def unique_in_order(columns: list[str]) -> list[str]:
     return list(dict.fromkeys(columns))
+
+
 def benchmark_label(frame: pd.DataFrame, fallback: str = "benchmark") -> str:
     if "benchmark_id" not in frame.columns or frame.empty:
         return fallback

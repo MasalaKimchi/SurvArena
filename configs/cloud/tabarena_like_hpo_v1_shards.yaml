@@ -1,0 +1,95 @@
+manifest_id: tabarena_like_hpo_v1_shards
+benchmark_id: tabarena_like_hpo_v1
+benchmark_config: configs/benchmark/tabarena_like_hpo_v1.yaml
+output_root: results/cloud/tabarena_like_hpo_v1
+merge_output_dir: results/cloud/tabarena_like_hpo_v1/combined
+runner_script: scripts/run_cloud_benchmark_shard.py
+merge_script: scripts/merge_cloud_benchmark_shards.py
+resume: true
+max_retries: 1
+regenerate_splits: false
+preflight:
+  - python scripts/check_environment.py
+  - python -m survarena.run_benchmark --config configs/benchmark/tabarena_like_hpo_v1.yaml --dry-run
+smoke:
+  command: >-
+    python -m survarena.run_benchmark
+    --config configs/benchmark/local_mac_hpo_depth_v2.yaml
+    --dataset whas500
+    --method coxph
+    --limit-seeds 1
+merge_command: >-
+  python scripts/merge_cloud_benchmark_shards.py
+  --shards-dir results/cloud/tabarena_like_hpo_v1
+  --output-dir results/cloud/tabarena_like_hpo_v1/combined
+  --primary-metric uno_c
+shards:
+  - method_id: coxph
+    output_dir: results/cloud/tabarena_like_hpo_v1/coxph
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method coxph --output-dir results/cloud/tabarena_like_hpo_v1/coxph --resume --max-retries 1
+  - method_id: coxnet
+    output_dir: results/cloud/tabarena_like_hpo_v1/coxnet
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method coxnet --output-dir results/cloud/tabarena_like_hpo_v1/coxnet --resume --max-retries 1
+  - method_id: weibull_aft
+    output_dir: results/cloud/tabarena_like_hpo_v1/weibull_aft
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method weibull_aft --output-dir results/cloud/tabarena_like_hpo_v1/weibull_aft --resume --max-retries 1
+  - method_id: lognormal_aft
+    output_dir: results/cloud/tabarena_like_hpo_v1/lognormal_aft
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method lognormal_aft --output-dir results/cloud/tabarena_like_hpo_v1/lognormal_aft --resume --max-retries 1
+  - method_id: loglogistic_aft
+    output_dir: results/cloud/tabarena_like_hpo_v1/loglogistic_aft
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method loglogistic_aft --output-dir results/cloud/tabarena_like_hpo_v1/loglogistic_aft --resume --max-retries 1
+  - method_id: aalen_additive
+    output_dir: results/cloud/tabarena_like_hpo_v1/aalen_additive
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method aalen_additive --output-dir results/cloud/tabarena_like_hpo_v1/aalen_additive --resume --max-retries 1
+  - method_id: fast_survival_svm
+    output_dir: results/cloud/tabarena_like_hpo_v1/fast_survival_svm
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method fast_survival_svm --output-dir results/cloud/tabarena_like_hpo_v1/fast_survival_svm --resume --max-retries 1
+  - method_id: rsf
+    output_dir: results/cloud/tabarena_like_hpo_v1/rsf
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method rsf --output-dir results/cloud/tabarena_like_hpo_v1/rsf --resume --max-retries 1
+  - method_id: extra_survival_trees
+    output_dir: results/cloud/tabarena_like_hpo_v1/extra_survival_trees
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method extra_survival_trees --output-dir results/cloud/tabarena_like_hpo_v1/extra_survival_trees --resume --max-retries 1
+  - method_id: gradient_boosting_survival
+    output_dir: results/cloud/tabarena_like_hpo_v1/gradient_boosting_survival
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method gradient_boosting_survival --output-dir results/cloud/tabarena_like_hpo_v1/gradient_boosting_survival --resume --max-retries 1
+  - method_id: componentwise_gradient_boosting
+    output_dir: results/cloud/tabarena_like_hpo_v1/componentwise_gradient_boosting
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method componentwise_gradient_boosting --output-dir results/cloud/tabarena_like_hpo_v1/componentwise_gradient_boosting --resume --max-retries 1
+  - method_id: xgboost_cox
+    output_dir: results/cloud/tabarena_like_hpo_v1/xgboost_cox
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method xgboost_cox --output-dir results/cloud/tabarena_like_hpo_v1/xgboost_cox --resume --max-retries 1
+  - method_id: xgboost_aft
+    output_dir: results/cloud/tabarena_like_hpo_v1/xgboost_aft
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method xgboost_aft --output-dir results/cloud/tabarena_like_hpo_v1/xgboost_aft --resume --max-retries 1
+  - method_id: catboost_cox
+    output_dir: results/cloud/tabarena_like_hpo_v1/catboost_cox
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method catboost_cox --output-dir results/cloud/tabarena_like_hpo_v1/catboost_cox --resume --max-retries 1
+  - method_id: catboost_survival_aft
+    output_dir: results/cloud/tabarena_like_hpo_v1/catboost_survival_aft
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method catboost_survival_aft --output-dir results/cloud/tabarena_like_hpo_v1/catboost_survival_aft --resume --max-retries 1
+  - method_id: deepsurv
+    output_dir: results/cloud/tabarena_like_hpo_v1/deepsurv
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method deepsurv --output-dir results/cloud/tabarena_like_hpo_v1/deepsurv --resume --max-retries 1
+  - method_id: deepsurv_moco
+    output_dir: results/cloud/tabarena_like_hpo_v1/deepsurv_moco
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method deepsurv_moco --output-dir results/cloud/tabarena_like_hpo_v1/deepsurv_moco --resume --max-retries 1
+  - method_id: logistic_hazard
+    output_dir: results/cloud/tabarena_like_hpo_v1/logistic_hazard
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method logistic_hazard --output-dir results/cloud/tabarena_like_hpo_v1/logistic_hazard --resume --max-retries 1
+  - method_id: pmf
+    output_dir: results/cloud/tabarena_like_hpo_v1/pmf
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method pmf --output-dir results/cloud/tabarena_like_hpo_v1/pmf --resume --max-retries 1
+  - method_id: mtlr
+    output_dir: results/cloud/tabarena_like_hpo_v1/mtlr
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method mtlr --output-dir results/cloud/tabarena_like_hpo_v1/mtlr --resume --max-retries 1
+  - method_id: deephit_single
+    output_dir: results/cloud/tabarena_like_hpo_v1/deephit_single
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method deephit_single --output-dir results/cloud/tabarena_like_hpo_v1/deephit_single --resume --max-retries 1
+  - method_id: pchazard
+    output_dir: results/cloud/tabarena_like_hpo_v1/pchazard
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method pchazard --output-dir results/cloud/tabarena_like_hpo_v1/pchazard --resume --max-retries 1
+  - method_id: cox_time
+    output_dir: results/cloud/tabarena_like_hpo_v1/cox_time
+    command: python scripts/run_cloud_benchmark_shard.py --config configs/benchmark/tabarena_like_hpo_v1.yaml --method cox_time --output-dir results/cloud/tabarena_like_hpo_v1/cox_time --resume --max-retries 1

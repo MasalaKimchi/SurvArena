@@ -29,6 +29,7 @@ __all__ = [
     "create_experiment_dir",
     "export_coverage_matrix",
     "export_fold_results",
+    "export_hpo_budget_summary",
     "export_leaderboard",
     "export_run_diagnostics",
     "export_runtime_failure_summary",
@@ -179,6 +180,84 @@ def export_leaderboard(
         csv_path = output_dir / f"{prefix}_leaderboard.csv"
     leaderboard.to_csv(csv_path, index=False)
     return leaderboard
+
+
+def export_hpo_budget_summary(
+    root: Path,
+    fold_results: pd.DataFrame,
+    *,
+    output_dir: Path | None = None,
+    file_prefix: str | None = None,
+) -> pd.DataFrame:
+    csv_path = _artifact_paths(
+        root,
+        output_dir=output_dir,
+        file_prefix=file_prefix,
+        fallback=benchmark_label(fold_results),
+        stem="hpo_budget_summary",
+    )
+    if fold_results.empty:
+        summary = pd.DataFrame()
+        summary.to_csv(csv_path, index=False)
+        return summary
+
+    frame = fold_results.copy()
+    for col in ["requested_max_trials", "requested_timeout_seconds", "realized_trial_count", "hpo_config_target"]:
+        if col in frame.columns:
+            frame[col] = pd.to_numeric(frame[col], errors="coerce")
+    for col in ["hpo_mode", "hpo_budget_tier", "hpo_cap_reason", "requested_sampler", "requested_pruner"]:
+        if col not in frame.columns:
+            frame[col] = None
+    if "hpo_capped" not in frame.columns:
+        if {"requested_max_trials", "hpo_config_target"}.issubset(frame.columns):
+            frame["hpo_capped"] = (
+                frame["hpo_cap_reason"].fillna("").astype(str).ne("")
+                | (frame["requested_max_trials"].fillna(0) < frame["hpo_config_target"].fillna(0))
+            )
+        else:
+            frame["hpo_capped"] = frame["hpo_cap_reason"].fillna("").astype(str).ne("")
+
+    group_cols = [col for col in ["benchmark_id", "dataset_id", "method_id", "hpo_mode"] if col in frame.columns]
+    rows: list[dict[str, Any]] = []
+    for key, group in frame.groupby(group_cols, dropna=False):
+        key_values = key if isinstance(key, tuple) else (key,)
+        row = dict(zip(group_cols, key_values, strict=False))
+        requested = group.get("requested_max_trials", pd.Series(dtype=float)).fillna(0)
+        realized = group.get("realized_trial_count", pd.Series(dtype=float)).fillna(0)
+        target = group.get("hpo_config_target", requested).fillna(requested)
+        row.update(
+            {
+                "runs": int(len(group)),
+                "requested_trials_total": int(requested.sum()),
+                "realized_trials_total": int(realized.sum()),
+                "requested_trials_mean": float(requested.mean()) if len(requested) else 0.0,
+                "realized_trials_mean": float(realized.mean()) if len(realized) else 0.0,
+                "trial_realization_rate": float(realized.sum() / requested.sum()) if requested.sum() > 0 else 0.0,
+                "hpo_config_target": int(target.max()) if len(target) and pd.notna(target.max()) else 0,
+                "requested_timeout_seconds": float(group["requested_timeout_seconds"].max())
+                if "requested_timeout_seconds" in group and pd.notna(group["requested_timeout_seconds"].max())
+                else None,
+                "requested_sampler": _first_non_empty(group["requested_sampler"]),
+                "requested_pruner": _first_non_empty(group["requested_pruner"]),
+                "hpo_budget_tier": _first_non_empty(group["hpo_budget_tier"]),
+                "hpo_capped": bool(group["hpo_capped"].fillna(False).astype(bool).any()),
+                "hpo_cap_reason": _first_non_empty(group["hpo_cap_reason"]),
+            }
+        )
+        rows.append(row)
+    summary = pd.DataFrame(rows)
+    sort_cols = [col for col in ["benchmark_id", "dataset_id", "method_id", "hpo_mode"] if col in summary.columns]
+    if sort_cols:
+        summary.sort_values(sort_cols, inplace=True)
+    summary.to_csv(csv_path, index=False)
+    return summary
+
+
+def _first_non_empty(values: pd.Series) -> Any:
+    for value in values:
+        if pd.notna(value) and str(value) != "":
+            return value
+    return None
 
 
 def export_coverage_matrix(

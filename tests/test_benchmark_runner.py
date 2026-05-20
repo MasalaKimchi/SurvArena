@@ -41,6 +41,22 @@ def test_profile_contract_standard_passes() -> None:
     validate_benchmark_profile_contract(cfg)
 
 
+def test_profile_contract_hpo_profiles_pass() -> None:
+    validate_benchmark_profile_contract(_base_cfg("cloud_hpo"))
+
+    cfg = _base_cfg("local_hpo")
+    cfg["outer_repeats"] = 2
+    validate_benchmark_profile_contract(cfg)
+
+
+def test_profile_contract_local_hpo_requires_two_repeats() -> None:
+    cfg = _base_cfg("local_hpo")
+    cfg["outer_repeats"] = 1
+
+    with pytest.raises(ValueError, match="outer_repeats>=2"):
+        validate_benchmark_profile_contract(cfg)
+
+
 def test_profile_contract_rejects_invalid_profile() -> None:
     cfg = _base_cfg("research")
 
@@ -615,6 +631,7 @@ def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: 
     expected_artifacts = {
         "multi_model_fold_results.csv",
         "multi_model_leaderboard.csv",
+        "multi_model_hpo_budget_summary.csv",
         "multi_model_run_diagnostics.csv",
         "multi_model_runtime_failure_summary.csv",
         "experiment_navigator.json",
