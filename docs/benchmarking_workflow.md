@@ -69,3 +69,33 @@ Core artifacts include:
 - experiment manifests with config and environment metadata
 
 For the full protocol and artifact contract, see [`protocol.md`](protocol.md).
+
+## Dataset-by-Dataset, Model-by-Model Manuscript Runs
+
+When manuscript-grade runs are too expensive to execute as one monolithic job,
+run each dataset/method pair independently with resume support:
+
+```bash
+scripts/run_manuscript_by_dataset_model.sh
+```
+
+Defaults:
+
+- config: `configs/benchmark/manuscript_v1.yaml`
+- output root: `results/manuscript_dataset_model`
+- retries per run: `1`
+
+Useful overrides:
+
+```bash
+MAX_RETRIES=2 LIMIT_SEEDS=2 OUTPUT_ROOT=results/manuscript_partial \
+  scripts/run_manuscript_by_dataset_model.sh
+```
+
+The script writes one output directory per dataset and method plus:
+
+- per-run logs in `results/.../<dataset>/<method>.log`
+- aggregate status table in `results/.../run_status.csv`
+
+This pattern keeps long-running methods from blocking faster methods and makes
+retry/resume straightforward without re-running completed pairs.
