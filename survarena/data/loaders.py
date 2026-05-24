@@ -67,12 +67,34 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
+def _load_nwtco_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
+    from pycox.datasets import nwtco
+
+    frame = nwtco.read_df(processed=False).copy()
+    event = frame["rel"].to_numpy(dtype=np.int32)
+    time = frame["edrel"].to_numpy(dtype=np.float64)
+    X = (
+        frame.assign(
+            instit_2=frame["instit"] - 1,
+            histol_2=frame["histol"] - 1,
+            study_4=frame["study"] - 3,
+            stage=frame["stage"].astype("category"),
+        )
+        .drop(columns=["rownames", "Unnamed: 0", "seqno", "instit", "histol", "study", "edrel", "rel"], errors="ignore")
+        .reset_index(drop=True)
+    )
+    for col in X.columns.drop("stage"):
+        X[col] = X[col].astype("float32")
+    return X, time, event
+
+
 def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     dataset_cfg = _load_dataset_config(repo_root / "configs", dataset_id)
 
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,
         "metabric": _load_metabric_pycox,
+        "nwtco": _load_nwtco_pycox,
         "aids": lambda: _load_from_sksurv("aids"),
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),

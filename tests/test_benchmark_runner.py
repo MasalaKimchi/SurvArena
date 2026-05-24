@@ -150,11 +150,17 @@ def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
 
 def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_v1.yaml"))
+    hpo_cfg = read_yaml(Path("configs/benchmark/manuscript_hpo_v1.yaml"))
 
     assert manuscript_cfg["profile"] == "manuscript"
     assert manuscript_cfg["comparison_modes"] == ["no_hpo"]
     assert manuscript_cfg["exports"]["manuscript_artifact_layout"] == "compact"
     assert {"tabpfn_survival", "mitra_survival_frozen"}.issubset(manuscript_cfg["methods"])
+    assert hpo_cfg["profile"] == "manuscript"
+    assert hpo_cfg["comparison_modes"] == ["hpo"]
+    assert hpo_cfg["hpo"]["enabled"] is True
+    assert hpo_cfg["datasets"] == manuscript_cfg["datasets"]
+    assert hpo_cfg["methods"] == manuscript_cfg["methods"]
 
 
 def test_event_fingerprint_rejects_non_binary_labels() -> None:

@@ -30,12 +30,13 @@ leaderboard metrics in the CLI summary. Use `--id-col patient_id` or
 | --- | --- | ---: | ---: | ---: | --- | --- |
 | `support` | Standard | 8,873 | 14 | 68.03% | pycox | Large mixed clinical cohort. |
 | `metabric` | Standard | 1,904 | 9 | 57.93% | pycox | Breast cancer benchmark. |
+| `nwtco` | Standard | 4,028 | 6 | 14.18% | pycox | National Wilms Tumor Study cohort. |
 | `aids` | Standard | 1,151 | 11 | 8.34% | scikit-survival | Heavy censoring, mixed covariates. |
 | `gbsg2` | Standard | 686 | 8 | 56.41% | scikit-survival | Compact clinical benchmark. |
 | `flchain` | Standard | 7,874 | 9 | 27.55% | scikit-survival | Heavy censoring. |
 | `whas500` | Standard | 500 | 14 | 43.00% | scikit-survival | Small cardiovascular cohort. |
 
-The six `Standard` datasets are the default and retained manuscript suite for
+The seven `Standard` datasets are the default and retained manuscript suite for
 `configs/benchmark/manuscript_v1.yaml`.
 
 ## Notes

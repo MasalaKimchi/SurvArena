@@ -31,3 +31,15 @@ def test_load_sksurv_dataset_matches_documented_event_counts(
     assert np.all(dataset.time > 0.0)
     assert dataset.event.shape == (shape[0],)
     assert int(dataset.event.sum()) == event_sum
+
+
+def test_load_nwtco_pycox_dataset_matches_documented_shape() -> None:
+    dataset = load_dataset("nwtco", repo_root=Path(__file__).resolve().parents[1])
+
+    assert dataset.metadata.dataset_id == "nwtco"
+    assert dataset.metadata.source == "pycox"
+    assert dataset.X.shape == (4028, 6)
+    assert dataset.time.shape == (4028,)
+    assert np.all(dataset.time > 0.0)
+    assert dataset.event.shape == (4028,)
+    assert int(dataset.event.sum()) == 571

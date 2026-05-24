@@ -60,8 +60,25 @@ def test_manuscript_config_includes_foundation_track() -> None:
     assert overrides["tabpfn_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
     assert overrides["mitra_survival_frozen"]["default_params"]["time_limit"] == 120
     assert benchmark_cfg["profile"] == "manuscript"
-    assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "aids", "gbsg2", "flchain", "whas500"}
+    assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "nwtco", "aids", "gbsg2", "flchain", "whas500"}
     assert "full backbone fine-tuning remains excluded" in benchmark_cfg["notes"]
+
+
+def test_manuscript_hpo_config_uses_explicit_hpo_track() -> None:
+    no_hpo_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "manuscript_v1.yaml")
+    hpo_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "manuscript_hpo_v1.yaml")
+
+    assert hpo_cfg["benchmark_id"] == "manuscript_hpo_v1"
+    assert hpo_cfg["profile"] == "manuscript"
+    assert hpo_cfg["comparison_modes"] == ["hpo"]
+    assert hpo_cfg["hpo"]["enabled"] is True
+    assert hpo_cfg["hpo"]["max_trials"] == 30
+    assert hpo_cfg["hpo"]["timeout_seconds"] == 1800
+    assert hpo_cfg["hpo"]["sampler"] == "tpe"
+    assert hpo_cfg["hpo"]["pruner"] == "median"
+    assert hpo_cfg["hpo"]["n_startup_trials"] == 10
+    assert hpo_cfg["datasets"] == no_hpo_cfg["datasets"]
+    assert hpo_cfg["methods"] == no_hpo_cfg["methods"]
 
 
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:

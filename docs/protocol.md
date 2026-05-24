@@ -26,11 +26,12 @@ Benchmark profiles (see `validate_benchmark_profile_contract` in
 
 ## Manuscript Scope
 
-The main-paper benchmark scope is `configs/benchmark/manuscript_v1.yaml`: native
-Python survival adapters, frozen/bounded foundation adapters, shared repeated
-nested CV, and no-HPO/default-policy comparison. Separate smoke, standard,
-cloud, HPO, KKBox, and XGBSE expansion configs have been retired from the
-maintained benchmark surface.
+The main-paper no-HPO benchmark scope is `configs/benchmark/manuscript_v1.yaml`:
+native Python survival adapters, frozen/bounded foundation adapters, shared
+repeated nested CV, and no-HPO/default-policy comparison. The matching explicit
+HPO benchmark is `configs/benchmark/manuscript_hpo_v1.yaml`. Separate smoke,
+standard, cloud, Kaggle-local dataset, and XGBSE expansion configs are not part
+of the maintained manuscript surface.
 
 Optional **robustness** blocks in benchmark YAML (`robustness.enabled`, `tracks`,
 `severity_levels`) control optional perturbation tracks; when disabled, only the
@@ -51,7 +52,8 @@ Supported split strategies:
 - every method sees the same split definitions
 - preprocessing is fit on training-side data only
 - no-HPO benchmark mode fits configured defaults directly on each outer-training split
-- `comparison_modes` is retained as `[no_hpo]` for manuscript-grade runs
+- `manuscript_v1.yaml` uses `comparison_modes: [no_hpo]`
+- `manuscript_hpo_v1.yaml` uses `comparison_modes: [hpo]`
 - the selected config is refit before outer-test evaluation
 - seeds are passed through to stochastic methods
 

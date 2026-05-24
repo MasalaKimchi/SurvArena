@@ -36,6 +36,7 @@ same built-in dataset suite by default:
 
 - `support`
 - `metabric`
+- `nwtco`
 - `aids`
 - `gbsg2`
 - `flchain`
@@ -50,8 +51,10 @@ by selecting one dataset/method and limiting seeds from the same config:
 | --- | --- | --- | --- |
 | `manuscript` | Full reporting run | Repeated nested CV with the full native and foundation portfolio | Paper-grade result tables and statistical summaries |
 
-The manuscript config emits the `no_hpo` track and fits configured defaults
-directly on each outer-training split.
+The default manuscript config emits the `no_hpo` track and fits configured
+defaults directly on each outer-training split. Use
+`configs/benchmark/manuscript_hpo_v1.yaml` for the matching HPO-only manuscript
+track.
 
 Use the benchmark subcommands for a staged run:
 

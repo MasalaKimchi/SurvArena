@@ -4,7 +4,7 @@ This note explains how SurvArena trains and evaluates models under the benchmark
 YAML profiles. It focuses on the distinction between outer folds, inner folds,
 no-HPO evaluation, and HPO evaluation.
 
-Last reviewed against `configs/benchmark/`: 2026-05-18.
+Last reviewed against `configs/benchmark/`: 2026-05-24.
 
 ## Core Structure
 
@@ -25,14 +25,15 @@ test rows.
 
 | Config | Profile | Datasets | Outer folds | Outer repeats | Inner folds | Seeds used by default | Comparison modes |
 | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
-| `configs/benchmark/manuscript_v1.yaml` | `manuscript` | 6 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo` |
+| `configs/benchmark/manuscript_v1.yaml` | `manuscript` | 7 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `no_hpo` |
+| `configs/benchmark/manuscript_hpo_v1.yaml` | `manuscript` | 7 | 5 | 3 | 3 | 3 repeats from `[11, 22, 33, 44, 55]` | `hpo` |
 
 Although the manuscript config lists five seeds, the repeated outer loop uses
 three repeats by default. That gives 15 outer splits per dataset:
 
 ```text
 5 outer folds x 3 repeats = 15 outer evaluations per dataset
-6 datasets x 15 outer evaluations = 90 outer evaluations per method
+7 datasets x 15 outer evaluations = 105 outer evaluations per method
 ```
 
 Use `--limit-seeds` for exploratory runs. With `--limit-seeds 1`, repeated
@@ -59,12 +60,12 @@ Fit count:
 1 final fit per outer split
 ```
 
-Examples for one method across all six standard datasets:
+Examples for one method across all seven standard datasets:
 
 | Config shape | Outer evaluations | Approximate no-HPO fits |
 | --- | ---: | ---: |
-| Smoke | `6 x 2 x 1 = 12` | 12 |
-| Standard or manuscript | `6 x 5 x 3 = 90` | 90 |
+| Smoke | `7 x 2 x 1 = 14` | 14 |
+| Standard or manuscript | `7 x 5 x 3 = 105` | 105 |
 
 The repeated no-HPO runs are still meaningful: each run uses a different
 outer-train/outer-test split, so the benchmark estimates split-to-split
@@ -102,11 +103,11 @@ Per outer split with `inner_folds: 3` and `max_trials: 30`:
 1 final refit on the outer-training split
 ```
 
-Approximate HPO fit count for one method across all six standard datasets:
+Approximate HPO fit count for one method across all seven standard datasets:
 
 ```text
-90 outer evaluations x (3 default inner fits + 30 trials x 3 inner folds + 1 final refit)
-= 8,460 fits
+105 outer evaluations x (3 default inner fits + 30 trials x 3 inner folds + 1 final refit)
+= 9,870 fits
 ```
 
 If a method has no `search_space`, HPO is marked disabled for that method and
@@ -128,9 +129,9 @@ comparison_modes: [no_hpo, hpo]
 For one method on the standard profile:
 
 ```text
-no-HPO: 90 default final fits
-HPO:    8,460 HPO-mode fits
-total:  approximately 8,550 fits
+no-HPO: 105 default final fits
+HPO:    9,870 HPO-mode fits
+total:  approximately 9,975 fits
 ```
 
 The important statistical unit is the paired outer result. The no-HPO and HPO
@@ -141,7 +142,7 @@ exports can compare the default policy against the tuned policy directly.
 
 Wall-clock time depends heavily on dataset size, model family, CPU/GPU
 availability, and whether a trial reaches the timeout. The following estimates
-are practical planning ranges for one method across all six standard datasets
+are practical planning ranges for one method across all seven standard datasets
 with 5 outer folds x 3 repeats.
 
 | Model family | No-HPO only | No-HPO + HPO, 30 trials / 1800s |
@@ -153,7 +154,7 @@ with 5 outer folds x 3 repeats.
 The strict configured upper bound for HPO search alone is:
 
 ```text
-90 HPO outer evaluations x 1800 seconds = 45 hours
+105 HPO outer evaluations x 1800 seconds = 52.5 hours
 ```
 
 That bound excludes final refits, metric computation, no-HPO runs, retries, and
@@ -171,9 +172,10 @@ locked:
 | Pilot | standard/manuscript shape with `--limit-seeds 1` | Estimate runtime and catch failures |
 | Final | manuscript or standard shape, locked methods/datasets, full repeats | Manuscript-grade reporting |
 
-The shipped manuscript config is the main-paper native plus foundation
-default/no-HPO benchmark. Retired smoke, standard, local-HPO, cloud-HPO, KKBox,
-and XGBSE expansion configs are no longer maintained in this checkout.
+The shipped manuscript configs are the main-paper native plus foundation
+default/no-HPO benchmark and its explicit HPO-only counterpart. Retired smoke,
+standard, local-HPO, cloud-HPO, Kaggle-local dataset, and XGBSE expansion
+configs are no longer maintained in this checkout.
 
 Keep final benchmark YAML immutable once a run starts, and use `--resume` for
 restartable execution.

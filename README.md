@@ -15,7 +15,7 @@ leaderboards, persisted artifacts, and manuscript-friendly benchmark summaries.
 ## Benchmark Preview
 
 Quick view of the current manuscript-grade no-HPO Elo evidence bundle, built
-from `configs/benchmark/manuscript_v1.yaml` across 6 datasets, 23 methods, and
+from `configs/benchmark/manuscript_v1.yaml` across 7 datasets, 25 methods, and
 15 outer folds per dataset/method pair:
 
 ![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
@@ -155,7 +155,7 @@ training remains CPU-only here.
 ### Current Manuscript Elo Preview
 
 The current manuscript evidence bundle uses the completed `manuscript_v1`
-no-HPO matrix. It covers all six built-in benchmark datasets and all 23 native
+no-HPO matrix. It covers all seven built-in benchmark datasets and all 25
 manuscript methods with 5 folds x 3 repeats per dataset/method pair. Rebuild
 the Elo tables and README figure from local result artifacts with:
 
@@ -343,7 +343,7 @@ metadata contract.
 
 ### Built-in Benchmark Datasets
 
-The standard benchmark suite currently uses the six ready-to-run built-in
+The standard benchmark suite currently uses the seven ready-to-run built-in
 datasets below. Dataset counts are mirrored from the current loader metadata in
 [`docs/datasets.md`](docs/datasets.md); source package names are shown so
 readers can trace each dataset back to the upstream survival-analysis ecosystem.
@@ -352,6 +352,7 @@ readers can trace each dataset back to the upstream survival-analysis ecosystem.
 | --- | --- | --- | ---: | ---: | ---: | --- |
 | `support` | SUPPORT | `pycox` | 8,873 | 14 | 68.03% | Mixed clinical variables with moderate censoring. |
 | `metabric` | METABRIC | `pycox` | 1,904 | 9 | 57.93% | Breast cancer benchmark used in deep survival literature. |
+| `nwtco` | NWTCO | `pycox` | 4,028 | 6 | 14.18% | National Wilms Tumor Study cohort. |
 | `aids` | AIDS | `scikit-survival` | 1,151 | 11 | 8.34% | AIDS Clinical Trial dataset with heavy censoring. |
 | `gbsg2` | GBSG2 | `scikit-survival` | 686 | 8 | 56.41% | German Breast Cancer Study Group survival dataset. |
 | `flchain` | FLCHAIN | `scikit-survival` | 7,874 | 9 | 27.55% | Serum free light chain dataset with heavier censoring. |
@@ -451,6 +452,8 @@ Tracked benchmark configs:
 
 - `configs/benchmark/manuscript_v1.yaml`: main-paper native and foundation
   manuscript portfolio, repeated nested CV, no-HPO/default-policy only
+- `configs/benchmark/manuscript_hpo_v1.yaml`: same manuscript dataset and
+  method suite, repeated nested CV, HPO-only comparison mode
 
 To evaluate a **single method**, use `--method` and optionally `--dataset` with
 `manuscript_v1.yaml` instead of maintaining one YAML per model.
