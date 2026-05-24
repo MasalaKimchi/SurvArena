@@ -667,6 +667,36 @@ def _benchmark_artifact_names(model_name: str) -> dict[str, str]:
     }
 
 
+def _records_with_existing_resume_rows(
+    *,
+    existing_fold_results: Path,
+    new_records: list[dict[str, Any]],
+    resume: bool,
+) -> list[dict[str, Any]]:
+    if not resume or not existing_fold_results.exists():
+        return new_records
+
+    import pandas as pd
+    from pandas.errors import EmptyDataError
+
+    try:
+        existing = pd.read_csv(existing_fold_results)
+    except EmptyDataError:
+        return new_records
+    if existing.empty:
+        return new_records
+
+    combined = pd.concat([existing, pd.DataFrame(new_records)], ignore_index=True, sort=False)
+    dedupe_keys = [
+        col
+        for col in ["dataset_id", "method_id", "split_id", "seed", "hpo_mode"]
+        if col in combined.columns
+    ]
+    if dedupe_keys:
+        combined.drop_duplicates(subset=dedupe_keys, keep="last", inplace=True)
+    return combined.to_dict(orient="records")
+
+
 def _benchmark_readme_lines(
     *,
     dataset_id: str,
@@ -1024,9 +1054,15 @@ def run_benchmark(
             dataset_run_records = list(run_records)
         dataset_hpo_trials = [row for row in hpo_trial_rows if _base_dataset_id(row.get("dataset_id")) == dataset_id]
         dataset_curation = [row for row in dataset_curation_rows if _base_dataset_id(row.get("dataset_id")) == dataset_id]
+        existing_fold_results = experiment_dir / f"{model_name}_fold_results.csv"
+        export_records = _records_with_existing_resume_rows(
+            existing_fold_results=existing_fold_results,
+            new_records=dataset_records,
+            resume=resume,
+        )
         frame = export_fold_results(
             repo_root,
-            dataset_records,
+            export_records,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )

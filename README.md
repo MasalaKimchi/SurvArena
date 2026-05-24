@@ -14,10 +14,11 @@ leaderboards, persisted artifacts, and manuscript-friendly benchmark summaries.
 
 ## Benchmark Preview
 
-Quick view of the current local expansion Elo evidence bundle, comparing
-foundation and conventional survival methods by benchmark track and HPO mode:
+Quick view of the current manuscript-grade no-HPO Elo evidence bundle, built
+from `configs/benchmark/manuscript_v1.yaml` across 6 datasets, 23 methods, and
+15 outer folds per dataset/method pair:
 
-![Expansion Elo ratings by benchmark and mode](docs/assets/elo_expansion_by_benchmark_mode_uno_c.png)
+![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
 
 ## Features
 
@@ -152,13 +153,18 @@ otherwise; they do not auto-select Apple MPS. A direct MPS probe of
 because PyTorch MPS does not implement `aten::_logcumsumexp`, so Cox-loss neural
 training remains CPU-only here.
 
-### Current Expansion Elo Preview
+### Current Manuscript Elo Preview
 
-The current local expansion evidence bundle adds the newly wired foundation and
-dataset smoke tracks to the Elo comparison. Keep older local probe figures out
-of the repository so the README points at one current benchmark view.
+The current manuscript evidence bundle uses the completed `manuscript_v1`
+no-HPO matrix. It covers all six built-in benchmark datasets and all 23 native
+manuscript methods with 5 folds x 3 repeats per dataset/method pair. Rebuild
+the Elo tables and README figure from local result artifacts with:
 
-![Expansion Elo ratings by benchmark and mode](docs/assets/elo_expansion_by_benchmark_mode_uno_c.png)
+```bash
+python scripts/build_manuscript_elo.py
+```
+
+![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
 
 ### First Smoke Run
 

@@ -15,7 +15,10 @@ fi
 
 mkdir -p "$OUTPUT_ROOT"
 
-readarray -t DATASETS < <("$PYTHON_BIN" - <<'PY' "$BENCHMARK_CONFIG"
+DATASETS=()
+while IFS= read -r item; do
+  DATASETS+=("$item")
+done < <("$PYTHON_BIN" - <<'PY' "$BENCHMARK_CONFIG"
 from pathlib import Path
 import sys
 import yaml
@@ -26,7 +29,10 @@ for item in cfg.get("datasets", []):
 PY
 )
 
-readarray -t METHODS < <("$PYTHON_BIN" - <<'PY' "$BENCHMARK_CONFIG"
+METHODS=()
+while IFS= read -r item; do
+  METHODS+=("$item")
+done < <("$PYTHON_BIN" - <<'PY' "$BENCHMARK_CONFIG"
 from pathlib import Path
 import sys
 import yaml

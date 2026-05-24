@@ -447,6 +447,45 @@ def test_exec04_resume_preserves_successful_outputs(tmp_path: Path, monkeypatch)
     assert calls["count"] == 0
 
 
+def test_resume_export_merges_existing_and_new_fold_rows(tmp_path: Path) -> None:
+    existing = pd.DataFrame(
+        [
+            {
+                "dataset_id": "toy_dataset__base",
+                "method_id": "coxph",
+                "split_id": "fixed_split_0__base",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.77,
+            }
+        ]
+    )
+    fold_results_path = tmp_path / "coxph_fold_results.csv"
+    existing.to_csv(fold_results_path, index=False)
+
+    records = runner._records_with_existing_resume_rows(
+        existing_fold_results=fold_results_path,
+        new_records=[
+            {
+                "dataset_id": "toy_dataset__base",
+                "method_id": "coxph",
+                "split_id": "fixed_split_1__base",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.73,
+            }
+        ],
+        resume=True,
+    )
+
+    by_split = {row["split_id"]: row for row in records}
+    assert set(by_split) == {"fixed_split_0__base", "fixed_split_1__base"}
+    assert by_split["fixed_split_0__base"]["uno_c"] == 0.77
+    assert by_split["fixed_split_1__base"]["uno_c"] == 0.73
+
+
 def test_exec04_resume_reruns_incomplete_success_outputs(tmp_path: Path, monkeypatch) -> None:
     fold_results = pd.DataFrame(
         [
