@@ -100,7 +100,7 @@ def foundation_runtime_status(
             blocked_reason=blocked_reason,
         )
 
-    if spec.method_id == "mitra_survival":
+    if spec.method_id == "mitra_survival_frozen":
         try:
             importlib.import_module("autogluon.tabular.models.mitra.sklearn_interface")
         except ImportError as exc:

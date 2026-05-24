@@ -6,10 +6,7 @@ import numpy as np
 import pandas as pd
 
 from survarena.automl.autogluon_backend import fit_autogluon_event_predictor, predict_event_probability
-from survarena.methods.automl.mitra_survival import (
-    MitraSurvivalFrozenMethod,
-    MitraSurvivalMethod,
-)
+from survarena.methods.automl.mitra_survival import MitraSurvivalFrozenMethod
 from survarena.methods.registry import get_method_class, registered_method_ids
 
 
@@ -66,7 +63,7 @@ def test_autogluon_backend_passes_fit_controls_and_predicts_event_probability(mo
     np.testing.assert_allclose(predict_event_probability(predictor, pd.DataFrame({"x": [6.0, 7.0]})), [0.75, 0.75])
 
 
-def test_mitra_survival_method_forces_mitra_hyperparameters(monkeypatch, tmp_path) -> None:
+def test_mitra_survival_frozen_method_forces_mitra_hyperparameters(monkeypatch, tmp_path) -> None:
     fake_module = ModuleType("autogluon.tabular")
     fake_module.TabularPredictor = FakeTabularPredictor
     fake_sklearn_interface = ModuleType("autogluon.tabular.models.mitra.sklearn_interface")
@@ -81,10 +78,10 @@ def test_mitra_survival_method_forces_mitra_hyperparameters(monkeypatch, tmp_pat
         fake_sklearn_interface,
     )
 
-    assert "mitra_survival" in registered_method_ids()
-    assert get_method_class("mitra_survival") is MitraSurvivalMethod
+    assert "mitra_survival_frozen" in registered_method_ids()
+    assert get_method_class("mitra_survival_frozen") is MitraSurvivalFrozenMethod
 
-    model = MitraSurvivalMethod(path=tmp_path / "mitra", hyperparameters=None, mitra_params={"fine_tune": False})
+    model = MitraSurvivalFrozenMethod(path=tmp_path / "mitra", hyperparameters=None, mitra_params={"fine_tune": True})
     model.fit(
         pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]}),
         np.asarray([1.0, 2.0, 3.0, 4.0]),

@@ -69,7 +69,7 @@ def _add_benchmark_common_args(parser: argparse.ArgumentParser) -> None:
         "--config",
         "--benchmark-config",
         dest="benchmark_config",
-        default="configs/benchmark/standard_v1.yaml",
+        default="configs/benchmark/manuscript_v1.yaml",
         help="Path to benchmark YAML config.",
     )
     dataset_group = parser.add_mutually_exclusive_group()

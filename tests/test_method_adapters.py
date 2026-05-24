@@ -61,7 +61,6 @@ def test_registered_method_ids_include_new_survival_adapters() -> None:
         "xgboost_cox",
         "catboost_cox",
         "xgboost_aft",
-        "xgbse_kaplan_neighbors",
         "catboost_survival_aft",
         "logistic_hazard",
         "pmf",
@@ -122,15 +121,6 @@ def test_heavy_sksurv_adapter_defaults_follow_package_defaults(
     assert method_cls().params == {**expected_defaults, "seed": None}
 
 
-def test_xgbse_kaplan_neighbors_defaults_follow_config() -> None:
-    cfg = read_yaml(Path("configs/methods/xgbse_kaplan_neighbors.yaml"))
-    method_cls = get_method_class("xgbse_kaplan_neighbors")
-
-    expected_defaults = dict(cfg["default_params"])
-    expected_defaults["seed"] = None
-    assert method_cls().params == expected_defaults
-
-
 def test_fast_survival_svm_normalizes_risk_direction_for_ranking_and_mixed_objectives() -> None:
     from sksurv.metrics import concordance_index_censored
 
@@ -172,17 +162,6 @@ def test_fast_survival_svm_normalizes_risk_direction_for_ranking_and_mixed_objec
         ("xgboost_cox", {"n_estimators": 20, "max_depth": 2, "learning_rate": 0.1, "seed": 0}),
         ("catboost_cox", {"iterations": 20, "depth": 4, "learning_rate": 0.1, "seed": 0}),
         ("xgboost_aft", {"n_estimators": 20, "max_depth": 2, "learning_rate": 0.1, "seed": 0}),
-        (
-            "xgbse_kaplan_neighbors",
-            {
-                "num_boost_round": 5,
-                "max_depth": 2,
-                "learning_rate": 0.1,
-                "n_neighbors": 8,
-                "risk_time_bins": 4,
-                "seed": 0,
-            },
-        ),
         ("catboost_survival_aft", {"iterations": 20, "depth": 4, "learning_rate": 0.1, "seed": 0}),
         ("deepsurv", {"hidden_layers": "16", "batch_size": 16, "max_epochs": 3, "patience": 1, "seed": 0}),
     ],
@@ -190,8 +169,6 @@ def test_fast_survival_svm_normalizes_risk_direction_for_ranking_and_mixed_objec
 def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params: dict[str, object]) -> None:
     if method_id.startswith("catboost") and importlib.util.find_spec("catboost") is None:
         pytest.skip("catboost is not installed in this test environment.")
-    if method_id.startswith("xgbse") and importlib.util.find_spec("xgbse") is None:
-        pytest.skip("xgbse is not installed in this test environment.")
     X_train, time_train, event_train, X_test = _toy_survival_arrays()
     method_cls = get_method_class(method_id)
     model = method_cls(**params)
@@ -207,16 +184,6 @@ def test_new_method_adapters_fit_and_emit_survival_curves(method_id: str, params
     assert np.isfinite(survival).all()
     assert np.all((survival >= 0.0) & (survival <= 1.0))
     assert np.all(np.diff(survival, axis=1) <= 1e-8)
-
-
-def test_xgbse_kaplan_neighbors_missing_dependency_error_is_actionable() -> None:
-    if importlib.util.find_spec("xgbse") is not None:
-        pytest.skip("xgbse is installed in this test environment.")
-    X_train, time_train, event_train, _ = _toy_survival_arrays()
-    model = get_method_class("xgbse_kaplan_neighbors")(num_boost_round=1, n_neighbors=2)
-
-    with pytest.raises(RuntimeError, match="requires optional package 'xgbse'"):
-        model.fit(X_train, time_train, event_train)
 
 
 def test_catboost_cox_accepts_native_categorical_dataframe() -> None:

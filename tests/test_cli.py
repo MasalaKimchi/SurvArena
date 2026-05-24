@@ -269,7 +269,7 @@ def test_benchmark_plan_cli_emits_run_unit_counts(monkeypatch, capsys) -> None:
             "benchmark",
             "plan",
             "--config",
-            "configs/benchmark/smoke.yaml",
+            "configs/benchmark/manuscript_v1.yaml",
             "--datasets",
             "whas500,gbsg2",
             "--methods",
@@ -282,7 +282,7 @@ def test_benchmark_plan_cli_emits_run_unit_counts(monkeypatch, capsys) -> None:
     cli.main()
 
     output = capsys.readouterr().out
-    assert '"benchmark_id": "smoke"' in output
+    assert '"benchmark_id": "manuscript_v1"' in output
     assert '"whas500"' in output
     assert '"gbsg2"' in output
     assert '"coxph"' in output
@@ -299,7 +299,7 @@ def test_benchmark_doctor_cli_reports_missing_dataset(monkeypatch, capsys) -> No
             "benchmark",
             "doctor",
             "--benchmark-config",
-            "configs/benchmark/smoke.yaml",
+            "configs/benchmark/manuscript_v1.yaml",
             "--dataset",
             "not_a_dataset",
             "--method",
@@ -336,7 +336,7 @@ def test_benchmark_doctor_cli_supports_deeper_checks(monkeypatch, capsys) -> Non
             "benchmark",
             "doctor",
             "--config",
-            "configs/benchmark/smoke.yaml",
+            "configs/benchmark/manuscript_v1.yaml",
             "--dataset",
             "whas500",
             "--method",
@@ -370,7 +370,7 @@ def test_benchmark_run_cli_delegates_to_runner(monkeypatch) -> None:
             "benchmark",
             "run",
             "--config",
-            "configs/benchmark/smoke.yaml",
+            "configs/benchmark/manuscript_v1.yaml",
             "--datasets",
             "whas500,gbsg2",
             "--methods",

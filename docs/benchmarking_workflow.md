@@ -43,27 +43,23 @@ same built-in dataset suite by default:
 
 ## Run Geometry
 
-The maintained benchmark profiles differ mainly by runtime and statistical
-strength:
+The maintained benchmark profile is manuscript-grade; smaller runs are created
+by selecting one dataset/method and limiting seeds from the same config:
 
 | Profile | Purpose | Typical geometry | Intended use |
 | --- | --- | --- | --- |
-| `smoke` | Fast wiring check | Small folds and one seed | CI, local validation, adapter sanity checks |
-| `standard` | Balanced benchmark | Repeated nested CV with native core models | Routine comparisons under realistic runtime |
-| `manuscript` | Full reporting run | Repeated nested CV with the full native portfolio | Paper-grade result tables and statistical summaries |
+| `manuscript` | Full reporting run | Repeated nested CV with the full native and foundation portfolio | Paper-grade result tables and statistical summaries |
 
-`comparison_modes` controls whether a config emits `no_hpo`, `hpo`, or both
-tracks. No-HPO fits configured defaults directly. HPO uses the configured inner
-folds and budget, then refits the selected configuration before outer-test
-evaluation.
+The manuscript config emits the `no_hpo` track and fits configured defaults
+directly on each outer-training split.
 
 Use the benchmark subcommands for a staged run:
 
 ```bash
-survarena benchmark plan --config configs/benchmark/standard_v1.yaml
-survarena benchmark doctor --config configs/benchmark/standard_v1.yaml --check-imports
-survarena benchmark run --config configs/benchmark/standard_v1.yaml --limit-seeds 1
-survarena benchmark report results/summary/<dataset_id>/<benchmark_id>/<model_name>
+survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
+survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
+survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dataset whas500 --method coxph --limit-seeds 1
+survarena benchmark report results/manuscript_elo
 ```
 
 `python -m survarena.run_benchmark` remains the thin module entry point for
@@ -72,9 +68,8 @@ command group.
 
 ## Output Flow
 
-Benchmark results are written under
-`results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or
-`<model_name>_<timestamp>` when prior CSVs already exist).
+Benchmark results are written under a generated results directory or the
+directory supplied with `--output-dir`.
 
 Core artifacts include:
 

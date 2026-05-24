@@ -1,110 +1,38 @@
 # SurvArena Project State
 
-SurvArena is being developed as a TabArena-like benchmark and toolkit for right-censored tabular survival analysis. This page is the repository-level source of truth for benchmark coverage, paper readiness, AI-agent workflows, and prioritized development tasks.
+SurvArena is being narrowed to a manuscript-grade benchmark toolkit for
+right-censored tabular survival analysis. The retained benchmark contract is a
+single config-driven evidence path:
 
-## Current Positioning
+- config: `configs/benchmark/manuscript_v1.yaml`
+- datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`
+- methods: the native manuscript portfolio plus `tabpfn_survival` and
+  `mitra_survival_frozen`
+- mode: `no_hpo`
+- geometry: 5 folds x 3 repeats per dataset/method pair
+- artifact policy: compact `core_csv` outputs and one retained manuscript Elo
+  evidence bundle under `results/manuscript_elo/`
 
-SurvArena has two main surfaces: `SurvivalPredictor` for fitting survival models on user datasets, and a config-driven benchmark runner for shared-split comparisons across datasets, methods, seeds, and modes.
+Retired benchmark surfaces include smoke, standard, local-HPO, cloud-HPO,
+foundation-only, KKBox, NWTCO, XGBSE, and separate foundation Elo configs.
+Those paths should not be cited as maintained evidence or used as defaults.
 
-Paper framing: SurvArena is a reproducible benchmarking framework for tabular survival analysis across classical, ensemble, boosting, deep learning, AutoML, and foundation-model approaches.
+## Current Evidence
 
-## Current Benchmark Scope
+The retained native manuscript evidence bundle is complete for the previous
+23-method native-only matrix: 2,070 successful fold rows across 6 datasets,
+23 methods, and 15 splits per dataset/method pair.
 
-Ready-to-run datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
+After adding `tabpfn_survival` and `mitra_survival_frozen` to the manuscript
+config, the unified manuscript matrix expects 2,250 fold rows. The two
+foundation methods still need manuscript-grade runs before native+foundation
+claims are complete.
 
-Large-track/future dataset candidate: `kkbox`, currently configured as a local-only dataset path rather than a ready manuscript dataset.
+## Remaining Work
 
-Maintained benchmark configs currently present in this checkout are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `local_feasible_hpo_v1.yaml`, and optional foundation smoke/Elo expansion configs. TabPFN is integrated into the unified smoke config; AutoGluon, Mitra, and KKBox tracks should remain optional until their evidence bundles are promoted.
-
-## Method Coverage
-
-Implemented families include classical survival models, AFT models, survival SVM, tree ensembles, boosting models, neural survival models, AutoGluon, and optional foundation-model adapters.
-
-Foundation adapters are experimental and should remain optional/appendix-only until benchmark coverage and runtime reliability are documented by the dedicated foundation smoke and unified Elo tracks.
-
-## Existing Evidence Artifacts
-
-SurvArena already exports fold results, seed summaries, overall summaries, leaderboards, ranking summaries, pairwise comparisons, confidence intervals, failure summaries, missing-metric summaries, HPO ledgers, compact run ledgers, experiment manifests, and experiment navigator artifacts.
-
-## Paper-Critical Missing Pieces
-
-1. Benchmark coverage matrix showing dataset-method-mode success/failure and artifact paths.
-2. Manuscript report generator that creates paper-ready tables from `results/summary/<run_id>`.
-3. Preprocessing and split audit report confirming train-only preprocessing and shared split reuse.
-4. Runtime and failure-mode summary table.
-5. Dataset expansion plan beyond the six standard datasets.
-6. Contribution guide for adding new survival datasets and model adapters.
-7. Calibration or time-specific risk evaluation report if calibrated survival probabilities are claimed.
-8. Stable Notion/GitHub AI-agent loop for weekly triage.
-
-## AI-Agent Operating Model
-
-Use four role-specific agents:
-
-- Code Review Agent: inspect code, tests, docs, API consistency, reproducibility risks, and fragile logic.
-- Benchmark Curator Agent: read benchmark artifacts, update coverage, summarize failures, and recommend reruns.
-- Paper Evidence Agent: convert benchmark artifacts into manuscript-ready claims, tables, and limitations.
-- Implementation Agent: implement one GitHub issue at a time, add tests, update docs, and open a focused PR.
-
-## Weekly Agent Review Template
-
-Each weekly update should include implemented changes, benchmark evidence, paper-blocking gaps, recommended tickets, PRs ready for review, experiments to rerun, and manuscript claims now supported by evidence.
-
-## Recommended Milestone
-
-Milestone: SurvArena v0.1 manuscript benchmark readiness.
-
-Status: not manuscript-ready yet. The framework and export plumbing are close, but the repository does not yet contain a current full evidence bundle that supports paper claims.
-
-Current evidence:
-
-- Six standard datasets are documented and configured: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, and `whas500`.
-- `kkbox` is configured and documented as a large/local-only track, but remains outside the ready manuscript suite until credentials, cache preparation, runtime, and dataset statistics are reproducible.
-- Present benchmark configs are `smoke.yaml`, `standard_v1.yaml`, `manuscript_v1.yaml`, `local_feasible_hpo_v1.yaml`, `mitra_no_hpo_smoke.yaml`, and `foundation_elo_v1.yaml`. TabPFN no longer has standalone benchmark configs; use `smoke.yaml` or `foundation_elo_v1.yaml`. Removed docs references to absent `manuscript_autogluon_v1.yaml`, `smoke_foundation.yaml`, and `smoke_aft.yaml`; those configs are not present in this checkout and should not be treated as completed evidence.
-- Method configs include native methods plus optional foundation variants for the TabPFN horizon adapter and Mitra frozen/fine-tune policies. `manuscript_v1.yaml` covers 23 native methods in no-HPO/default-policy mode; `standard_v1.yaml` covers `coxph`, `coxnet`, `rsf`, and `deepsurv` in paired no-HPO/HPO mode.
-- Export code/tests cover fold results, leaderboards, run diagnostics, coverage matrices, runtime/failure summaries, manifests, and navigators. Checked-in run evidence is only a tiny `whas500`/`smoke`/`weibull_aft` no-HPO result with two successful folds.
-- Local milestone probe on 2026-05-04 passed environment validation, `smoke.yaml` dry-run, `manuscript_v1.yaml` dry-run, a targeted `standard_v1.yaml` dry-run, and the six-dataset native smoke matrix: 138/138 native dataset-method combinations completed with 276/276 successful folds under `results/local_milestone_probe/`.
-- Local feasible paired no-HPO/HPO benchmark on 2026-05-05 ran all six standard datasets x 23 native methods with 3 outer folds x 3 repeats/seeds x 2 modes under `results/local_feasible_hpo_v1_all/`. Final artifacts now cover 138/138 dataset-method combinations, 2,484/2,484 successful fold rows, and plot-ready mode summaries/deltas after fixing and rerunning the `flchain` neural-adapter batch-normalization singleton-batch edge case.
-- Optional `tabpfn_survival` previously timed out on `support` under the removed surrogate-head adapter; the unified foundation Elo config now uses the retained censored-aware horizon adapter and excludes Mitra fine-tuning until separate bounded evidence exists.
-- Dataset and method contribution guides exist.
-
-Checklist:
-
-- [x] Core benchmark protocol documented around shared splits, train-side preprocessing, seeded runs, no-HPO/HPO governance, compact artifacts, and manifests.
-- [x] Standard six-dataset suite documented and represented in benchmark YAML.
-- [x] Main-paper native method portfolio represented in `manuscript_v1.yaml`.
-- [x] Compact artifact exporters implemented for fold results, leaderboards, diagnostics, coverage, runtime/failure, manifests, and navigators.
-- [x] Dataset and method contribution guides available.
-- [x] Align docs/state references with actual benchmark configs, or add the missing AutoGluon/foundation/AFT configs before mentioning them as maintained tracks.
-- [x] Regenerate fresh smoke artifacts with the current exporter and verify coverage matrix, runtime/failure summary, manifest, navigator, and per-experiment README are emitted across the six-dataset native smoke matrix.
-- [x] Fix runtime/failure summaries so successful no-HPO rows are not marked `missing_metrics` only because `validation_score` is blank while primary/test metrics are present.
-- [x] Produce an actual dataset-method-mode coverage matrix from fresh artifacts across all six standard datasets and manuscript methods.
-- [x] Produce a method coverage/status table with successes, failures, missing metrics, runtime, memory, and artifact paths.
-- [ ] Add or identify a manuscript report generator that reads `results/summary/...` and emits paper-ready tables for datasets, methods, metrics, ranks, CIs, pairwise tests, failures, and runtime.
-- [ ] Add a preprocessing/split audit export proving train-only preprocessing and shared split reuse for the final run bundle.
-- [ ] Validate one reproducible smoke benchmark run and one standard/manuscript-shaped pilot after exporter/config alignment.
-- [ ] Decide whether calibration, net benefit, AutoGluon, foundation models, HPO, or KKBox appear in the manuscript, appendix, or limitations only; require separate evidence bundles for any promoted claim.
-
-Remaining blockers:
-
-- Full local feasible paired no-HPO/HPO artifacts now exist for the six-dataset native suite with no failed fold rows after rerunning the six affected `flchain` neural adapter combinations.
-- No checked-in manuscript report artifact or obvious source generator is present for final paper tables.
-- Benchmark config references are now aligned across README/docs/project state versus `configs/benchmark/`.
-- Current result evidence includes smoke-scale native coverage plus a complete local feasible paired no-HPO/HPO benchmark. It supports exporter/config/runtime assessment and preliminary HPO-vs-default analysis, but still needs manuscript table generation before final claims.
-- Optional foundation variants should stay out of manuscript claims until `smoke.yaml`, `mitra_no_hpo_smoke.yaml`, and `foundation_elo_v1.yaml` produce a complete evidence bundle under their bounded budgets.
-- Runtime/failure summaries no longer treat blank no-HPO `validation_score` as a missing metric; remaining missing-metric signals should reflect benchmark/test metrics.
-- KKBox, AutoGluon, and foundation paths should remain optional/appendix/exploratory until dedicated configs and evidence are completed and promoted.
-
-Targeted experiments needed, in order:
-
-1. Use `results/local_feasible_hpo_v1_all/combined_fold_results_success.csv`, `mode_metric_summary.csv`, and `hpo_vs_no_hpo_delta_summary.csv` to generate preliminary HPO-vs-default figures and tables.
-2. Run the locked `manuscript_v1.yaml` full no-HPO/default-policy benchmark for main-paper evidence if the local feasible HPO run is treated as a sensitivity/budget study.
-3. Run `smoke.yaml` for integrated TabPFN coverage and `mitra_no_hpo_smoke.yaml` for Mitra, then `foundation_elo_v1.yaml`, before making any appendix claim about foundation-model Elo rankings.
-4. Run the retained `tabpfn_survival` horizon adapter across the six standard datasets with matched splits, runtime, ranking metrics, IBS/calibration, and censoring-stress diagnostics before promoting a TabPFN manuscript claim.
-
-Exit criteria:
-
-- Fresh artifact bundle covers all promoted datasets, methods, modes, seeds, and split geometry.
-- Dataset coverage matrix, method coverage matrix, runtime/failure summary, and preprocessing/split audit are generated from the final artifacts.
-- Manuscript report tables are reproducible from `results/summary/...` without manual spreadsheet work.
-- Claims about HPO, calibration, net benefit, AutoGluon, foundation models, or KKBox are either backed by targeted evidence or explicitly scoped as future/appendix/limitations.
+- run the two foundation methods across the six manuscript datasets
+- rebuild `results/manuscript_elo/` with the unified 25-method matrix
+- regenerate README/doc figures from the unified artifact bundle
+- keep code-review-graph updated after cleanup passes
+- avoid reintroducing parallel benchmark YAMLs unless the protocol itself
+  changes enough to justify a new maintained track

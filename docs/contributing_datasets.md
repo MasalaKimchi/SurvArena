@@ -92,12 +92,13 @@ Only include a new dataset in benchmark configs once:
 - runtime cost is understood
 - censoring/time unit semantics are documented
 
-Start by adding it to a smoke config for a single method + seed, then broaden.
+Start by adding it to a focused manuscript-config run for a single method and
+dataset, then broaden.
 Before broadening, run:
 
 ```bash
-survarena benchmark doctor --config configs/benchmark/smoke.yaml --load-datasets
-survarena benchmark run --config configs/benchmark/smoke.yaml --dataset <dataset_id> --method coxph --dry-run
+survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --load-datasets
+survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dataset <dataset_id> --method coxph --dry-run
 ```
 
 ## Minimum Tests

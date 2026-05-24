@@ -15,7 +15,7 @@ from survarena.config import read_yaml
 from survarena.evaluation.statistics import aggregate_rank_summary, elo_ratings, pairwise_win_rate
 
 
-DEFAULT_INPUT = Path("results/cloud/manuscript_dataset_model")
+DEFAULT_INPUT = Path("results/manuscript_dataset_model")
 DEFAULT_OUTPUT = Path("results/manuscript_elo")
 DEFAULT_ASSET = Path("docs/assets/elo_manuscript_no_hpo_uno_c.png")
 METRIC = "uno_c"

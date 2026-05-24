@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
         "--benchmark-config",
         dest="benchmark_config",
         type=str,
-        default="configs/benchmark/standard_v1.yaml",
+        default="configs/benchmark/manuscript_v1.yaml",
         help="Path to benchmark YAML config.",
     )
     parser.add_argument("--dataset", type=str, default=None, help="Optional dataset override.")

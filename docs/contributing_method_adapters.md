@@ -97,8 +97,8 @@ Avoid integration tests that require large datasets or long fits unless absolute
 Useful readiness checks before opening a PR:
 
 ```bash
-survarena benchmark doctor --config configs/benchmark/smoke.yaml --method <method_id> --check-imports
-survarena benchmark run --config configs/benchmark/smoke.yaml --dataset whas500 --method <method_id> --dry-run
+survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --method <method_id> --check-imports
+survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dataset whas500 --method <method_id> --dry-run
 ```
 
 ## Optional Dependencies and Failure Modes

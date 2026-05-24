@@ -21,14 +21,14 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
     catalog = predictor.foundation_model_catalog()
 
     assert "tabpfn_survival" in catalog["method_id"].tolist()
-    assert "mitra_survival" in catalog["method_id"].tolist()
+    assert "mitra_survival_frozen" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
     assert "dependency_installed" in catalog.columns
     assert "runtime_ready" in catalog.columns
     assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
-    assert implemented["mitra_survival"] is True
+    assert implemented["mitra_survival_frozen"] is True
     assert implemented["tabicl_survival"] is False
 
 
@@ -44,30 +44,13 @@ def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
     assert "n_estimators_final_inference" not in method_cfg["default_params"]
 
 
-def test_smoke_config_integrates_bounded_tabpfn_defaults() -> None:
-    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "smoke.yaml")
-    override = benchmark_cfg["hpo"]["method_overrides"]["tabpfn_survival"]
-
-    assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
-    assert benchmark_cfg["hpo"]["enabled"] is False
-    assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "aids", "gbsg2", "flchain", "whas500"}
-    assert "tabpfn_survival" in benchmark_cfg["methods"]
-    assert override["search_space"] is None
-    assert override["default_params"] == {
-        "model_version": "v2.5",
-        "n_estimators": 1,
-        "horizon_quantiles": "0.25-0.5-0.75",
-        "min_known_per_horizon": 20,
-    }
-
-
-def test_foundation_elo_config_uses_single_tabpfn_method() -> None:
-    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "foundation_elo_v1.yaml")
+def test_manuscript_config_includes_foundation_track() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "manuscript_v1.yaml")
     overrides = benchmark_cfg["hpo"]["method_overrides"]
 
     assert benchmark_cfg["primary_metric"] == "uno_c"
     assert benchmark_cfg["comparison_modes"] == ["no_hpo"]
-    assert benchmark_cfg["outer_folds"] == 3
+    assert benchmark_cfg["outer_folds"] == 5
     assert benchmark_cfg["outer_repeats"] == 3
     assert "tabpfn_survival" in benchmark_cfg["methods"]
     assert "tabpfn_survival_classifier" not in benchmark_cfg["methods"]
@@ -76,7 +59,9 @@ def test_foundation_elo_config_uses_single_tabpfn_method() -> None:
     assert "mitra_survival_finetune" not in overrides
     assert overrides["tabpfn_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
     assert overrides["mitra_survival_frozen"]["default_params"]["time_limit"] == 120
-    assert "fine-tuning is intentionally excluded" in benchmark_cfg["notes"]
+    assert benchmark_cfg["profile"] == "manuscript"
+    assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "aids", "gbsg2", "flchain", "whas500"}
+    assert "full backbone fine-tuning remains excluded" in benchmark_cfg["notes"]
 
 
 def test_foundation_runtime_status_reports_install_command_for_missing_dependency(monkeypatch) -> None:

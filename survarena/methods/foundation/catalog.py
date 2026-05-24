@@ -37,14 +37,14 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         requires_hf_auth=True,
     ),
     FoundationModelSpec(
-        method_id="mitra_survival",
+        method_id="mitra_survival_frozen",
         backbone="Mitra",
         provider="AutoGluon",
         task_support=("classification", "regression"),
-        supports_finetune=True,
+        supports_finetune=False,
         supports_pretrained_weights=True,
         status="implemented",
-        notes="Uses AutoGluon Tabular MITRA as a binary event-risk learner with Breslow survival calibration.",
+        notes="Uses frozen AutoGluon Tabular MITRA as a binary event-risk learner with Breslow survival calibration.",
         dependency_module="autogluon.tabular",
         max_rows_hint=5_000,
         max_features_hint=100,
@@ -92,7 +92,7 @@ def foundation_model_catalog() -> tuple[FoundationModelSpec, ...]:
     return _FOUNDATION_MODEL_SPECS
 
 
-_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival", "mitra_survival"})
+_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival", "mitra_survival_frozen"})
 
 
 def available_foundation_model_specs() -> tuple[FoundationModelSpec, ...]:

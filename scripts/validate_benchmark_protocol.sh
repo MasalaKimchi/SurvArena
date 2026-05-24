@@ -2,8 +2,8 @@
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
-BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/smoke.yaml}"
-WORK_DIR="${WORK_DIR:-results/summary/protocol_validation}"
+BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/manuscript_v1.yaml}"
+WORK_DIR="${WORK_DIR:-results/protocol_validation}"
 
 echo "[protocol] Running dry-run config validation"
 "$PYTHON_BIN" -m survarena.run_benchmark \

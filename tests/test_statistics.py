@@ -73,7 +73,7 @@ def test_elo_ratings_treat_foundation_methods_as_methods() -> None:
     frame = pd.DataFrame(
         [
             {
-                "benchmark_id": "foundation_elo_v1",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
@@ -82,7 +82,7 @@ def test_elo_ratings_treat_foundation_methods_as_methods() -> None:
                 "uno_c": 0.72,
             },
             {
-                "benchmark_id": "foundation_elo_v1",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,
@@ -91,7 +91,7 @@ def test_elo_ratings_treat_foundation_methods_as_methods() -> None:
                 "uno_c": 0.70,
             },
             {
-                "benchmark_id": "foundation_elo_v1",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "d1",
                 "split_id": "s1",
                 "seed": 11,

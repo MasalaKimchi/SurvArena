@@ -26,7 +26,6 @@ Useful overrides:
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev,kkbox ./scripts/setup_env.sh`
 
 ## Manual Setup
 
@@ -53,25 +52,10 @@ python -m pip install -e ".[foundation-tabpfn]"
 python -m pip install -e ".[foundation-mitra]"
 ```
 
-Optional KKBox downloader extras:
-
-```bash
-python -m pip install -e ".[kkbox]"
-```
-
 Optional tracking extras:
 
 ```bash
 python -m pip install -e ".[tracking]"
-```
-
-KKBox data still requires Kaggle credentials and competition access. Create a
-Kaggle API token at `~/.kaggle/kaggle.json`, accept the
-`kkbox-churn-prediction-challenge` terms on Kaggle, then run:
-
-```bash
-chmod 600 ~/.kaggle/kaggle.json
-python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
 ```
 
 ## What the Check Covers
@@ -87,8 +71,8 @@ python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
 ```bash
 python -m compileall survarena
 python -m survarena.run_benchmark --dry-run
-survarena benchmark plan --config configs/benchmark/smoke.yaml
-survarena benchmark doctor --config configs/benchmark/smoke.yaml --check-imports
+survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
+survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
 ```
 
 Use `python scripts/check_environment.py --include-foundation` and
@@ -107,7 +91,7 @@ Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.
 
 - splits: `data/splits/<task_id>/`
 - predictor artifacts: `results/predictor/<dataset_name>/`
-- benchmark runs: `results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or `<model_name>_<timestamp>` on collision)
+- benchmark runs: generated result folders or the explicit `--output-dir`
 
 Benchmark experiment folders contain core CSV outputs plus the experiment
 manifest.

@@ -88,11 +88,10 @@ PYTHON_BIN=python3.12 ./scripts/setup_env.sh
 # Use a different virtual environment directory.
 VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 
-# Install optional foundation-model or KKBox extras.
+# Install optional foundation-model extras.
 INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-tabpfn PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-mitra PYTHON_BIN=python3.11 ./scripts/setup_env.sh
-INSTALL_EXTRAS=dev,kkbox PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 ```
 
 ### Manual Setup
@@ -134,8 +133,8 @@ and smoke checks for the `torchsurv` metrics used by SurvArena.
 
 ### Local Reference Machine
 
-The bundled `configs/benchmark/local_feasible_hpo_v1.yaml` profile is calibrated
-for the local MacBook used for the current feasibility run:
+The manuscript config is calibrated for CPU-default execution on the local
+MacBook used for the current evidence bundle:
 
 - MacBook Pro, Mac15,6
 - Apple M3 Pro, 11 CPU cores (5 performance, 6 efficiency)
@@ -166,7 +165,7 @@ python scripts/build_manuscript_elo.py
 
 ![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
 
-### First Smoke Run
+### First Validation Run
 
 After setup, start with commands that check the benchmark wiring before running
 many model fits:
@@ -177,15 +176,14 @@ source .venv/bin/activate
 # Confirm imports and metric backends.
 python scripts/check_environment.py
 
-# Inspect the smoke benchmark plan without fitting models.
+# Inspect the manuscript benchmark plan without fitting models.
 python -m survarena.run_benchmark \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dry-run
 
-# Run the smallest practical built-in benchmark: one dataset, one method,
-# one seed/repeat, and the smoke fold geometry.
+# Run the smallest practical built-in benchmark slice.
 python -m survarena.run_benchmark \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
@@ -195,40 +193,37 @@ The same benchmark workflow is available through the main CLI with explicit
 planning and inspection commands:
 
 ```bash
-# Estimate run units, splits, HPO inner fits, and output layout.
+# Estimate run units, splits, and output layout.
 survarena benchmark plan \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
 
 # Fast readiness check: config shape, dataset/method references, and foundation readiness.
 survarena benchmark doctor \
-  --config configs/benchmark/smoke.yaml
+  --config configs/benchmark/manuscript_v1.yaml
 
 # Deeper preflight before a costly run: import adapters and load datasets.
 survarena benchmark doctor \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --check-imports \
   --load-datasets
 
 # Run through the unified benchmark CLI.
 survarena benchmark run \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
 
 # Summarize fold-result artifacts, top methods, coverage, and failures.
-survarena benchmark report results/summary/whas500/smoke/coxph
+survarena benchmark report results/manuscript_elo
 ```
 
-The one-dataset smoke run writes a timestamped folder under
-`results/summary/<dataset_id>/<benchmark_id>/<YYYYMMDD_HHMMSS>/` with
-model-prefixed artifacts such as `coxph_fold_results.csv`,
-`coxph_leaderboard.csv`, compact run records, and an experiment manifest. Once
-this passes, broaden gradually: add more methods, then more datasets, then move
-from `smoke.yaml` to `standard_v1.yaml` or a derived manuscript config.
+The one-dataset validation run writes model-prefixed artifacts such as
+`coxph_fold_results.csv`,
+`coxph_leaderboard.csv`, compact run records, and an experiment manifest.
 
 ## Quick Start
 
@@ -362,35 +357,6 @@ readers can trace each dataset back to the upstream survival-analysis ecosystem.
 | `flchain` | FLCHAIN | `scikit-survival` | 7,874 | 9 | 27.55% | Serum free light chain dataset with heavier censoring. |
 | `whas500` | WHAS500 | `scikit-survival` | 500 | 14 | 43.00% | Worcester Heart Attack Study 500 benchmark. |
 
-`kkbox` is also present as a large-track dataset config. It is loaded from the
-local pycox KKBox cache, which must first be prepared with Kaggle credentials,
-and remains outside the ready-to-run standard and manuscript benchmark suites.
-
-### KKBox Setup
-
-KKBox is not bundled with SurvArena or pycox. It is derived from Kaggle's
-`kkbox-churn-prediction-challenge` files and must be downloaded into pycox's
-local cache before `load_dataset("kkbox", ...)` can work.
-
-```bash
-# Install optional downloader/extractor dependencies.
-python -m pip install -e ".[kkbox]"
-
-# In Kaggle: create an API token, place it at ~/.kaggle/kaggle.json,
-# accept the KKBox competition terms, then lock down the token file.
-chmod 600 ~/.kaggle/kaggle.json
-
-# Prepare pycox's local KKBox cache.
-python -c "from pycox.datasets import kkbox; kkbox.download_kkbox()"
-
-# Verify SurvArena can load it.
-python -c "from pathlib import Path; from survarena.data.loaders import load_dataset; d = load_dataset('kkbox', Path.cwd()); print(d.X.shape, int(d.event.sum()))"
-```
-
-If the verification command reports that KKBox is not locally available, check
-that the Kaggle token is present, the Kaggle account has accepted the competition
-terms, and the download command completed without errors.
-
 ## Presets and Models
 
 Preset membership and model adapter availability are defined in code and
@@ -405,42 +371,36 @@ readiness checks are documented in
 ### Available Model Adapters
 
 The registered model adapters below are available through `included_models`,
-`--models`, or benchmark YAML `methods`. "Benchmark use" names the maintained
-configs that include each adapter by default; optional foundation adapters
-require their documented extras and readiness checks before long runs.
+`--models`, or benchmark YAML `methods`. The maintained manuscript config is
+the single benchmark-grade portfolio.
 
 | Method ID | Model / adapter | Family | Package source | Benchmark use |
 | --- | --- | --- | --- | --- |
-| `coxph` | Cox proportional hazards | Classical | `scikit-survival` | Standard, smoke, manuscript |
-| `coxnet` | Regularized Cox model | Classical | `scikit-survival` | Standard, smoke, manuscript |
-| `weibull_aft` | Weibull accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
-| `lognormal_aft` | Log-normal accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
-| `loglogistic_aft` | Log-logistic accelerated failure time | Classical | `lifelines` | Smoke, manuscript |
-| `aalen_additive` | Aalen additive hazards | Classical | `lifelines` | Smoke, manuscript |
-| `fast_survival_svm` | Fast survival SVM | Classical | `scikit-survival` | Smoke, manuscript |
-| `rsf` | Random survival forest | Tree ensemble | `scikit-survival` | Standard, smoke, manuscript |
-| `extra_survival_trees` | Extra survival trees | Tree ensemble | `scikit-survival` | Smoke, manuscript |
-| `gradient_boosting_survival` | Gradient boosting survival analysis | Boosting | `scikit-survival` | Smoke, manuscript |
-| `componentwise_gradient_boosting` | Componentwise gradient boosting survival analysis | Boosting | `scikit-survival` | Smoke, manuscript |
-| `xgboost_cox` | XGBoost Cox objective adapter | Boosting | `xgboost` | Smoke, manuscript |
-| `xgboost_aft` | XGBoost AFT objective adapter | Boosting | `xgboost` | Smoke, manuscript |
-| `xgbse_kaplan_neighbors` | XGBSE Kaplan-neighbors survival curves | Boosting | `xgbse` | Optional explicit runs |
-| `catboost_cox` | CatBoost Cox-style calibrated adapter | Boosting | `catboost` | Smoke, manuscript |
-| `catboost_survival_aft` | CatBoost survival AFT adapter | Boosting | `catboost` | Smoke, manuscript |
-| `deepsurv` | DeepSurv neural Cox model | Deep learning | `torchsurv` | Standard, smoke, manuscript |
-| `deepsurv_moco` | DeepSurv momentum-loss variant | Deep learning | `torchsurv` | Smoke, manuscript |
-| `logistic_hazard` | Logistic hazard neural survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `pmf` | PMF neural discrete-time survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `mtlr` | MTLR neural survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `deephit_single` | DeepHit single-risk model | Deep learning | `pycox` | Smoke, manuscript |
-| `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Smoke, manuscript |
-| `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Smoke, manuscript |
-| `mitra_survival` | Mitra Survival Risk Adapter | Foundation | `autogluon.tabular` MITRA | Optional foundation runs |
-| `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Optional foundation runs |
-
-`xgbse_kaplan_neighbors` is registered for explicit experiments, but is not in
-the maintained benchmark configs while the latest `xgbse` package requires an
-older `xgboost` major version than SurvArena currently pins.
+| `coxph` | Cox proportional hazards | Classical | `scikit-survival` | Manuscript |
+| `coxnet` | Regularized Cox model | Classical | `scikit-survival` | Manuscript |
+| `weibull_aft` | Weibull accelerated failure time | Classical | `lifelines` | Manuscript |
+| `lognormal_aft` | Log-normal accelerated failure time | Classical | `lifelines` | Manuscript |
+| `loglogistic_aft` | Log-logistic accelerated failure time | Classical | `lifelines` | Manuscript |
+| `aalen_additive` | Aalen additive hazards | Classical | `lifelines` | Manuscript |
+| `fast_survival_svm` | Fast survival SVM | Classical | `scikit-survival` | Manuscript |
+| `rsf` | Random survival forest | Tree ensemble | `scikit-survival` | Manuscript |
+| `extra_survival_trees` | Extra survival trees | Tree ensemble | `scikit-survival` | Manuscript |
+| `gradient_boosting_survival` | Gradient boosting survival analysis | Boosting | `scikit-survival` | Manuscript |
+| `componentwise_gradient_boosting` | Componentwise gradient boosting survival analysis | Boosting | `scikit-survival` | Manuscript |
+| `xgboost_cox` | XGBoost Cox objective adapter | Boosting | `xgboost` | Manuscript |
+| `xgboost_aft` | XGBoost AFT objective adapter | Boosting | `xgboost` | Manuscript |
+| `catboost_cox` | CatBoost Cox-style calibrated adapter | Boosting | `catboost` | Manuscript |
+| `catboost_survival_aft` | CatBoost survival AFT adapter | Boosting | `catboost` | Manuscript |
+| `deepsurv` | DeepSurv neural Cox model | Deep learning | `torchsurv` | Manuscript |
+| `deepsurv_moco` | DeepSurv momentum-loss variant | Deep learning | `torchsurv` | Manuscript |
+| `logistic_hazard` | Logistic hazard neural survival model | Deep learning | `pycox` | Manuscript |
+| `pmf` | PMF neural discrete-time survival model | Deep learning | `pycox` | Manuscript |
+| `mtlr` | MTLR neural survival model | Deep learning | `pycox` | Manuscript |
+| `deephit_single` | DeepHit single-risk model | Deep learning | `pycox` | Manuscript |
+| `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Manuscript |
+| `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Manuscript |
+| `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Manuscript |
+| `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Manuscript |
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
 metric aggregation, and exported comparison artifacts, see
@@ -483,75 +443,58 @@ benchmark-style evaluation with shared outer and inner splits.
 
 ## Benchmark Runner
 
-For a first benchmark run, use `configs/benchmark/smoke.yaml` with `--dataset`,
-`--method`, and `--limit-seeds 1` as shown in [First Smoke Run](#first-smoke-run).
-The unscoped smoke config is still small relative to standard/manuscript runs,
-but it covers all six standard built-in datasets and every manuscript default
-method.
+For a first benchmark run, use `configs/benchmark/manuscript_v1.yaml` with
+`--dataset`, `--method`, and `--limit-seeds 1` as shown in
+[First Validation Run](#first-validation-run).
 
 Tracked benchmark configs:
 
-- `configs/benchmark/standard_v1.yaml`: standard native portfolio (Cox, RSF,
-  DeepSurv) on the six built-in standard datasets, repeated nested CV
-- `configs/benchmark/manuscript_v1.yaml`: main-paper native manuscript
-  portfolio, repeated nested CV, no-HPO/default-policy only
-- `configs/benchmark/smoke.yaml`: small single-seed no-HPO smoke across all
-  standard built-in datasets and native manuscript methods
-- `configs/benchmark/mitra_no_hpo_smoke.yaml`: bounded no-HPO smoke
-  for the frozen Mitra event-risk adapter, starting on `whas500`
-- `configs/benchmark/foundation_elo_v1.yaml`: unified no-HPO Elo
-  expansion track with budgeted frozen foundation variants and paired
-  conventional baselines
-- `configs/benchmark/local_feasible_hpo_v1.yaml`: MacBook-local native
-  feasibility profile with paired `no_hpo` and bounded `hpo` tracks across the
-  six standard datasets; foundation and AutoGluon adapters are intentionally
-  excluded
+- `configs/benchmark/manuscript_v1.yaml`: main-paper native and foundation
+  manuscript portfolio, repeated nested CV, no-HPO/default-policy only
 
-To evaluate a **single method** (for example one cloud worker per method), use
-`--method` and optionally `--dataset` with `standard_v1.yaml` or
+To evaluate a **single method**, use `--method` and optionally `--dataset` with
 `manuscript_v1.yaml` instead of maintaining one YAML per model.
 
 Example:
 
 ```bash
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/standard_v1.yaml \
+  --benchmark-config configs/benchmark/manuscript_v1.yaml \
   --dataset support \
   --method coxph \
   --limit-seeds 1
 ```
 
-Simple smoke examples:
+Simple validation examples:
 
 ```bash
 # Dry run only: parse config and print resolved datasets/methods/modes.
 python -m survarena.run_benchmark \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dry-run
 
 # Tiny end-to-end run.
 python -m survarena.run_benchmark \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1
 
-# Slightly broader smoke on one dataset and all smoke methods.
+# Slightly broader run on one dataset and all manuscript methods.
 python -m survarena.run_benchmark \
-  --config configs/benchmark/smoke.yaml \
+  --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --limit-seeds 1
 ```
 
-For smoke no-HPO runs, SurvArena fits each method's configured defaults directly
-on each outer-training split. Inner folds are used when HPO is enabled and a
-method has a search space.
+For manuscript no-HPO runs, SurvArena fits each method's configured defaults
+directly on each outer-training split.
 
 Dry-run a benchmark configuration without fitting models:
 
 ```bash
 python -m survarena.run_benchmark \
-  --benchmark-config configs/benchmark/standard_v1.yaml \
+  --benchmark-config configs/benchmark/manuscript_v1.yaml \
   --dry-run
 ```
 
@@ -560,15 +503,14 @@ Resume a partial benchmark run (reusing an output directory):
 ```bash
 python -m survarena.run_benchmark \
   --benchmark-config <same-config-used-for-original-run> \
-  --output-dir results/summary/smoke_wo_HPO_coxph_resume_target \
+  --output-dir results/manuscript_dataset_model/support/coxph \
   --resume \
   --max-retries 2
 ```
 
-The standard protocol uses shared split definitions, training-side
-preprocessing, configured tuning budgets, refit-before-test evaluation, and
-seeded stochastic methods. Benchmark configs use `comparison_modes` to choose
-`no_hpo`, `hpo`, or both result tracks. See
+The manuscript protocol uses shared split definitions, training-side
+preprocessing, configured default policies, refit-before-test evaluation, and
+seeded stochastic methods. See
 [`docs/protocol.md`](docs/protocol.md) for the full benchmark contract and
 [`docs/training_strategy.md`](docs/training_strategy.md) for fold geometry and
 runtime planning.
@@ -578,7 +520,6 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
-- `mitra_survival`
 - `mitra_survival_frozen`
 
 Install and inspect foundation support:
@@ -597,9 +538,8 @@ TabPFN requires access to the gated model on Hugging Face:
 - authenticate with `hf auth login` or set `HF_TOKEN` /
   `HUGGINGFACE_HUB_TOKEN`
 
-Foundation adapters are experimental. Smoke defaults keep pretrained backbones
-frozen and train horizon/event-risk heads; check runtime readiness before
-including them in long benchmark runs.
+Foundation adapters use frozen/bounded policies in the manuscript config; check
+runtime readiness before including them in long benchmark runs.
 
 For user data, the shortest evaluation path is:
 
@@ -607,10 +547,7 @@ For user data, the shortest evaluation path is:
 survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
 ```
 
-Use `configs/benchmark/smoke.yaml` for bounded `tabpfn_survival` budget checks,
-and `configs/benchmark/mitra_no_hpo_smoke.yaml` for bounded Mitra foundation
-checks before running `configs/benchmark/foundation_elo_v1.yaml`.
-The unified Elo track includes frozen/lightweight-head variants only; the Mitra
+The manuscript track includes frozen/lightweight-head variants only; the Mitra
 fine-tuning path is intentionally excluded because CPU-only full-backbone
 updates can blow past the conventional model wall-clock budget.
 AutoGluon's Mitra extra depends on `torch>=2.6`, which the default SurvArena
@@ -633,10 +570,8 @@ The most useful files are:
 - `predictor_manifest.json`: reproducibility metadata
 - `kaplan_meier_comparison.png`: optional plot when requested
 
-Benchmark runs live under
-`results/summary/<dataset_id>/<benchmark_id>/<model_name>/` (or
-`<model_name>_<timestamp>` when a prior run for that model already has CSV
-artifacts). Outputs are always `core_csv` and include model-prefixed filenames
+Benchmark runs can be directed to a chosen output directory with `--output-dir`.
+Outputs are always `core_csv` and include model-prefixed filenames
 such as `<model_name>_fold_results.csv`, `<model_name>_leaderboard.csv`, and
 `<model_name>_run_diagnostics.csv`, plus `experiment_manifest.json`.
 

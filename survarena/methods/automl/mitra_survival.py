@@ -92,7 +92,7 @@ class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
         }
 
 
-class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
+class _MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
     def __init__(self, **params: Any) -> None:
         mitra_params = dict(params.pop("mitra_params", {}) or {})
         mitra_params.setdefault("fine_tune", False)
@@ -111,7 +111,7 @@ class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
         X_val: Any | None = None,
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
-    ) -> "MitraSurvivalMethod":
+    ) -> "_MitraSurvivalMethod":
         try:
             from autogluon.tabular.models.mitra.sklearn_interface import MitraClassifier  # noqa: F401
         except ImportError as exc:
@@ -122,7 +122,7 @@ class MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
         return super().fit(X_train, time_train, event_train, X_val, time_val, event_val)
 
 
-class MitraSurvivalFrozenMethod(MitraSurvivalMethod):
+class MitraSurvivalFrozenMethod(_MitraSurvivalMethod):
     def __init__(self, **params: Any) -> None:
         mitra_params = dict(params.pop("mitra_params", {}) or {})
         mitra_params["fine_tune"] = False

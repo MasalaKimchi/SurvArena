@@ -19,13 +19,9 @@ from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
 
 
-_CANONICAL_PROFILES = ("smoke", "standard", "manuscript", "local_hpo", "cloud_hpo")
+_CANONICAL_PROFILES = ("manuscript",)
 _PROFILE_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
-    "smoke": ("outer_repeats",),
-    "standard": ("outer_folds", "outer_repeats"),
     "manuscript": ("outer_folds", "outer_repeats"),
-    "local_hpo": ("outer_folds", "outer_repeats"),
-    "cloud_hpo": ("outer_folds", "outer_repeats"),
 }
 
 
@@ -103,27 +99,15 @@ def validate_benchmark_profile_contract(benchmark_cfg: dict[str, Any]) -> None:
         )
 
     outer_repeats = _require_int(benchmark_cfg, "outer_repeats")
-    if profile == "smoke" and outer_repeats != 1:
+    outer_folds = _require_int(benchmark_cfg, "outer_folds")
+    if outer_folds < 3:
         raise ValueError(
-            f"Profile '{profile}' requires outer_repeats=1. Received: {outer_repeats}."
+            f"Profile '{profile}' requires outer_folds>=3 for deterministic comparability. "
+            f"Received: {outer_folds}."
         )
-
-    if profile in {"standard", "manuscript", "local_hpo", "cloud_hpo"}:
-        outer_folds = _require_int(benchmark_cfg, "outer_folds")
-        if outer_folds < 3:
-            raise ValueError(
-                f"Profile '{profile}' requires outer_folds>=3 for deterministic comparability. "
-                f"Received: {outer_folds}."
-            )
-    if profile in {"standard", "manuscript", "cloud_hpo"}:
-        if outer_repeats < 3:
-            raise ValueError(
-                f"Profile '{profile}' requires outer_repeats>=3 for deterministic comparability. "
-                f"Received: {outer_repeats}."
-            )
-    if profile == "local_hpo" and outer_repeats < 2:
+    if outer_repeats < 3:
         raise ValueError(
-            f"Profile '{profile}' requires outer_repeats>=2 for local HPO comparability. "
+            f"Profile '{profile}' requires outer_repeats>=3 for deterministic comparability. "
             f"Received: {outer_repeats}."
         )
 
@@ -888,7 +872,7 @@ def run_benchmark(
     else:
         outer_repeats = requested_outer_repeats
 
-    if profile in {"standard", "manuscript"} and (len(seeds) < 3 or int(benchmark_cfg.get("outer_folds", 5)) < 3):
+    if profile == "manuscript" and (len(seeds) < 3 or int(benchmark_cfg.get("outer_folds", 5)) < 3):
         print(
             f"[warning] profile='{profile}' is typically underpowered with seeds={len(seeds)} "
             f"and outer_folds={int(benchmark_cfg.get('outer_folds', 5))}."

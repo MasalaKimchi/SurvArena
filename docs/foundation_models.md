@@ -2,23 +2,19 @@
 
 Living roadmap for optional tabular foundation adapters (not a blocking issue list).
 
-Last reviewed against foundation configs and extras: 2026-05-18.
+Last reviewed against manuscript config and extras: 2026-05-24.
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `mitra_survival`
+- implemented adapters: `tabpfn_survival`, `mitra_survival_frozen`
 - catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
 - predictor access: `presets="foundation"`, `presets="all"`, or
   `enable_foundation_models=True`
-- benchmark access: `configs/benchmark/smoke.yaml` includes bounded
-  no-HPO TabPFN coverage by default, and
-  `configs/benchmark/mitra_no_hpo_smoke.yaml` provides a bounded
-  no-HPO Mitra smoke path; `configs/benchmark/foundation_elo_v1.yaml`
-  is the dry-run-ready unified Elo expansion track over `nwtco`, `gbsg2`,
-  `aids`, `metabric`, `support`, and `whas500`, but keep claims
-  appendix/exploratory until the evidence bundle completes
+- benchmark access: `configs/benchmark/manuscript_v1.yaml` is the
+  manuscript-scope no-HPO benchmark for native plus frozen/bounded foundation
+  adapters
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
 - dependency extras: `foundation-tabpfn`, `foundation-mitra`, or `foundation`
 
@@ -39,7 +35,7 @@ current adapters use a horizon/event-risk contract:
 4. reconstruct or calibrate survival curves from training-side estimates
 5. emit the same `predict_risk` and `predict_survival` outputs as native methods
 
-This keeps smoke runs practical and preserves the shared-split benchmark
+This keeps focused validation runs practical and preserves the shared-split benchmark
 contract.
 
 Adapter-specific details:
@@ -49,14 +45,13 @@ Adapter-specific details:
   with known event status at that horizon, falls back to Kaplan-Meier event
   probabilities when a horizon is under-supported, and reconstructs monotone
   survival curves from cumulative event probabilities.
-- `mitra_survival` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
+- `mitra_survival_frozen` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
   learner with `fine_tune=false` by default, then calibrates survival curves
   with the shared Breslow baseline survival adapter. The default SurvArena
   dependency set pins `torch==2.6.0`, matching the current Mitra compatibility
   path.
-  `mitra_survival_frozen` exposes the bounded frozen-backbone policy as a
-  distinct method ID for Elo tables. Full-backbone fine-tuning is intentionally
-  excluded from the unified Elo track because CPU-only runs can exceed the
+  Full-backbone fine-tuning is intentionally excluded from the manuscript track
+  because CPU-only runs can exceed the
   conventional model wall-clock budget.
 
 Other survival heads can be added behind the same interface: discrete-time
@@ -67,13 +62,8 @@ requested evaluation times.
 
 ## Next Steps
 
-- retained-track benchmark config added: `configs/benchmark/tabpfn_retained_v1.yaml` covers
-  `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500` with matched splits, runtime
-  tracking, ranking metrics, IBS/calibration, and censoring-stress diagnostics inputs before
-  promoting any TabPFN manuscript claim.
 - better preprocessing for datetime, text, and high-cardinality categorical data
 - richer survival heads and fine-tuning controls
-- run and promote the unified Elo evidence bundle once both smoke tracks pass
 - broader backbone coverage once the adapter contract is stable
 
 Foundation models stay optional members of the same `SurvivalPredictor`

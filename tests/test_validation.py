@@ -181,10 +181,10 @@ def test_prepare_validation_fold_cache_applies_method_specific_numeric_scaling()
     assert method_uses_scaled_numeric_features("gradient_boosting_survival") is False
     assert method_uses_scaled_numeric_features("xgboost_cox") is False
     assert method_uses_scaled_numeric_features("xgboost_aft") is False
-    assert method_uses_scaled_numeric_features("mitra_survival") is False
+    assert method_uses_scaled_numeric_features("mitra_survival_frozen") is False
     assert method_uses_scaled_numeric_features("catboost_cox") is False
     assert method_uses_scaled_numeric_features("catboost_survival_aft") is False
-    assert method_uses_native_categorical_features("mitra_survival") is True
+    assert method_uses_native_categorical_features("mitra_survival_frozen") is True
     assert method_uses_native_categorical_features("catboost_cox") is True
     assert method_uses_native_categorical_features("catboost_survival_aft") is True
     np.testing.assert_allclose(rsf_fold["X_train"][:, 0], np.asarray([20.0, 40.0]))

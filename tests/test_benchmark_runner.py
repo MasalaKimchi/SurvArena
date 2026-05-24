@@ -28,33 +28,8 @@ def _base_cfg(profile: str) -> dict[str, object]:
     }
 
 
-def test_profile_contract_smoke_passes() -> None:
-    cfg = _base_cfg("smoke")
-    cfg["outer_repeats"] = 1
-
-    validate_benchmark_profile_contract(cfg)
-
-
-def test_profile_contract_standard_passes() -> None:
-    cfg = _base_cfg("standard")
-
-    validate_benchmark_profile_contract(cfg)
-
-
-def test_profile_contract_hpo_profiles_pass() -> None:
-    validate_benchmark_profile_contract(_base_cfg("cloud_hpo"))
-
-    cfg = _base_cfg("local_hpo")
-    cfg["outer_repeats"] = 2
-    validate_benchmark_profile_contract(cfg)
-
-
-def test_profile_contract_local_hpo_requires_two_repeats() -> None:
-    cfg = _base_cfg("local_hpo")
-    cfg["outer_repeats"] = 1
-
-    with pytest.raises(ValueError, match="outer_repeats>=2"):
-        validate_benchmark_profile_contract(cfg)
+def test_profile_contract_manuscript_passes() -> None:
+    validate_benchmark_profile_contract(_base_cfg("manuscript"))
 
 
 def test_profile_contract_rejects_invalid_profile() -> None:
@@ -74,10 +49,10 @@ def test_profile_contract_rejects_missing_deterministic_keys() -> None:
 
 
 def test_profile_contract_error_messages_are_actionable() -> None:
-    with pytest.raises(ValueError, match="Allowed profiles: smoke, standard, manuscript"):
+    with pytest.raises(ValueError, match="Allowed profiles: manuscript"):
         validate_benchmark_profile_contract(_base_cfg("research"))
 
-    cfg = _base_cfg("smoke")
+    cfg = _base_cfg("manuscript")
     del cfg["split_strategy"]
     del cfg["seeds"]
     with pytest.raises(ValueError, match="seeds, split_strategy"):
@@ -174,13 +149,12 @@ def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
 
 
 def test_profile_contract_configs_use_canonical_tier_intent() -> None:
-    smoke_cfg = read_yaml(Path("configs/benchmark/smoke.yaml"))
-    standard_cfg = read_yaml(Path("configs/benchmark/standard_v1.yaml"))
     manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_v1.yaml"))
 
-    assert smoke_cfg["profile"] == "smoke"
-    assert standard_cfg["profile"] == "standard"
-    assert manuscript_cfg.get("profile", "manuscript") == "manuscript"
+    assert manuscript_cfg["profile"] == "manuscript"
+    assert manuscript_cfg["comparison_modes"] == ["no_hpo"]
+    assert manuscript_cfg["exports"]["manuscript_artifact_layout"] == "compact"
+    assert {"tabpfn_survival", "mitra_survival_frozen"}.issubset(manuscript_cfg["methods"])
 
 
 def test_event_fingerprint_rejects_non_binary_labels() -> None:
@@ -203,13 +177,13 @@ def test_unknown_method_rejected_before_read_yaml(tmp_path, monkeypatch) -> None
     monkeypatch.setattr(runner_mod, "registered_method_ids", lambda: {"coxph", "aft"})
     cfg: dict = {
         "benchmark_id": "t",
-        "profile": "smoke",
+        "profile": "manuscript",
         "datasets": ["d"],
         "methods": ["not_registered_xyz"],
         "split_strategy": "repeated_nested_cv",
-        "seeds": [1],
+        "seeds": [1, 2, 3],
         "outer_folds": 3,
-        "outer_repeats": 1,
+        "outer_repeats": 3,
         "inner_folds": 2,
     }
     with pytest.raises(ValueError, match="Unknown method_id"):
@@ -228,14 +202,14 @@ def test_unknown_method_rejected_before_read_yaml(tmp_path, monkeypatch) -> None
 def _resume_benchmark_cfg(benchmark_id: str = "resume_test") -> dict[str, object]:
     return {
         "benchmark_id": benchmark_id,
-        "profile": "smoke",
+        "profile": "manuscript",
         "datasets": ["toy_dataset"],
         "methods": ["coxph"],
         "split_strategy": "repeated_nested_cv",
-        "outer_folds": 2,
-        "outer_repeats": 1,
+        "outer_folds": 3,
+        "outer_repeats": 3,
         "inner_folds": 2,
-        "seeds": [11],
+        "seeds": [11, 22, 33],
         "primary_metric": "uno_c",
     }
 
@@ -300,7 +274,7 @@ def _resume_record(status: str = "success") -> dict[str, object]:
         ("rsf", "tree fit failed"),
         ("xgboost_cox", "boosting fit failed"),
         ("deepsurv", "deep fit failed"),
-        ("mitra_survival", "foundation AutoGluon fit failed"),
+        ("mitra_survival_frozen", "foundation AutoGluon fit failed"),
         ("tabpfn_survival", "Dependency 'tabpfn' is not installed."),
     ],
 )
@@ -699,26 +673,6 @@ def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: 
     fold_results = pd.read_csv(tmp_path / "multi_model_fold_results.csv")
     assert set(fold_results["method_id"]) == {"coxph", "rsf"}
     assert set(fold_results["status"]) == {"success", "failed"}
-
-
-def test_comparison_modes_can_run_only_hpo(tmp_path: Path, monkeypatch) -> None:
-    calls = {"count": 0}
-    hpo_enabled_values: list[bool] = []
-    _install_common_monkeypatches(monkeypatch, calls)
-
-    def _fake_evaluate_split(**kwargs):
-        calls["count"] += 1
-        hpo_enabled_values.append(bool(kwargs["hpo_cfg"]["enabled"]))
-        return _resume_record(status="success")
-
-    monkeypatch.setattr("survarena.benchmark.runner.evaluate_split", _fake_evaluate_split)
-    cfg = _resume_benchmark_cfg()
-    cfg["comparison_modes"] = ["hpo"]
-
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=cfg, output_dir=tmp_path, resume=False, max_retries=0)
-
-    assert calls["count"] == 1
-    assert hpo_enabled_values == [True]
 
 
 def test_comparison_modes_reject_unknown_mode() -> None:

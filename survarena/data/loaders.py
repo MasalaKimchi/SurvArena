@@ -67,76 +67,16 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
-def _read_nwtco_pycox_raw_frame() -> pd.DataFrame:
-    from pycox.datasets import nwtco
-
-    return nwtco.read_df(processed=False)
-
-
-def _load_nwtco_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    frame = _read_nwtco_pycox_raw_frame()
-    required_columns = {"instit", "histol", "stage", "study", "age", "in.subcohort", "edrel", "rel"}
-    missing_columns = required_columns.difference(frame.columns)
-    if missing_columns:
-        missing = ", ".join(sorted(missing_columns))
-        raise ValueError(f"NWTCO pycox frame is missing required column(s): {missing}")
-
-    frame = frame.copy()
-    frame["instit_2"] = frame["instit"] - 1
-    frame["histol_2"] = frame["histol"] - 1
-    frame["study_4"] = frame["study"] - 3
-    frame["stage"] = frame["stage"].astype("category")
-    drop_columns = ["Unnamed: 0", "rownames", "seqno", "instit", "histol", "study"]
-    frame = frame.drop(columns=[column for column in drop_columns if column in frame.columns])
-    for column in frame.columns.drop("stage"):
-        frame[column] = frame[column].astype("float32")
-
-    event = frame["rel"].to_numpy(dtype=np.int32)
-    time = frame["edrel"].to_numpy(dtype=np.float64)
-    X = frame.drop(columns=["rel", "edrel"])
-    return X, time, event
-
-
-def _read_kkbox_pycox_frame() -> pd.DataFrame | None:
-    from pycox.datasets import kkbox
-
-    return kkbox.read_df(log_trans=True, no_covs=False)
-
-
-def _load_kkbox_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
-    frame = _read_kkbox_pycox_frame()
-    if frame is None:
-        raise FileNotFoundError(
-            "KKBox data is not locally available in the pycox cache. "
-            "Prepare it with pycox.datasets.kkbox.download_kkbox() after configuring Kaggle credentials, "
-            "then rerun SurvArena."
-        )
-
-    required_columns = {"event", "duration"}
-    missing_columns = required_columns.difference(frame.columns)
-    if missing_columns:
-        missing = ", ".join(sorted(missing_columns))
-        raise ValueError(f"KKBox pycox frame is missing required column(s): {missing}")
-
-    event = frame["event"].to_numpy(dtype=np.int32)
-    time = frame["duration"].to_numpy(dtype=np.float64)
-    drop_columns = ["event", "duration", "censor_duration", "msno"]
-    X = frame.drop(columns=[column for column in drop_columns if column in frame.columns])
-    return X, time, event
-
-
 def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     dataset_cfg = _load_dataset_config(repo_root / "configs", dataset_id)
 
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,
         "metabric": _load_metabric_pycox,
-        "nwtco": _load_nwtco_pycox,
         "aids": lambda: _load_from_sksurv("aids"),
         "gbsg2": lambda: _load_from_sksurv("gbsg2"),
         "flchain": lambda: _load_from_sksurv("flchain"),
         "whas500": lambda: _load_from_sksurv("whas500"),
-        "kkbox": _load_kkbox_pycox,
     }
     if dataset_id not in loaders:
         raise ValueError(f"Unknown dataset_id: {dataset_id}")

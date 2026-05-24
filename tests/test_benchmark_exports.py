@@ -9,7 +9,7 @@ def test_coverage_matrix_exports_csv_only(tmp_path) -> None:
     fold_results = pd.DataFrame(
         [
             {
-                "benchmark_id": "smoke",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "whas500__base",
                 "method_id": "coxph",
                 "hpo_mode": "no_hpo",
@@ -22,7 +22,7 @@ def test_coverage_matrix_exports_csv_only(tmp_path) -> None:
                 "robustness_track_id": "base",
             },
             {
-                "benchmark_id": "smoke",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "whas500__base",
                 "method_id": "coxnet",
                 "hpo_mode": "hpo",
@@ -34,7 +34,7 @@ def test_coverage_matrix_exports_csv_only(tmp_path) -> None:
                 "harrell_c": 0.69,
             },
             {
-                "benchmark_id": "smoke",
+                "benchmark_id": "manuscript_v1",
                 "dataset_id": "whas500__base",
                 "method_id": "rsf",
                 "hpo_mode": "no_hpo",
