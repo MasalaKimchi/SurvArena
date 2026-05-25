@@ -56,4 +56,8 @@ def metric_direction(metric: str) -> str:
         return "minimize"
     if metric in MAXIMIZE_METRICS:
         return "maximize"
+    if metric.startswith(("td_auc_", "net_benefit_", "decision_curve_aunb_")):
+        return "maximize"
+    if metric.startswith("brier_"):
+        return "minimize"
     raise ValueError(f"Unknown metric direction for '{metric}'.")

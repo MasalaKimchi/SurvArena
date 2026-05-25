@@ -1,0 +1,86 @@
+benchmark_id: manuscript_genomics_v1
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 5
+outer_repeats: 3
+inner_folds: 3
+seeds: [11, 22, 33, 44, 55]
+primary_metric: uno_c
+profile: manuscript
+comparison_modes: [no_hpo]
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+  - brier
+  - calibration
+  - net_benefit
+autogluon:
+  enabled: true
+  presets: null
+  time_limit_seconds: 120
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+hpo:
+  enabled: false
+  max_trials: 0
+  timeout_seconds: 120
+  sampler: random
+  pruner: none
+  n_startup_trials: 0
+  method_overrides:
+    tabpfn_survival:
+      enabled: false
+      search_space: null
+      default_params:
+        n_estimators: 1
+        horizon_quantiles: "0.25-0.5-0.75"
+        min_known_per_horizon: 20
+    mitra_survival_frozen:
+      enabled: false
+      search_space: null
+      default_params:
+        time_limit: 120
+        mitra_params:
+          fine_tune: false
+          ag.max_memory_usage_ratio: 1.3
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+exports:
+  profile: core_csv
+  manuscript_artifact_layout: compact
+datasets:
+  - tcga_luad_xena
+  - tcga_kirc_xena
+methods:
+  - coxph
+  - coxnet
+  - weibull_aft
+  - lognormal_aft
+  - loglogistic_aft
+  - aalen_additive
+  - fast_survival_svm
+  - rsf
+  - extra_survival_trees
+  - gradient_boosting_survival
+  - componentwise_gradient_boosting
+  - xgboost_cox
+  - xgboost_aft
+  - catboost_cox
+  - catboost_survival_aft
+  - deepsurv
+  - deepsurv_moco
+  - logistic_hazard
+  - pmf
+  - mtlr
+  - deephit_single
+  - pchazard
+  - cox_time
+  - tabpfn_survival
+  - mitra_survival_frozen
+notes: >
+  Genomics manuscript no-HPO benchmark across the same model families,
+  split protocol, seeds, and bounded foundation-model settings as
+  manuscript_v1. Duplicate cohort variants such as METABRIC cBioPortal are
+  intentionally excluded.

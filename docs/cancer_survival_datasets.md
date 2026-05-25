@@ -7,7 +7,7 @@ large-track candidates. They are intentionally local-only because the raw omics
 matrices are larger than the built-in toy/standard datasets and should not be
 committed to the repository.
 
-## Why These Three
+## Why These Datasets
 
 Recent multi-omics survival benchmarking work uses TCGA, ICGC, TARGET, and
 METABRIC as the core cancer-program sources. SurvBoard, for example, reports 28
@@ -16,9 +16,9 @@ largest and most commonly used multi-omics cancer survival resource.
 
 UCSC Xena is the most practical first download path for TCGA because it exposes
 pre-compiled clinical, survival, and RNA-seq matrices as tab-delimited files
-that can be read directly from Python. cBioPortal is the most practical first
-path for METABRIC because it exposes standardized clinical attributes and
-molecular profiles through the public API/DataHub.
+that can be read directly from Python. METABRIC cBioPortal was evaluated as a
+candidate but removed from the runnable suite because the manuscript benchmark
+already includes METABRIC through the standard `metabric` dataset.
 
 ## Top Candidates
 
@@ -26,11 +26,10 @@ molecular profiles through the public API/DataHub.
 | --- | --- | --- | --- | --- |
 | `tcga_luad_xena` | UCSC Xena GDC hub | Popular TCGA lung cancer survival cohort with direct RNA-seq and OS labels. | Top-variance STAR-count genes from `TCGA-LUAD.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_luad_xena.parquet` |
 | `tcga_kirc_xena` | UCSC Xena GDC hub | Popular TCGA kidney cancer survival cohort with strong event signal and direct RNA-seq labels. | Top-variance STAR-count genes from `TCGA-KIRC.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_kirc_xena.parquet` |
-| `metabric_cbioportal` | cBioPortal METABRIC | Large breast cancer benchmark frequently used in survival-model papers; long follow-up and expression data. | Curated breast-cancer expression gene panel via cBioPortal API. | `data/processed/cancer_survival/metabric_cbioportal.parquet` |
 
 ## Download And Prepare
 
-Prepare all three optional datasets:
+Prepare both genomics datasets:
 
 ```bash
 python scripts/prepare_cancer_survival_datasets.py --dataset all --max-genes 1000
@@ -41,7 +40,6 @@ Prepare only one dataset:
 ```bash
 python scripts/prepare_cancer_survival_datasets.py --dataset tcga_luad_xena --max-genes 1000
 python scripts/prepare_cancer_survival_datasets.py --dataset tcga_kirc_xena --max-genes 1000
-python scripts/prepare_cancer_survival_datasets.py --dataset metabric_cbioportal
 ```
 
 The script writes raw downloads under `data/raw/cancer_survival/` and prepared
@@ -77,14 +75,18 @@ first complete run records wall-clock time and memory use. The TCGA expression
 matrices are high-dimensional, so start with `--max-genes 500` or `1000` before
 trying full matrices.
 
+Use `configs/benchmark/manuscript_genomics_v1.yaml` for the isolated genomics
+track. It mirrors the manuscript no-HPO protocol and model list while targeting
+only `tcga_luad_xena` and `tcga_kirc_xena`.
+
 ## Notes On Full-Scale Variants
 
 - TCGA can be expanded beyond LUAD/KIRC by adding another `TCGA-<COHORT>` entry
   to `XENA_COHORTS` in `scripts/prepare_cancer_survival_datasets.py`.
 - METABRIC full microarray expression is available through cBioPortal DataHub,
-  but the expression matrix is stored through git-lfs and is much larger than
-  the API gene-panel path. Use the curated panel for initial benchmark plumbing,
-  then switch to full expression once runtime/storage contracts are settled.
+  but it duplicates the existing manuscript `metabric` cohort. Keep it out of
+  the genomics track unless a future experiment explicitly compares cohort
+  variants.
 - CPTAC is attractive for proteomics, and cBioPortal exposes several CPTAC
   studies with mass-spectrometry protein profiles. However, older proteomics
   studies may not include clean OS fields in cBioPortal, while newer GDC CPTAC

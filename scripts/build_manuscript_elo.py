@@ -12,13 +12,13 @@ from matplotlib.patches import Patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from survarena.config import read_yaml
-from survarena.evaluation.statistics import aggregate_rank_summary, elo_ratings, pairwise_win_rate
+from survarena.evaluation.statistics import aggregate_rank_summary, elo_ratings, metric_direction, pairwise_win_rate
 
 
 DEFAULT_INPUT = Path("results/manuscript_dataset_model")
 DEFAULT_OUTPUT = Path("results/manuscript_elo")
-DEFAULT_ASSET = Path("docs/assets/elo_manuscript_no_hpo_uno_c.png")
-METRIC = "uno_c"
+DEFAULT_ASSET_DIR = Path("docs/assets")
+DEFAULT_METRIC = "uno_c"
 
 DISPLAY_NAMES = {
     "aalen_additive": "Aalen Additive",
@@ -57,12 +57,36 @@ FAMILY_COLORS = {
 }
 
 
+METRIC_LABELS = {
+    "uno_c": "Uno C",
+    "harrell_c": "Harrell C",
+    "ibs": "Integrated Brier Score",
+    "td_auc_25": "Time-dependent AUC (25%)",
+    "td_auc_50": "Time-dependent AUC (50%)",
+    "td_auc_75": "Time-dependent AUC (75%)",
+    "brier_25": "Brier Score (25%)",
+    "brier_50": "Brier Score (50%)",
+    "brier_75": "Brier Score (75%)",
+    "calibration_slope_50": "Calibration Slope (50%)",
+    "calibration_intercept_50": "Calibration Intercept (50%)",
+    "net_benefit_50": "Net Benefit (50%)",
+}
+
+
 def _base_id(value: Any) -> str:
     return str(value).split("__", 1)[0]
 
 
 def _display_name(method_id: str) -> str:
     return DISPLAY_NAMES.get(method_id, method_id.replace("_", " ").title())
+
+
+def _metric_label(metric: str) -> str:
+    return METRIC_LABELS.get(metric, metric.replace("_", " ").title())
+
+
+def _metric_stem(metric: str) -> str:
+    return "".join(ch if ch.isalnum() or ch in {"-", "_"} else "_" for ch in metric).strip("_")
 
 
 def _load_method_metadata(repo_root: Path, method_ids: list[str]) -> pd.DataFrame:
@@ -81,18 +105,34 @@ def _load_method_metadata(repo_root: Path, method_ids: list[str]) -> pd.DataFram
     return pd.DataFrame(rows)
 
 
-def _load_fold_results(input_dir: Path) -> pd.DataFrame:
+def _available_metrics(frame: pd.DataFrame) -> list[str]:
+    metrics: list[str] = []
+    for column in frame.columns:
+        try:
+            metric_direction(str(column))
+        except ValueError:
+            continue
+        if pd.to_numeric(frame[column], errors="coerce").notna().any():
+            metrics.append(str(column))
+    return metrics
+
+
+def _load_raw_fold_results(input_dir: Path) -> pd.DataFrame:
     paths = sorted(input_dir.glob("*/*/*_fold_results.csv"))
     if not paths:
         raise ValueError(f"No fold result CSVs found under {input_dir}.")
+    return pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False)
 
-    frame = pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False)
-    required = {"benchmark_id", "dataset_id", "method_id", "split_id", "seed", "hpo_mode", "status", METRIC}
+
+def _load_fold_results(input_dir: Path, *, metric: str) -> pd.DataFrame:
+    frame = _load_raw_fold_results(input_dir)
+    required = {"benchmark_id", "dataset_id", "method_id", "split_id", "seed", "hpo_mode", "status", metric}
     missing = required.difference(frame.columns)
     if missing:
         raise ValueError(f"Fold results are missing required columns: {sorted(missing)}")
+    metric_direction(metric)
 
-    successful = frame[frame["status"].eq("success") & frame[METRIC].notna()].copy()
+    successful = frame[frame["status"].eq("success") & frame[metric].notna()].copy()
     successful["dataset_id"] = successful["dataset_id"].map(_base_id)
     successful["split_id"] = successful["split_id"].map(_base_id)
     successful["benchmark_id"] = "manuscript_v1"
@@ -100,24 +140,24 @@ def _load_fold_results(input_dir: Path) -> pd.DataFrame:
     return successful
 
 
-def _validate_coverage(frame: pd.DataFrame) -> pd.DataFrame:
+def _validate_coverage(frame: pd.DataFrame, *, metric: str, strict: bool) -> pd.DataFrame:
     coverage = (
         frame.groupby(["dataset_id", "method_id"], as_index=False)
         .agg(
             rows=("split_id", "size"),
             splits=("split_id", "nunique"),
             seeds=("seed", "nunique"),
-            mean_uno_c=(METRIC, "mean"),
+            mean_score=(metric, "mean"),
         )
         .sort_values(["dataset_id", "method_id"])
     )
     bad = coverage[(coverage["rows"] != 15) | (coverage["splits"] != 15)]
-    if not bad.empty:
+    if strict and not bad.empty:
         raise ValueError("Manuscript fold coverage is incomplete:\n" + bad.to_string(index=False))
     return coverage
 
 
-def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None) -> dict[str, Path]:
+def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None, *, metric: str) -> dict[str, Path]:
     plot_frame = elo.sort_values("elo_rating", ascending=True).copy()
     plot_frame["display_name"] = plot_frame["display_name"].fillna(plot_frame["method_id"].map(_display_name))
     plot_frame["family"] = plot_frame["family"].fillna("unknown")
@@ -141,8 +181,9 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None) ->
     ax.axvline(1500, color="#111827", linestyle="--", linewidth=1.1)
     ax.set_yticks(list(y))
     ax.set_yticklabels(plot_frame["display_name"], fontsize=9)
-    ax.set_xlabel("Elo rating from paired Uno C win rate")
-    ax.set_title("Manuscript Benchmark Elo (No-HPO, Uno C)", fontsize=14, fontweight="bold")
+    metric_label = _metric_label(metric)
+    ax.set_xlabel(f"Elo rating from paired {metric_label} win rate")
+    ax.set_title(f"Manuscript Benchmark Elo (No-HPO, {metric_label})", fontsize=14, fontweight="bold")
     ax.grid(axis="x", color="#e5e7eb", linewidth=0.8)
     ax.set_axisbelow(True)
 
@@ -151,8 +192,9 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None) ->
     ax.legend(handles=handles, ncol=min(4, len(handles)), loc="lower right", frameon=True)
 
     fig.tight_layout()
-    png = output_dir / "elo_manuscript_no_hpo_uno_c.png"
-    pdf = output_dir / "elo_manuscript_no_hpo_uno_c.pdf"
+    stem = _metric_stem(metric)
+    png = output_dir / f"elo_manuscript_no_hpo_{stem}.png"
+    pdf = output_dir / f"elo_manuscript_no_hpo_{stem}.pdf"
     fig.savefig(png, dpi=200, bbox_inches="tight")
     fig.savefig(pdf, bbox_inches="tight")
     if asset_path is not None:
@@ -165,45 +207,60 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None) ->
     return outputs
 
 
-def build_outputs(*, repo_root: Path, input_dir: Path, output_dir: Path, asset_path: Path | None) -> dict[str, Path]:
+def build_outputs(
+    *,
+    repo_root: Path,
+    input_dir: Path,
+    output_dir: Path,
+    asset_path: Path | None,
+    metric: str = DEFAULT_METRIC,
+    n_bootstrap: int = 1000,
+    strict_coverage: bool = False,
+) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    fold_results = _load_fold_results(input_dir)
-    coverage = _validate_coverage(fold_results)
+    fold_results = _load_fold_results(input_dir, metric=metric)
+    coverage = _validate_coverage(fold_results, metric=metric, strict=strict_coverage)
+    stem = _metric_stem(metric)
 
-    combined_path = output_dir / "manuscript_fold_results_success.csv"
+    combined_path = output_dir / f"manuscript_fold_results_success_{stem}.csv"
     fold_results.to_csv(combined_path, index=False)
 
     method_ids = sorted(fold_results["method_id"].dropna().astype(str).unique())
     metadata = _load_method_metadata(repo_root, method_ids)
 
-    elo = elo_ratings(fold_results, metric=METRIC, n_bootstrap=1000, seed=33).merge(metadata, on="method_id", how="left")
-    elo_path = output_dir / "elo_ratings_uno_c.csv"
+    elo = elo_ratings(fold_results, metric=metric, n_bootstrap=n_bootstrap, seed=33).merge(
+        metadata,
+        on="method_id",
+        how="left",
+    )
+    elo_path = output_dir / f"elo_ratings_{stem}.csv"
     elo.to_csv(elo_path, index=False)
 
-    wins = pairwise_win_rate(fold_results, metric=METRIC)
-    wins_path = output_dir / "pairwise_win_rate_uno_c.csv"
+    wins = pairwise_win_rate(fold_results, metric=metric)
+    wins_path = output_dir / f"pairwise_win_rate_{stem}.csv"
     wins.to_csv(wins_path, index=False)
 
-    ranks = aggregate_rank_summary(fold_results, metric=METRIC)
-    ranks_path = output_dir / "rank_summary_uno_c.csv"
+    ranks = aggregate_rank_summary(fold_results, metric=metric)
+    ranks_path = output_dir / f"rank_summary_{stem}.csv"
     ranks.to_csv(ranks_path, index=False)
 
-    coverage_path = output_dir / "coverage_summary.csv"
+    coverage_path = output_dir / f"coverage_summary_{stem}.csv"
     coverage.to_csv(coverage_path, index=False)
 
     summary = (
         fold_results.groupby(["benchmark_id", "hpo_mode", "method_id"], as_index=False)
         .agg(
             successful_folds=("status", "size"),
-            mean_uno_c=(METRIC, "mean"),
-            median_uno_c=(METRIC, "median"),
+            mean_score=(metric, "mean"),
+            median_score=(metric, "median"),
             mean_runtime_sec=("runtime_sec", "mean"),
             total_runtime_sec=("runtime_sec", "sum"),
         )
         .merge(metadata, on="method_id", how="left")
-        .sort_values("mean_uno_c", ascending=False)
+        .sort_values("mean_score", ascending=metric_direction(metric) == "minimize")
     )
-    summary_path = output_dir / "method_summary.csv"
+    summary["metric"] = metric
+    summary_path = output_dir / f"method_summary_{stem}.csv"
     summary.to_csv(summary_path, index=False)
 
     outputs = {
@@ -214,7 +271,7 @@ def build_outputs(*, repo_root: Path, input_dir: Path, output_dir: Path, asset_p
         "coverage": coverage_path,
         "summary": summary_path,
     }
-    outputs.update(_write_plot(elo, output_dir, asset_path))
+    outputs.update(_write_plot(elo, output_dir, asset_path, metric=metric))
     return outputs
 
 
@@ -222,7 +279,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build manuscript no-HPO Elo outputs from matrix fold results.")
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--asset-path", type=Path, default=DEFAULT_ASSET)
+    parser.add_argument("--metric", default=DEFAULT_METRIC)
+    parser.add_argument("--bootstrap", type=int, default=1000, help="Number of bootstrap draws for Elo confidence intervals.")
+    parser.add_argument("--asset-path", type=Path, default=None)
+    parser.add_argument("--no-asset", action="store_true", help="Do not copy the PNG into docs/assets.")
+    parser.add_argument("--strict-coverage", action="store_true", help="Fail if any dataset/method pair is incomplete.")
+    parser.add_argument("--list-metrics", action="store_true", help="List comparable metrics found in fold results and exit.")
     return parser.parse_args()
 
 
@@ -231,8 +293,26 @@ def main() -> None:
     repo_root = Path(__file__).resolve().parents[1]
     input_dir = args.input_dir if args.input_dir.is_absolute() else repo_root / args.input_dir
     output_dir = args.output_dir if args.output_dir.is_absolute() else repo_root / args.output_dir
-    asset_path = args.asset_path if args.asset_path.is_absolute() else repo_root / args.asset_path
-    outputs = build_outputs(repo_root=repo_root, input_dir=input_dir, output_dir=output_dir, asset_path=asset_path)
+    if args.list_metrics:
+        metrics = _available_metrics(_load_raw_fold_results(input_dir))
+        for metric in metrics:
+            print(f"{metric}\t{metric_direction(metric)}\t{_metric_label(metric)}")
+        return
+    if args.no_asset:
+        asset_path = None
+    elif args.asset_path is None:
+        asset_path = repo_root / DEFAULT_ASSET_DIR / f"elo_manuscript_no_hpo_{_metric_stem(args.metric)}.png"
+    else:
+        asset_path = args.asset_path if args.asset_path.is_absolute() else repo_root / args.asset_path
+    outputs = build_outputs(
+        repo_root=repo_root,
+        input_dir=input_dir,
+        output_dir=output_dir,
+        asset_path=asset_path,
+        metric=args.metric,
+        n_bootstrap=args.bootstrap,
+        strict_coverage=args.strict_coverage,
+    )
     for name, path in outputs.items():
         print(f"{name}={path}")
 

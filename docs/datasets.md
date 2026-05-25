@@ -46,10 +46,13 @@ local downloads and should not be committed to git:
 
 - `tcga_luad_xena`
 - `tcga_kirc_xena`
-- `metabric_cbioportal`
 
 See `docs/cancer_survival_datasets.md` for selection rationale, download
 commands, and integration notes.
+
+The isolated genomics manuscript track is defined in
+`configs/benchmark/manuscript_genomics_v1.yaml` and intentionally excludes
+duplicate cohort variants such as METABRIC cBioPortal.
 
 ## Notes
 
