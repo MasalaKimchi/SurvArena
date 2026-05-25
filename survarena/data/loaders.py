@@ -9,6 +9,7 @@ import yaml
 
 from survarena.data.profiling import build_dataset_diagnostics, infer_feature_metadata, summarize_feature_types
 from survarena.data.schema import DatasetMetadata, SurvivalDataset
+from survarena.data.user_dataset import load_user_dataset
 
 
 def _load_dataset_config(configs_dir: Path, dataset_id: str) -> dict:
@@ -67,6 +68,37 @@ def _load_metabric_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     return X, time, event
 
 
+def _load_local_file(dataset_cfg: dict, repo_root: Path) -> SurvivalDataset:
+    local_path = dataset_cfg.get("local_path")
+    if not local_path:
+        raise ValueError(f"Dataset '{dataset_cfg['dataset_id']}' is configured as local_file but has no local_path.")
+
+    path = repo_root / local_path
+    if not path.exists():
+        raise FileNotFoundError(
+            f"Prepared dataset file not found for '{dataset_cfg['dataset_id']}': {path}. "
+            "Run the documented preparation command for this local dataset first."
+        )
+
+    dataset = load_user_dataset(
+        path,
+        time_col=dataset_cfg.get("time_col", "time"),
+        event_col=dataset_cfg.get("event_col", "event"),
+        dataset_id=dataset_cfg["dataset_id"],
+        dataset_name=dataset_cfg.get("name"),
+        id_col=dataset_cfg.get("id_col"),
+        drop_columns=dataset_cfg.get("drop_columns", []),
+    )
+    dataset.metadata.source = dataset_cfg.get("source", "local_file")
+    dataset.metadata.task_type = dataset_cfg.get("task_type", dataset.metadata.task_type)
+    dataset.metadata.group_col = dataset_cfg.get("group_col")
+    dataset.metadata.split_strategy = dataset_cfg.get("split_strategy", dataset.metadata.split_strategy)
+    dataset.metadata.primary_metric = dataset_cfg.get("primary_metric", dataset.metadata.primary_metric)
+    dataset.metadata.notes = dataset_cfg.get("notes", dataset.metadata.notes)
+    dataset.metadata.raw = {**dataset_cfg, "diagnostics": dataset.metadata.diagnostics.to_dict()}
+    return dataset
+
+
 def _load_nwtco_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
     from pycox.datasets import nwtco
 
@@ -90,6 +122,8 @@ def _load_nwtco_pycox() -> tuple[pd.DataFrame, np.ndarray, np.ndarray]:
 
 def load_dataset(dataset_id: str, repo_root: Path) -> SurvivalDataset:
     dataset_cfg = _load_dataset_config(repo_root / "configs", dataset_id)
+    if dataset_cfg.get("source") == "local_file" or dataset_cfg.get("local_path"):
+        return _load_local_file(dataset_cfg, repo_root)
 
     loaders: dict[str, Callable[[], tuple[pd.DataFrame, np.ndarray, np.ndarray]]] = {
         "support": _load_support_pycox,

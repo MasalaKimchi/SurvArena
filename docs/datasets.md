@@ -39,6 +39,18 @@ leaderboard metrics in the CLI summary. Use `--id-col patient_id` or
 The seven `Standard` datasets are the default and retained manuscript suite for
 `configs/benchmark/manuscript_v1.yaml`.
 
+## Optional Cancer Survival Candidates
+
+Large biomedical omics datasets are documented separately because they require
+local downloads and should not be committed to git:
+
+- `tcga_luad_xena`
+- `tcga_kirc_xena`
+- `metabric_cbioportal`
+
+See `docs/cancer_survival_datasets.md` for selection rationale, download
+commands, and integration notes.
+
 ## Notes
 
 - counts reflect the current built-in loaders

@@ -1,0 +1,18 @@
+dataset_id: tcga_kirc_xena
+name: TCGA-KIRC RNA-seq survival (UCSC Xena)
+task_type: right_censored_survival
+source: local_file
+source_url: https://xena.ucsc.edu/
+local_path: data/processed/cancer_survival/tcga_kirc_xena.parquet
+citation: TCGA Kidney Renal Clear Cell Carcinoma; UCSC Xena GDC hub
+event_col: event
+time_col: time
+id_col: sample_id
+group_col: null
+feature_types:
+  - numerical
+primary_metric: uno_c
+split_strategy: stratified_event
+recommended_split_strategy: repeated_nested_cv
+recommended_primary_metric: uno_c
+notes: Optional biomedical benchmark candidate. Prepared from UCSC Xena TCGA-KIRC survival labels and STAR-count RNA-seq matrix; default prep keeps top-variance genes.
