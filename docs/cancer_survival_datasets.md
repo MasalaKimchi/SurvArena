@@ -1,6 +1,6 @@
 # Cancer Survival Dataset Candidates
 
-Last reviewed: 2026-05-24.
+Last reviewed: 2026-05-26.
 
 This note records the first biomedical survival datasets to add as optional
 large-track candidates. They are intentionally local-only because the raw omics
@@ -16,20 +16,32 @@ largest and most commonly used multi-omics cancer survival resource.
 
 UCSC Xena is the most practical first download path for TCGA because it exposes
 pre-compiled clinical, survival, and RNA-seq matrices as tab-delimited files
-that can be read directly from Python. METABRIC cBioPortal was evaluated as a
-candidate but removed from the runnable suite because the manuscript benchmark
-already includes METABRIC through the standard `metabric` dataset.
+that can be read directly from Python. The five runnable TCGA cohorts were
+chosen from SurvBoard's TCGA roster using these importance criteria:
+
+- common use in cancer survival benchmark papers and SurvBoard coverage
+- sufficient survival rows and events for repeated benchmark splits
+- direct public RNA-seq and OS-label availability through UCSC Xena
+- cancer-type diversity across breast, lung, kidney, melanoma, and ovarian
+  disease contexts
+
+METABRIC cBioPortal was evaluated as a candidate but removed from the runnable
+suite because the manuscript benchmark already includes METABRIC through the
+standard `metabric` dataset.
 
 ## Top Candidates
 
 | Dataset id | Source | Why it belongs | Default prepared features | Local artifact |
 | --- | --- | --- | --- | --- |
+| `tcga_brca_xena` | UCSC Xena GDC hub | Largest and most recognizable TCGA cancer cohort; central in SurvBoard and broad survival-model literature. | Top-variance STAR-count genes from `TCGA-BRCA.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_brca_xena.parquet` |
 | `tcga_luad_xena` | UCSC Xena GDC hub | Popular TCGA lung cancer survival cohort with direct RNA-seq and OS labels. | Top-variance STAR-count genes from `TCGA-LUAD.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_luad_xena.parquet` |
 | `tcga_kirc_xena` | UCSC Xena GDC hub | Popular TCGA kidney cancer survival cohort with strong event signal and direct RNA-seq labels. | Top-variance STAR-count genes from `TCGA-KIRC.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_kirc_xena.parquet` |
+| `tcga_skcm_xena` | UCSC Xena GDC hub | Melanoma cohort with comparatively high event rate and strong biological relevance for survival modeling. | Top-variance STAR-count genes from `TCGA-SKCM.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_skcm_xena.parquet` |
+| `tcga_ov_xena` | UCSC Xena GDC hub | Ovarian cancer cohort with many observed events, useful for discrimination and calibration stress-testing. | Top-variance STAR-count genes from `TCGA-OV.star_counts.tsv.gz`. | `data/processed/cancer_survival/tcga_ov_xena.parquet` |
 
 ## Download And Prepare
 
-Prepare both genomics datasets:
+Prepare all five genomics datasets:
 
 ```bash
 python scripts/prepare_cancer_survival_datasets.py --dataset all --max-genes 1000
@@ -38,8 +50,11 @@ python scripts/prepare_cancer_survival_datasets.py --dataset all --max-genes 100
 Prepare only one dataset:
 
 ```bash
+python scripts/prepare_cancer_survival_datasets.py --dataset tcga_brca_xena --max-genes 1000
 python scripts/prepare_cancer_survival_datasets.py --dataset tcga_luad_xena --max-genes 1000
 python scripts/prepare_cancer_survival_datasets.py --dataset tcga_kirc_xena --max-genes 1000
+python scripts/prepare_cancer_survival_datasets.py --dataset tcga_skcm_xena --max-genes 1000
+python scripts/prepare_cancer_survival_datasets.py --dataset tcga_ov_xena --max-genes 1000
 ```
 
 The script writes raw downloads under `data/raw/cancer_survival/` and prepared
@@ -77,12 +92,13 @@ trying full matrices.
 
 Use `configs/benchmark/manuscript_genomics_v1.yaml` for the isolated genomics
 track. It mirrors the manuscript no-HPO protocol and model list while targeting
-only `tcga_luad_xena` and `tcga_kirc_xena`.
+the five SurvBoard-aligned TCGA cohorts.
 
 ## Notes On Full-Scale Variants
 
-- TCGA can be expanded beyond LUAD/KIRC by adding another `TCGA-<COHORT>` entry
-  to `XENA_COHORTS` in `scripts/prepare_cancer_survival_datasets.py`.
+- TCGA can be expanded beyond the top-five track by adding another
+  `TCGA-<COHORT>` entry to `XENA_COHORTS` in
+  `scripts/prepare_cancer_survival_datasets.py`.
 - METABRIC full microarray expression is available through cBioPortal DataHub,
   but it duplicates the existing manuscript `metabric` cohort. Keep it out of
   the genomics track unless a future experiment explicitly compares cohort
@@ -101,4 +117,6 @@ only `tcga_luad_xena` and `tcga_kirc_xena`.
 - cBioPortal downloads/API/DataHub docs: https://docs.cbioportal.org/downloads/
 - cBioPortal METABRIC study: https://www.cbioportal.org/study/summary?id=brca_metabric
 - SurvBoard benchmark: https://survboard.science/
+- SurvBoard source config: https://github.com/BoevaLab/survboard/blob/main/config/config.json
+- SurvBoard Zenodo data record: https://zenodo.org/records/16616663
 - CPTAC data portal: https://proteomics.cancer.gov/data-portal

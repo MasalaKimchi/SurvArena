@@ -5,9 +5,9 @@ status: complete
 # Cancer Survival Dataset Expansion
 
 Completed local-file dataset integration, preparation script, configs, and docs
-for `tcga_luad_xena` and `tcga_kirc_xena`. `metabric_cbioportal` was removed
-from the runnable candidate set because it duplicates the existing manuscript
-`metabric` cohort.
+for `tcga_brca_xena`, `tcga_luad_xena`, `tcga_kirc_xena`, `tcga_skcm_xena`, and
+`tcga_ov_xena`. `metabric_cbioportal` was removed from the runnable candidate
+set because it duplicates the existing manuscript `metabric` cohort.
 
 Verification:
 

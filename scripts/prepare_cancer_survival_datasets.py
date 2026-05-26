@@ -8,6 +8,10 @@ import pandas as pd
 
 
 XENA_COHORTS = {
+    "tcga_brca_xena": {
+        "prefix": "TCGA-BRCA",
+        "name": "TCGA Breast Invasive Carcinoma",
+    },
     "tcga_luad_xena": {
         "prefix": "TCGA-LUAD",
         "name": "TCGA Lung Adenocarcinoma",
@@ -15,6 +19,14 @@ XENA_COHORTS = {
     "tcga_kirc_xena": {
         "prefix": "TCGA-KIRC",
         "name": "TCGA Kidney Renal Clear Cell Carcinoma",
+    },
+    "tcga_skcm_xena": {
+        "prefix": "TCGA-SKCM",
+        "name": "TCGA Skin Cutaneous Melanoma",
+    },
+    "tcga_ov_xena": {
+        "prefix": "TCGA-OV",
+        "name": "TCGA Ovarian Serous Cystadenocarcinoma",
     },
 }
 
@@ -68,7 +80,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Prepare optional cancer survival datasets for SurvArena.")
     parser.add_argument(
         "--dataset",
-        choices=["all", "tcga_luad_xena", "tcga_kirc_xena"],
+        choices=["all", *XENA_COHORTS],
         default="all",
     )
     parser.add_argument("--raw-dir", type=Path, default=Path("data/raw/cancer_survival"))

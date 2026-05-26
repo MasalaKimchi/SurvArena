@@ -51,8 +51,11 @@ exports:
   profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
+  - tcga_brca_xena
   - tcga_luad_xena
   - tcga_kirc_xena
+  - tcga_skcm_xena
+  - tcga_ov_xena
 methods:
   - coxph
   - coxnet
@@ -82,5 +85,7 @@ methods:
 notes: >
   Genomics manuscript no-HPO benchmark across the same model families,
   split protocol, seeds, and bounded foundation-model settings as
-  manuscript_v1. Duplicate cohort variants such as METABRIC cBioPortal are
-  intentionally excluded.
+  manuscript_v1. The dataset track contains five SurvBoard-aligned TCGA
+  cohorts selected for benchmark prevalence, public Xena availability, event
+  coverage, and cancer-type diversity. Duplicate cohort variants such as
+  METABRIC cBioPortal are intentionally excluded.

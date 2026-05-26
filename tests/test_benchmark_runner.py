@@ -151,6 +151,7 @@ def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
 def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_v1.yaml"))
     hpo_cfg = read_yaml(Path("configs/benchmark/manuscript_hpo_v1.yaml"))
+    genomics_cfg = read_yaml(Path("configs/benchmark/manuscript_genomics_v1.yaml"))
 
     assert manuscript_cfg["profile"] == "manuscript"
     assert manuscript_cfg["comparison_modes"] == ["no_hpo"]
@@ -161,6 +162,17 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     assert hpo_cfg["hpo"]["enabled"] is True
     assert hpo_cfg["datasets"] == manuscript_cfg["datasets"]
     assert hpo_cfg["methods"] == manuscript_cfg["methods"]
+    assert genomics_cfg["profile"] == manuscript_cfg["profile"]
+    assert genomics_cfg["comparison_modes"] == manuscript_cfg["comparison_modes"]
+    assert genomics_cfg["hpo"] == manuscript_cfg["hpo"]
+    assert genomics_cfg["methods"] == manuscript_cfg["methods"]
+    assert genomics_cfg["datasets"] == [
+        "tcga_brca_xena",
+        "tcga_luad_xena",
+        "tcga_kirc_xena",
+        "tcga_skcm_xena",
+        "tcga_ov_xena",
+    ]
 
 
 def test_event_fingerprint_rejects_non_binary_labels() -> None:
