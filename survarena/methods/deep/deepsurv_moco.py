@@ -104,6 +104,23 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
             raise RuntimeError("DeepSurvMomentumMethod must be fit before prediction.")
         return self.model.target if bool(self.params["use_momentum_encoder"]) else self.model.online
 
+    def _momentum_loss_step(self, X_batch: torch.Tensor, event_batch: torch.Tensor, time_batch: torch.Tensor) -> torch.Tensor:
+        if self.model is None:
+            raise RuntimeError("DeepSurvMomentumMethod must be fit before training.")
+        online_estimate = self.model.online(X_batch)
+        for estimate in zip(online_estimate, event_batch, time_batch):
+            self.model.memory_q.append(self.model.survtuple(*estimate))
+        return self.model._bank_loss()  # noqa: SLF001
+
+    @torch.no_grad()
+    def _update_momentum_memory(self, X_batch: torch.Tensor, event_batch: torch.Tensor, time_batch: torch.Tensor) -> None:
+        if self.model is None:
+            raise RuntimeError("DeepSurvMomentumMethod must be fit before training.")
+        self.model._update_momentum_encoder()  # noqa: SLF001
+        target_estimate = self.model.target(X_batch)
+        for estimate in zip(target_estimate, event_batch, time_batch):
+            self.model.memory_k.append(self.model.survtuple(*estimate))
+
     @staticmethod
     def _iter_minibatches(n_rows: int, batch_size: int, *, seed: int) -> list[torch.Tensor]:
         generator = torch.Generator(device="cpu")
@@ -198,11 +215,16 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
                 batch_idx = batch_idx.to(self.device)
                 optimizer.zero_grad(set_to_none=True)
                 self.model.memory_q.clear()
-                train_loss = self.model(X_train_t[batch_idx], e_train_t[batch_idx], t_train_t[batch_idx])
+                X_batch = X_train_t[batch_idx]
+                e_batch = e_train_t[batch_idx]
+                t_batch = t_train_t[batch_idx]
+                train_loss = self._momentum_loss_step(X_batch, e_batch, t_batch)
                 train_loss.backward()
                 optimizer.step()
                 if not use_momentum:
                     self.model.target.load_state_dict(self.model.online.state_dict())
+                else:
+                    self._update_momentum_memory(X_batch, e_batch, t_batch)
                 train_losses.append(float(train_loss.detach().cpu().item()))
 
             with torch.no_grad():

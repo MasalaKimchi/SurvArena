@@ -325,6 +325,26 @@ def _toy_moco_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.
     )
 
 
+def _strong_moco_survival_arrays() -> tuple[np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+    rng = np.random.default_rng(123)
+    X = rng.normal(size=(160, 6))
+    linear = 2.0 * X[:, 0] - 1.5 * X[:, 1] + 0.8 * X[:, 2]
+    time = np.exp(2.0 - linear + 0.05 * rng.normal(size=160))
+    event = (rng.random(160) < 0.85).astype(np.int32)
+    indices = np.arange(160)
+    rng.shuffle(indices)
+    train_idx = indices[:120]
+    test_idx = indices[120:]
+    return (
+        X[train_idx].astype(np.float64),
+        np.maximum(time[train_idx], 0.05).astype(np.float64),
+        event[train_idx].astype(np.int32),
+        X[test_idx].astype(np.float64),
+        np.maximum(time[test_idx], 0.05).astype(np.float64),
+        event[test_idx].astype(np.int32),
+    )
+
+
 def test_deepsurv_moco_fit_predict_works_without_momentum_encoder() -> None:
     X_train, time_train, event_train, X_test, time_test, event_test = _toy_moco_survival_arrays()
     method = get_method_class("deepsurv_moco")(
@@ -364,6 +384,28 @@ def test_deepsurv_moco_uses_torchsurv_momentum_memory_bank() -> None:
 
     assert method.model is not None
     assert len(method.model.memory_k) > 0
+
+
+def test_deepsurv_moco_default_target_learns_toy_signal() -> None:
+    from sksurv.metrics import concordance_index_censored
+
+    X_train, time_train, event_train, X_test, time_test, event_test = _strong_moco_survival_arrays()
+    method = get_method_class("deepsurv_moco")(
+        hidden_layers="16-8",
+        batch_size=32,
+        max_epochs=40,
+        patience=10,
+        queue_size=128,
+        momentum=0.5,
+        seed=0,
+    )
+
+    method.fit(X_train, time_train, event_train, X_test, time_test, event_test)
+    risk = method.predict_risk(X_test)
+
+    assert method.model is not None
+    assert method._inference_model() is method.model.target
+    assert concordance_index_censored(event_test.astype(bool), time_test, risk)[0] >= 0.8
 
 
 def test_deepsurv_moco_requires_observed_events() -> None:
