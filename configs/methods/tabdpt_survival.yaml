@@ -1,0 +1,35 @@
+method_id: tabdpt_survival
+family: foundation
+library: autogluon.tabular
+display_name: TabDPT Event-Risk Survival
+notes: >
+  Censored-aware direct TabDPT horizon classifier adapter. It trains one
+  frozen TabDPT classifier per survival horizon using only rows with known
+  event status at that horizon and reconstructs monotone survival curves from
+  cumulative event probabilities.
+search_space:
+  context_size:
+    type: categorical
+    choices: [256, 512, 1024]
+  horizon_quantiles:
+    type: categorical
+    choices: ["0.25-0.5-0.75", "0.2-0.4-0.6-0.8"]
+  min_known_per_horizon:
+    type: categorical
+    choices: [20, 40]
+  aggregate_risk:
+    type: categorical
+    choices: [mean_event_probability, last_event_probability]
+default_params:
+  inf_batch_size: 16
+  context_size: 512
+  temperature: 0.8
+  normalizer: standard
+  feature_reduction: pca
+  compile: false
+  horizon_quantiles: "0.25-0.5-0.75"
+  min_known_per_horizon: 20
+  aggregate_risk: mean_event_probability
+  device: null
+  seed: 0
+  predict_batch_size: 32

@@ -1,0 +1,20 @@
+method_id: realtabpfn_survival
+family: foundation
+library: autogluon.tabular
+display_name: RealTabPFN-V2 Event-Risk Survival
+notes: >
+  AutoGluon REALTABPFN-V2 event-risk adapter. It trains the AutoGluon
+  RealTabPFN-V2 model as a binary event classifier and calibrates survival
+  curves with a training-side Breslow baseline.
+search_space:
+  time_limit:
+    type: categorical
+    choices: [60, 120, 300]
+default_params:
+  presets: null
+  time_limit: 120
+  realtabpfn_v2_params: {}
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+  verbosity: 0

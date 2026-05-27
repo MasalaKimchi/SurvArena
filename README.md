@@ -401,7 +401,11 @@ the single benchmark-grade portfolio.
 | `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Manuscript |
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Manuscript |
 | `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Manuscript |
-| `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Manuscript |
+| `tabicl_survival` | TabICL horizon survival adapter | Foundation | `tabicl` | Manuscript |
+| `tabm_survival` | TabM event-risk survival adapter | Foundation | `autogluon.tabular` TABM | Manuscript |
+| `tabdpt_survival` | TabDPT horizon survival adapter | Foundation | `tabdpt` | Manuscript |
+| `realtabpfn_survival` | RealTabPFN-V2 event-risk survival adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript |
+| `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Available, excluded from manuscript no-HPO |
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
 metric aggregation, and exported comparison artifacts, see
@@ -523,6 +527,10 @@ runtime planning.
 Currently wired foundation adapters:
 
 - `tabpfn_survival`
+- `tabicl_survival`
+- `tabm_survival`
+- `tabdpt_survival`
+- `realtabpfn_survival`
 - `mitra_survival_frozen`
 
 Install and inspect foundation support:

@@ -194,14 +194,12 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None, *,
     fig.tight_layout()
     stem = _metric_stem(metric)
     png = output_dir / f"elo_manuscript_no_hpo_{stem}.png"
-    pdf = output_dir / f"elo_manuscript_no_hpo_{stem}.pdf"
     fig.savefig(png, dpi=200, bbox_inches="tight")
-    fig.savefig(pdf, bbox_inches="tight")
     if asset_path is not None:
         asset_path.parent.mkdir(parents=True, exist_ok=True)
         fig.savefig(asset_path, dpi=200, bbox_inches="tight")
     plt.close(fig)
-    outputs = {"figure_png": png, "figure_pdf": pdf}
+    outputs = {"figure_png": png}
     if asset_path is not None:
         outputs["readme_asset"] = asset_path
     return outputs

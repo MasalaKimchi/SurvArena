@@ -10,10 +10,16 @@ from survarena.automl.autogluon_backend import (
     predict_event_probability,
 )
 from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
 from survarena.methods.survival_utils import fit_breslow_baseline_survival, predict_breslow_survival
 
 
 class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
+    foundation_method_id = ""
+    foundation_backbone = "AutoGluon"
+    foundation_hyperparameter_key = "AG"
+    foundation_training = "default"
+
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
         self.predictor_: Any | None = None
@@ -31,28 +37,33 @@ class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
         event_val: np.ndarray | None = None,
     ) -> "_AutoGluonEventRiskSurvivalBase":
         params = dict(self.params)
-        self.predictor_, self.fit_metadata_ = fit_autogluon_event_predictor(
-            X_train=X_train,
-            event_train=event_train,
-            X_val=X_val,
-            event_val=event_val,
-            presets=params.get("presets", "medium"),
-            time_limit=params.get("time_limit"),
-            hyperparameters=params.get("hyperparameters"),
-            hyperparameter_tune_kwargs=params.get("hyperparameter_tune_kwargs"),
-            num_bag_folds=int(params.get("num_bag_folds", 0)),
-            num_stack_levels=int(params.get("num_stack_levels", 0)),
-            refit_full=params.get("refit_full", False),
-            path=params.get("path"),
-            verbosity=int(params.get("verbosity", 0)),
-        )
-        train_risk = self.predict_risk(X_train)
-        self.baseline_event_times_, self.baseline_survival_ = fit_breslow_baseline_survival(
-            time_train=np.asarray(time_train, dtype=float),
-            event_train=np.asarray(event_train, dtype=int),
-            train_risk_scores=train_risk,
-        )
-        return self
+        method_id = self.foundation_method_id or self.__class__.__name__
+        try:
+            ensure_foundation_runtime_ready(method_id)
+            self.predictor_, self.fit_metadata_ = fit_autogluon_event_predictor(
+                X_train=X_train,
+                event_train=event_train,
+                X_val=X_val,
+                event_val=event_val,
+                presets=params.get("presets", "medium"),
+                time_limit=params.get("time_limit"),
+                hyperparameters=params.get("hyperparameters"),
+                hyperparameter_tune_kwargs=params.get("hyperparameter_tune_kwargs"),
+                num_bag_folds=int(params.get("num_bag_folds", 0)),
+                num_stack_levels=int(params.get("num_stack_levels", 0)),
+                refit_full=params.get("refit_full", False),
+                path=params.get("path"),
+                verbosity=int(params.get("verbosity", 0)),
+            )
+            train_risk = self.predict_risk(X_train)
+            self.baseline_event_times_, self.baseline_survival_ = fit_breslow_baseline_survival(
+                time_train=np.asarray(time_train, dtype=float),
+                event_train=np.asarray(event_train, dtype=int),
+                train_risk_scores=train_risk,
+            )
+            return self
+        except Exception as exc:
+            raise rewrite_foundation_runtime_error(method_id, exc) from exc
 
     def predict_risk(self, X: Any) -> np.ndarray:
         if self.predictor_ is None:
@@ -82,17 +93,22 @@ class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
 
     def foundation_metadata(self) -> dict[str, Any]:
         hyperparameters = dict(self.params.get("hyperparameters", {}) or {})
-        mitra_params = dict(hyperparameters.get("MITRA", {}) or {})
+        backbone_params = dict(hyperparameters.get(self.foundation_hyperparameter_key, {}) or {})
         return {
-            "foundation_backbone": "Mitra",
+            "foundation_backbone": self.foundation_backbone,
             "foundation_backbone_task": "classification_event",
-            "foundation_backbone_training": "finetune" if bool(mitra_params.get("fine_tune", False)) else "frozen",
+            "foundation_backbone_training": self.foundation_training,
             "foundation_time_limit_sec": self.params.get("time_limit"),
-            "foundation_mitra_fine_tune": bool(mitra_params.get("fine_tune", False)),
+            "foundation_autogluon_hyperparameter_key": self.foundation_hyperparameter_key,
+            "foundation_autogluon_backbone_params": backbone_params,
         }
 
 
 class _MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
+    foundation_method_id = "mitra_survival_frozen"
+    foundation_backbone = "Mitra"
+    foundation_hyperparameter_key = "MITRA"
+
     def __init__(self, **params: Any) -> None:
         mitra_params = dict(params.pop("mitra_params", {}) or {})
         mitra_params.setdefault("fine_tune", False)
@@ -123,7 +139,56 @@ class _MitraSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
 
 
 class MitraSurvivalFrozenMethod(_MitraSurvivalMethod):
+    foundation_training = "frozen"
+
     def __init__(self, **params: Any) -> None:
         mitra_params = dict(params.pop("mitra_params", {}) or {})
         mitra_params["fine_tune"] = False
         super().__init__(**params, mitra_params=mitra_params)
+
+    def foundation_metadata(self) -> dict[str, Any]:
+        metadata = super().foundation_metadata()
+        hyperparameters = dict(self.params.get("hyperparameters", {}) or {})
+        mitra_params = dict(hyperparameters.get("MITRA", {}) or {})
+        metadata["foundation_mitra_fine_tune"] = bool(mitra_params.get("fine_tune", False))
+        return metadata
+
+
+class _AutoGluonFoundationSurvivalMethod(_AutoGluonEventRiskSurvivalBase):
+    def __init__(self, **params: Any) -> None:
+        backbone_params_key = f"{self.foundation_hyperparameter_key.lower().replace('-', '_')}_params"
+        backbone_params = dict(params.pop(backbone_params_key, {}) or {})
+        resolved = {
+            **params,
+            "presets": params.pop("presets", None),
+            "hyperparameters": {self.foundation_hyperparameter_key: backbone_params},
+        }
+        super().__init__(**resolved)
+
+
+class TabICLSurvivalMethod(_AutoGluonFoundationSurvivalMethod):
+    foundation_method_id = "tabicl_survival"
+    foundation_backbone = "TabICL"
+    foundation_hyperparameter_key = "TABICL"
+    foundation_training = "in_context"
+
+
+class TabMSurvivalMethod(_AutoGluonFoundationSurvivalMethod):
+    foundation_method_id = "tabm_survival"
+    foundation_backbone = "TabM"
+    foundation_hyperparameter_key = "TABM"
+    foundation_training = "fit"
+
+
+class TabDPTSurvivalMethod(_AutoGluonFoundationSurvivalMethod):
+    foundation_method_id = "tabdpt_survival"
+    foundation_backbone = "TabDPT"
+    foundation_hyperparameter_key = "TABDPT"
+    foundation_training = "in_context"
+
+
+class RealTabPFNV2SurvivalMethod(_AutoGluonFoundationSurvivalMethod):
+    foundation_method_id = "realtabpfn_survival"
+    foundation_backbone = "RealTabPFN-V2"
+    foundation_hyperparameter_key = "REALTABPFN-V2"
+    foundation_training = "in_context"

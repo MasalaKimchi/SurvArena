@@ -1,4 +1,4 @@
-benchmark_id: manuscript_genomics_v1
+benchmark_id: manuscript_genomics_autogluon_foundation_v1
 task_type: right_censored_survival
 split_strategy: repeated_nested_cv
 outer_folds: 5
@@ -31,13 +31,6 @@ hpo:
   pruner: none
   n_startup_trials: 0
   method_overrides:
-    tabpfn_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
     tabicl_survival:
       enabled: false
       search_space: null
@@ -73,38 +66,12 @@ datasets:
   - tcga_skcm_xena
   - tcga_ov_xena
 methods:
-  - coxph
-  - coxnet
-  - weibull_aft
-  - lognormal_aft
-  - loglogistic_aft
-  - aalen_additive
-  - fast_survival_svm
-  - rsf
-  - extra_survival_trees
-  - gradient_boosting_survival
-  - componentwise_gradient_boosting
-  - xgboost_cox
-  - xgboost_aft
-  - catboost_cox
-  - catboost_survival_aft
-  - deepsurv
-  - deepsurv_moco
-  - logistic_hazard
-  - pmf
-  - mtlr
-  - deephit_single
-  - pchazard
-  - cox_time
-  - tabpfn_survival
   - tabicl_survival
   - tabm_survival
   - tabdpt_survival
   - realtabpfn_survival
 notes: >
-  Genomics manuscript no-HPO benchmark across the same model families,
-  split protocol, seeds, and bounded foundation-model settings as
-  manuscript_v1. The dataset track contains five SurvBoard-aligned TCGA
-  cohorts selected for benchmark prevalence, public Xena availability, event
-  coverage, and cancer-type diversity. Duplicate cohort variants such as
-  METABRIC cBioPortal are intentionally excluded.
+  Manuscript-grade no-HPO genomics benchmark for newly wired tabular foundation
+  survival adapters. TabICL and TabDPT use direct horizon classifiers; remaining
+  AutoGluon-backed adapters stay bounded. Mitra is excluded because local RAM/CPU
+  use can exceed the conventional model wall-clock budget.

@@ -56,9 +56,25 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         task_support=("classification", "regression"),
         supports_finetune=True,
         supports_pretrained_weights=True,
-        status="catalog_only",
-        notes="Candidate future backbone; not yet wired into a survival adapter.",
+        status="implemented",
+        notes="Censored-aware direct TabICL horizon classification adapter with monotone survival reconstruction.",
+        dependency_module="tabicl",
+        install_extra="foundation-tabarena",
         max_rows_hint=30_000,
+        max_features_hint=2_000,
+    ),
+    FoundationModelSpec(
+        method_id="tabm_survival",
+        backbone="TabM",
+        provider="AutoGluon",
+        task_support=("classification", "regression"),
+        supports_finetune=True,
+        supports_pretrained_weights=False,
+        status="implemented",
+        notes="Uses AutoGluon TABM as a binary event-risk learner with Breslow survival calibration.",
+        dependency_module="autogluon.tabular",
+        install_extra="foundation-tabarena",
+        max_rows_hint=100_000,
         max_features_hint=2_000,
     ),
     FoundationModelSpec(
@@ -68,8 +84,10 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         task_support=("classification", "regression"),
         supports_finetune=False,
         supports_pretrained_weights=True,
-        status="catalog_only",
-        notes="Candidate future backbone; not yet wired into a survival adapter.",
+        status="implemented",
+        notes="Censored-aware direct TabDPT horizon classification adapter with monotone survival reconstruction.",
+        dependency_module="tabdpt",
+        install_extra="foundation-tabarena",
         max_rows_hint=30_000,
         max_features_hint=2_000,
     ),
@@ -80,8 +98,10 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         task_support=("classification", "regression"),
         supports_finetune=False,
         supports_pretrained_weights=True,
-        status="catalog_only",
-        notes="Candidate future backbone; not yet wired into a survival adapter.",
+        status="implemented",
+        notes="Uses AutoGluon REALTABPFN-V2 as a binary event-risk learner with Breslow survival calibration.",
+        dependency_module="tabpfn",
+        install_extra="foundation-tabarena",
         max_rows_hint=50_000,
         max_features_hint=2_000,
     ),
@@ -92,7 +112,16 @@ def foundation_model_catalog() -> tuple[FoundationModelSpec, ...]:
     return _FOUNDATION_MODEL_SPECS
 
 
-_WIRED_FOUNDATION_METHOD_IDS = frozenset({"tabpfn_survival", "mitra_survival_frozen"})
+_WIRED_FOUNDATION_METHOD_IDS = frozenset(
+    {
+        "tabpfn_survival",
+        "mitra_survival_frozen",
+        "tabicl_survival",
+        "tabm_survival",
+        "tabdpt_survival",
+        "realtabpfn_survival",
+    }
+)
 
 
 def available_foundation_model_specs() -> tuple[FoundationModelSpec, ...]:

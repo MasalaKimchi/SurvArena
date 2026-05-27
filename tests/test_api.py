@@ -1,14 +1,853 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-import importlib
-import numpy as np
+import sys
 import pandas as pd
+from survarena import cli
+from survarena.benchmark import overview
+from survarena.methods.foundation.readiness import FoundationRuntimeStatus
+from pathlib import Path
+import numpy as np
+from survarena.api.compare import compare_survival_models
+from survarena.data.splitters import SplitDefinition
+import json
+import math
 import pytest
-
-from survarena.api.predictor import SurvivalPredictor
+from survarena.api.predictor import PredictorModelResult, SurvivalPredictor
 from survarena.automl.presets import PresetConfig
+from survarena.evaluation.metrics import MetricBundle
+import importlib
+
+
+# --- test_cli.py ---
+
+
+def test_fit_cli_passes_models_and_retention_flags(monkeypatch, capsys) -> None:
+    class FakePredictor:
+        init_kwargs: dict[str, object] | None = None
+        fit_kwargs: dict[str, object] | None = None
+
+        def __init__(self, **kwargs) -> None:
+            FakePredictor.init_kwargs = kwargs
+
+        def fit(self, train_data, **kwargs) -> "FakePredictor":  # noqa: ANN001
+            FakePredictor.fit_kwargs = {"train_data": train_data, **kwargs}
+            return self
+
+        def fit_summary(self) -> dict[str, object]:
+            return {"best_method_id": "rsf", "trained_models": ["rsf"]}
+
+    monkeypatch.setattr(cli, "SurvivalPredictor", FakePredictor)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "fit",
+            "--train",
+            "train.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--models",
+            "coxph,rsf",
+            "--exclude-models",
+            "coxph",
+            "--retain-top-k-models",
+            "2",
+            "--autogluon-num-trials",
+            "4",
+            "--tuning-timeout",
+            "30",
+            "--dataset-name",
+            "toy",
+        ],
+    )
+
+    cli.main()
+
+    assert FakePredictor.init_kwargs is not None
+    assert FakePredictor.init_kwargs["included_models"] == ["coxph", "rsf"]
+    assert FakePredictor.init_kwargs["excluded_models"] == ["coxph"]
+    assert FakePredictor.init_kwargs["retain_top_k_models"] == 2
+    assert FakePredictor.fit_kwargs is not None
+    assert FakePredictor.fit_kwargs["train_data"] == "train.csv"
+    assert FakePredictor.fit_kwargs["dataset_name"] == "toy"
+    assert FakePredictor.fit_kwargs["hyperparameter_tune_kwargs"] == {"num_trials": 4, "timeout": 30.0}
+    assert '"best_method_id": "rsf"' in capsys.readouterr().out
+
+
+def test_compare_cli_invokes_user_compare_workflow(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {"benchmark_id": "user_compare_fixed", "methods": kwargs["models"], "output_dir": "tmp/results"}
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "compare",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--models",
+            "coxph,rsf",
+            "--split-strategy",
+            "fixed_split",
+            "--seeds",
+            "11",
+            "--save-path",
+            "tmp/results",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["data"] == "toy.csv"
+    assert captured["time_col"] == "time"
+    assert captured["event_col"] == "event"
+    assert captured["models"] == ["coxph", "rsf"]
+    assert captured["split_strategy"] == "fixed_split"
+    assert captured["seeds"] == [11]
+    assert captured["output_dir"] == "tmp/results"
+    assert '"benchmark_id": "user_compare_fixed"' in capsys.readouterr().out
+
+
+def test_pilot_cli_invokes_compare_with_fixed_pilot_defaults(monkeypatch, capsys) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {
+            "benchmark_id": kwargs["benchmark_id"],
+            "leaderboard": [{"method_id": "coxph", "uno_c": 0.71, "harrell_c": 0.7}],
+            "artifacts": {"leaderboard": "tmp/pilot/coxph_leaderboard.csv"},
+        }
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["data"] == "toy.csv"
+    assert captured["split_strategy"] == "fixed_split"
+    assert captured["outer_repeats"] == 1
+    assert captured["inner_folds"] == 2
+    assert captured["seeds"] == [11]
+    assert captured["presets"] == "fast"
+    assert captured["benchmark_id"] == "user_pilot_fixed"
+    assert captured["hpo"] == {
+        "enabled": True,
+        "max_trials": 1,
+        "timeout_seconds": None,
+        "sampler": "tpe",
+        "pruner": "median",
+        "n_startup_trials": 8,
+    }
+    output = capsys.readouterr().out
+    assert '"benchmark_id": "user_pilot_fixed"' in output
+    assert '"uno_c": 0.71' in output
+    assert "coxph_leaderboard.csv" in output
+
+
+def test_pilot_cli_repeated_uses_small_cv_defaults(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {"benchmark_id": kwargs["benchmark_id"]}
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--repeated",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["split_strategy"] == "repeated_nested_cv"
+    assert captured["outer_folds"] == 3
+    assert captured["outer_repeats"] == 2
+    assert captured["seeds"] == [11, 23]
+    assert captured["benchmark_id"] == "user_pilot_cv"
+
+
+def test_pilot_cli_foundation_flag_includes_foundation_models(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_compare_survival_models(data, **kwargs):  # noqa: ANN001
+        captured["data"] = data
+        captured.update(kwargs)
+        return {"benchmark_id": kwargs["benchmark_id"]}
+
+    monkeypatch.setattr(cli, "compare_survival_models", fake_compare_survival_models)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "pilot",
+            "--data",
+            "toy.csv",
+            "--time-col",
+            "time",
+            "--event-col",
+            "event",
+            "--foundation",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["presets"] == "fast"
+    assert captured["enable_foundation_models"] is True
+
+
+def test_foundation_check_cli_emits_runtime_status(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        cli,
+        "foundation_runtime_catalog",
+        lambda: [
+            FoundationRuntimeStatus(
+                method_id="tabpfn_survival",
+                dependency_module="tabpfn",
+                install_extra="foundation-tabpfn",
+                dependency_installed=True,
+                runtime_ready=True,
+                requires_hf_auth=True,
+                auth_configured=False,
+                install_command='python -m pip install -e ".[foundation-tabpfn]"',
+                blocked_reason=None,
+                warning_reason="Run `hf auth login` first.",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "foundation-check",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"method_id": "tabpfn_survival"' in output
+    assert '"warning_reason": "Run `hf auth login` first."' in output
+
+
+def test_benchmark_plan_cli_emits_run_unit_counts(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "plan",
+            "--config",
+            "configs/benchmark/manuscript_v1.yaml",
+            "--datasets",
+            "whas500,gbsg2",
+            "--methods",
+            "coxph,rsf",
+            "--limit-seeds",
+            "1",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"benchmark_id": "manuscript_v1"' in output
+    assert '"whas500"' in output
+    assert '"gbsg2"' in output
+    assert '"coxph"' in output
+    assert '"rsf"' in output
+    assert '"planned_run_units"' in output
+
+
+def test_benchmark_doctor_cli_reports_missing_dataset(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "doctor",
+            "--benchmark-config",
+            "configs/benchmark/manuscript_v1.yaml",
+            "--dataset",
+            "not_a_dataset",
+            "--method",
+            "coxph",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"status": "error"' in output
+    assert "Missing dataset config" in output
+
+
+def test_benchmark_doctor_cli_supports_deeper_checks(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(overview, "get_method_class", lambda method_id: object())
+    monkeypatch.setattr(
+        overview,
+        "_dataset_summary",
+        lambda repo_root, dataset_id: {
+            "dataset_id": dataset_id,
+            "n_rows": 10,
+            "n_features": 3,
+            "n_events": 4,
+            "event_rate": 0.4,
+            "censoring_rate": 0.6,
+        },
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "doctor",
+            "--config",
+            "configs/benchmark/manuscript_v1.yaml",
+            "--dataset",
+            "whas500",
+            "--method",
+            "coxph",
+            "--check-imports",
+            "--load-datasets",
+        ],
+    )
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"method_imports": true' in output
+    assert '"dataset_load": true' in output
+    assert '"dataset_summaries"' in output
+    assert '"dataset_id": "whas500"' in output
+
+
+def test_benchmark_run_cli_delegates_to_runner(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run_benchmark(**kwargs) -> None:
+        captured.update(kwargs)
+
+    monkeypatch.setattr(cli, "run_benchmark", fake_run_benchmark)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "survarena",
+            "benchmark",
+            "run",
+            "--config",
+            "configs/benchmark/manuscript_v1.yaml",
+            "--datasets",
+            "whas500,gbsg2",
+            "--methods",
+            "coxph,rsf",
+            "--limit-seeds",
+            "1",
+            "--output-dir",
+            "tmp/benchmark",
+            "--resume",
+            "--max-retries",
+            "2",
+            "--dry-run",
+        ],
+    )
+
+    cli.main()
+
+    assert captured["benchmark_cfg"]["datasets"] == ["whas500", "gbsg2"]
+    assert captured["benchmark_cfg"]["methods"] == ["coxph", "rsf"]
+    assert captured["dataset_override"] is None
+    assert captured["method_override"] is None
+    assert captured["limit_seeds"] == 1
+    assert captured["resume"] is True
+    assert captured["max_retries"] == 2
+    assert captured["dry_run"] is True
+    assert str(captured["output_dir"]).endswith("tmp/benchmark")
+
+
+def test_benchmark_report_cli_summarizes_fold_results(monkeypatch, tmp_path, capsys) -> None:
+    pd.DataFrame(
+        [
+            {
+                "dataset_id": "toy",
+                "method_id": "coxph",
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.7,
+                "runtime_sec": 1.5,
+            },
+            {
+                "dataset_id": "toy",
+                "method_id": "rsf",
+                "hpo_mode": "no_hpo",
+                "status": "failed",
+                "uno_c": 0.6,
+                "runtime_sec": 2.5,
+            },
+        ]
+    ).to_csv(tmp_path / "coxph_fold_results.csv", index=False)
+    monkeypatch.setattr(sys, "argv", ["survarena", "benchmark", "report", str(tmp_path)])
+
+    cli.main()
+
+    output = capsys.readouterr().out
+    assert '"n_rows": 2' in output
+    assert '"success": 1' in output
+    assert '"failed": 1' in output
+    assert '"primary_metric": "uno_c"' in output
+    assert '"top_methods"' in output
+    assert '"coverage"' in output
+    assert '"method_id": "coxph"' in output
+
+
+# --- test_compare_api.py ---
+
+
+def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    split = SplitDefinition(
+        split_id="fixed_split_0",
+        seed=11,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([0, 1, 2, 3], dtype=int),
+        test_idx=np.asarray([4, 5], dtype=int),
+        val_idx=np.asarray([2, 3], dtype=int),
+    )
+
+    monkeypatch.setattr("survarena.api.compare.load_or_create_splits", lambda **kwargs: [split])
+
+    def fake_evaluate_split(**kwargs) -> dict[str, object]:
+        return {
+            "run_payload": {
+                "manifest": {"run_id": "toy_coxph_fixed_split_0_seed11"},
+                "metrics": {"status": "success"},
+                "failure": None,
+            },
+            "benchmark_id": kwargs["benchmark_id"],
+            "dataset_id": kwargs["dataset_id"],
+            "method_id": kwargs["method_id"],
+            "split_id": kwargs["split"].split_id,
+            "seed": kwargs["split"].seed,
+            "primary_metric": kwargs["primary_metric"],
+            "validation_score": 0.8,
+            "uno_c": 0.79,
+            "harrell_c": 0.8,
+            "ibs": 0.2,
+            "td_auc_25": 0.78,
+            "td_auc_50": 0.79,
+            "td_auc_75": 0.8,
+            "tuning_time_sec": 0.1,
+            "runtime_sec": 0.2,
+            "fit_time_sec": 0.05,
+            "infer_time_sec": 0.02,
+            "peak_memory_mb": 128.0,
+            "status": "success",
+        }
+
+    monkeypatch.setattr("survarena.api.compare.evaluate_split", fake_evaluate_split)
+
+    output_dir = tmp_path / "compare_outputs"
+    summary = compare_survival_models(
+        frame,
+        time_col="time",
+        event_col="event",
+        dataset_name="toy_dataset",
+        models=["coxph"],
+        output_dir=output_dir,
+    )
+
+    assert summary["benchmark_id"] == "user_compare_fixed"
+    assert summary["methods"] == ["coxph"]
+    assert summary["split_count"] == 1
+    assert summary["fold_results_rows"] == 2
+    assert summary["output_dir"] == str(output_dir)
+    assert summary["artifacts"] == {
+        "experiment_manifest": str(output_dir / "experiment_manifest.json"),
+        "fold_results": str(output_dir / "coxph_fold_results.csv"),
+        "leaderboard": str(output_dir / "coxph_leaderboard.csv"),
+        "run_diagnostics": str(output_dir / "coxph_run_diagnostics.csv"),
+    }
+    assert {row["hpo_mode"] for row in summary["leaderboard"]} == {"no_hpo", "hpo"}
+    assert {row["method_id"] for row in summary["leaderboard"]} == {"coxph"}
+    assert {row["uno_c"] for row in summary["leaderboard"]} == {0.79}
+    assert (output_dir / "experiment_manifest.json").exists()
+    assert (output_dir / "coxph_fold_results.csv").exists()
+    assert (output_dir / "coxph_leaderboard.csv").exists()
+    assert (output_dir / "coxph_run_diagnostics.csv").exists()
+    assert not (output_dir / "coxph_leaderboard.json").exists()
+
+
+def test_compare_exports_exclude_parity_ineligible_rows(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    split = SplitDefinition(
+        split_id="fixed_split_0",
+        seed=11,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([0, 1, 2, 3], dtype=int),
+        test_idx=np.asarray([4, 5], dtype=int),
+        val_idx=np.asarray([2, 3], dtype=int),
+    )
+    monkeypatch.setattr("survarena.api.compare.load_or_create_splits", lambda **kwargs: [split])
+
+    def fake_evaluate_split(**kwargs) -> dict[str, object]:
+        enabled = bool(kwargs.get("hpo_cfg", {}).get("enabled", False))
+        status = "failed" if enabled else "success"
+        return {
+            "run_payload": {
+                "manifest": {"run_id": "toy_coxph_fixed_split_0_seed11"},
+                "metrics": {"status": status},
+                "hpo_metadata": {"status": status, "trial_count": 0},
+                "failure": None if status == "success" else {"traceback": "boom"},
+                "status": status,
+            },
+            "benchmark_id": kwargs["benchmark_id"],
+            "dataset_id": kwargs["dataset_id"],
+            "method_id": kwargs["method_id"],
+            "split_id": kwargs["split"].split_id,
+            "seed": kwargs["split"].seed,
+            "primary_metric": kwargs["primary_metric"],
+            "validation_score": 0.8,
+            "uno_c": 0.79,
+            "harrell_c": 0.8,
+            "ibs": 0.2,
+            "td_auc_25": 0.78,
+            "td_auc_50": 0.79,
+            "td_auc_75": 0.8,
+            "tuning_time_sec": 0.1,
+            "runtime_sec": 0.2,
+            "fit_time_sec": 0.05,
+            "infer_time_sec": 0.02,
+            "peak_memory_mb": 128.0,
+            "status": status,
+        }
+
+    monkeypatch.setattr("survarena.api.compare.evaluate_split", fake_evaluate_split)
+
+    output_dir = tmp_path / "compare_outputs"
+    compare_survival_models(
+        frame,
+        time_col="time",
+        event_col="event",
+        dataset_name="toy_dataset",
+        models=["coxph"],
+        output_dir=output_dir,
+    )
+
+    fold_results = pd.read_csv(output_dir / "coxph_fold_results.csv")
+    assert "parity_eligible" in fold_results.columns
+    assert not fold_results["parity_eligible"].any()
+
+    diagnostics = pd.read_csv(output_dir / "coxph_run_diagnostics.csv")
+    assert not diagnostics.empty
+
+
+def test_compare_summary_includes_requested_vs_realized_budget_fields(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0, 5.0, 6.0],
+            "event": [1, 0, 1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0, 59.0, 63.0],
+            "stage": ["i", "ii", "ii", "iii", "i", "iii"],
+        }
+    )
+    split = SplitDefinition(
+        split_id="fixed_split_0",
+        seed=11,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([0, 1, 2, 3], dtype=int),
+        test_idx=np.asarray([4, 5], dtype=int),
+        val_idx=np.asarray([2, 3], dtype=int),
+    )
+    monkeypatch.setattr("survarena.api.compare.load_or_create_splits", lambda **kwargs: [split])
+
+    def fake_evaluate_split(**kwargs) -> dict[str, object]:
+        enabled = bool(kwargs.get("hpo_cfg", {}).get("enabled", False))
+        trial_count = 4 if enabled else 0
+        return {
+            "run_payload": {
+                "manifest": {"run_id": "toy_coxph_fixed_split_0_seed11"},
+                "metrics": {"status": "success"},
+                "hpo_metadata": {"status": "success", "trial_count": trial_count},
+                "failure": None,
+                "status": "success",
+            },
+            "benchmark_id": kwargs["benchmark_id"],
+            "dataset_id": kwargs["dataset_id"],
+            "method_id": kwargs["method_id"],
+            "split_id": kwargs["split"].split_id,
+            "seed": kwargs["split"].seed,
+            "primary_metric": kwargs["primary_metric"],
+            "validation_score": 0.8,
+            "uno_c": 0.79,
+            "harrell_c": 0.8,
+            "ibs": 0.2,
+            "td_auc_25": 0.78,
+            "td_auc_50": 0.79,
+            "td_auc_75": 0.8,
+            "tuning_time_sec": 0.1,
+            "runtime_sec": 0.2,
+            "fit_time_sec": 0.05,
+            "infer_time_sec": 0.02,
+            "peak_memory_mb": 128.0,
+            "status": "success",
+        }
+
+    monkeypatch.setattr("survarena.api.compare.evaluate_split", fake_evaluate_split)
+
+    output_dir = tmp_path / "compare_outputs"
+    compare_survival_models(
+        frame,
+        time_col="time",
+        event_col="event",
+        dataset_name="toy_dataset",
+        models=["coxph"],
+        output_dir=output_dir,
+        hpo={"max_trials": 7, "timeout_seconds": 123.0, "sampler": "tpe", "pruner": "median"},
+    )
+
+    fold_results = pd.read_csv(output_dir / "coxph_fold_results.csv")
+    for required in ("hpo_mode", "requested_max_trials", "requested_timeout_seconds", "realized_trial_count"):
+        assert required in fold_results.columns
+    assert set(fold_results["hpo_mode"]) == {"no_hpo", "hpo"}
+    assert set(fold_results["requested_max_trials"]) == {7}
+    assert set(fold_results["requested_timeout_seconds"]) == {123.0}
+    assert fold_results["realized_trial_count"].max() == 4
+
+
+# --- test_predictor_edge_cases.py ---
+
+
+def test_predictor_save_writes_pickle_and_manifest(tmp_path: Path) -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+    output_path = tmp_path / "predictor.pkl"
+
+    saved_path = predictor.save(output_path)
+
+    manifest_path = tmp_path / "predictor_manifest.json"
+    assert saved_path == output_path
+    assert output_path.exists()
+    assert manifest_path.exists()
+
+
+def test_predictor_load_round_trips_unfitted_predictor(tmp_path: Path) -> None:
+    predictor = SurvivalPredictor(
+        label_time="duration",
+        label_event="observed",
+        eval_metric="uno_c",
+        enable_foundation_models=True,
+    )
+    output_path = tmp_path / "predictor.pkl"
+    predictor.save(output_path)
+
+    loaded = SurvivalPredictor.load(output_path)
+
+    assert loaded.label_time == "duration"
+    assert loaded.label_event == "observed"
+    assert loaded.eval_metric == "uno_c"
+    assert loaded.enable_foundation_models is True
+
+
+def test_predictor_save_requires_artifact_dir_when_no_path_is_provided() -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+
+    with pytest.raises(RuntimeError, match="No artifact directory is available"):
+        predictor.save()
+
+
+def test_predictor_load_rejects_unsupported_serialization_versions(tmp_path: Path) -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+    output_path = tmp_path / "predictor.pkl"
+    predictor.save(output_path)
+
+    manifest_path = tmp_path / "predictor_manifest.json"
+    manifest_path.write_text(
+        json.dumps({"serialization_version": 99}, indent=2),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Unsupported predictor serialization version 99"):
+        SurvivalPredictor.load(output_path)
+
+
+def test_predictor_fit_surfaces_when_all_candidate_models_fail(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, 2.0, 3.0, 4.0],
+            "event": [1, 0, 1, 0],
+            "age": [61.0, 57.0, 70.0, 66.0],
+        }
+    )
+
+    monkeypatch.setattr(
+        "survarena.api.predictor.resolve_preset",
+        lambda *args, **kwargs: PresetConfig(name="test", method_ids=("mock_a", "mock_b"), holdout_frac=0.25),
+    )
+    monkeypatch.setattr("survarena.api.predictor.read_yaml", lambda path: {"default_params": {}})
+    monkeypatch.setattr(
+        "survarena.api.predictor.prepare_validation_fold_cache",
+        lambda **kwargs: [
+            {
+                "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+                "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+                "time_train": np.asarray([1.0, 2.0], dtype=float),
+                "event_train": np.asarray([1, 0], dtype=int),
+                "time_val": np.asarray([1.5, 2.5], dtype=float),
+                "event_val": np.asarray([1, 0], dtype=int),
+            }
+        ],
+    )
+
+    def fake_select_hyperparameters(*, method_id: str, **kwargs) -> dict[str, object]:
+        raise RuntimeError(f"{method_id} exploded")
+
+    monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
+
+    predictor = SurvivalPredictor(
+        label_time="time",
+        label_event="event",
+        presets="medium",
+        save_path=tmp_path,
+    )
+
+    with pytest.raises(RuntimeError, match="All candidate models failed during fitting"):
+        predictor.fit(frame, tuning_data=frame, dataset_name="toy")
+
+
+def test_predictor_selection_sort_places_finite_scores_before_nan() -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+    results = [
+        PredictorModelResult("first_nan", float("nan"), {}, 0.0, 1, {}),
+        PredictorModelResult("valid", 0.62, {}, 0.0, 1, {}),
+        PredictorModelResult("lower", 0.51, {}, 0.0, 1, {}),
+    ]
+
+    best = max(results, key=predictor._selection_sort_key)
+    ordered = sorted(results, key=predictor._selection_sort_key, reverse=True)
+
+    assert best.method_id == "valid"
+    assert [result.method_id for result in ordered] == ["valid", "lower", "first_nan"]
+
+
+def test_compute_metric_bundle_safe_clips_inputs_after_training_support_error(monkeypatch) -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+    calls: list[dict[str, np.ndarray | tuple[float, float, float]]] = []
+
+    def fake_compute_survival_metrics(**kwargs) -> MetricBundle:
+        calls.append(kwargs)
+        if len(calls) == 1:
+            raise ValueError("largest observed training event time point")
+        return MetricBundle(uno_c=0.71, harrell_c=0.72, ibs=0.2, td_auc_25=0.73, td_auc_50=0.74, td_auc_75=0.75)
+
+    monkeypatch.setattr("survarena.api.predictor.compute_survival_metrics", fake_compute_survival_metrics)
+
+    metrics = predictor._compute_metric_bundle_safe(
+        train_time=np.asarray([1.0, 3.0, 5.0]),
+        train_event=np.asarray([1, 1, 0]),
+        test_time=np.asarray([2.0, 4.0]),
+        test_event=np.asarray([1, 0]),
+        risk_scores=np.asarray([0.2, 0.4]),
+        survival_probs=np.asarray([[0.9, 0.8, 0.7], [0.95, 0.85, 0.75]]),
+        survival_times=np.asarray([1.0, 2.0, 4.0]),
+    )
+
+    assert metrics["uno_c"] == 0.71
+    assert len(calls) == 2
+    np.testing.assert_allclose(calls[1]["test_time"], np.asarray([2.0]))
+    np.testing.assert_allclose(calls[1]["risk_scores"], np.asarray([0.2]))
+    np.testing.assert_allclose(calls[1]["survival_times"], np.asarray([1.0, 2.0]))
+    assert calls[1]["survival_probs"].shape == (1, 2)
+    assert max(calls[1]["horizons"]) < 3.0
+
+
+def test_compute_metric_bundle_safe_falls_back_to_harrell_only_when_no_rows_are_supported(monkeypatch) -> None:
+    predictor = SurvivalPredictor(label_time="time", label_event="event")
+
+    monkeypatch.setattr(
+        "survarena.api.predictor.compute_survival_metrics",
+        lambda **kwargs: (_ for _ in ()).throw(ValueError("largest observed training event time point")),
+    )
+    monkeypatch.setattr("survarena.api.predictor.compute_harrell_c_index", lambda **kwargs: 0.61)
+
+    metrics = predictor._compute_metric_bundle_safe(
+        train_time=np.asarray([1.0, 2.0]),
+        train_event=np.asarray([1, 1]),
+        test_time=np.asarray([3.0, 4.0]),
+        test_event=np.asarray([1, 0]),
+        risk_scores=np.asarray([0.2, 0.4]),
+        survival_probs=np.asarray([[0.9, 0.8], [0.95, 0.85]]),
+        survival_times=np.asarray([3.0, 4.0]),
+    )
+
+    assert metrics["harrell_c"] == 0.61
+    assert math.isnan(metrics["uno_c"])
+    assert math.isnan(metrics["ibs"])
+    assert math.isnan(metrics["td_auc_25"])
+
+
+# --- test_predictor_registry.py ---
 
 
 class MockSurvivalMethod:
@@ -288,7 +1127,9 @@ def test_predictor_reuses_metric_rows_from_tuning(tmp_path: Path, monkeypatch) -
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_inner_cv_cache)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id]
+    )
     monkeypatch.setattr(
         SurvivalPredictor,
         "_fold_cache_metric_summary",
@@ -345,7 +1186,9 @@ def test_predictor_uses_automatic_holdout_when_tuning_data_is_absent(tmp_path: P
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id]
+    )
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -401,7 +1244,9 @@ def test_predictor_uses_bagged_oof_selection_when_num_bag_folds_enabled(tmp_path
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id]
+    )
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -477,7 +1322,9 @@ def test_predictor_bagged_models_average_fold_members_for_inference(tmp_path: Pa
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": AveragingMockMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": AveragingMockMethod}[method_id]
+    )
     monkeypatch.setattr(SurvivalPredictor, "_persist_artifacts", lambda self, dataset_name, results: None)
 
     predictor = SurvivalPredictor(
@@ -531,7 +1378,9 @@ def test_predictor_bagged_model_round_trips(tmp_path: Path, monkeypatch) -> None
     monkeypatch.setattr("survarena.api.predictor.resolve_preset", fake_resolve_preset)
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id]
+    )
 
     predictor = SurvivalPredictor(
         label_time="time",
@@ -663,7 +1512,9 @@ def test_predictor_refit_full_uses_tuning_data_for_final_training(tmp_path: Path
     assert summary["final_train_rows"] == 6
 
 
-def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_training(tmp_path: Path, monkeypatch) -> None:
+def test_predictor_refit_full_false_keeps_explicit_tuning_rows_out_of_final_training(
+    tmp_path: Path, monkeypatch
+) -> None:
     train_frame = pd.DataFrame(
         {
             "time": [1.0, 2.0, 3.0, 4.0],
@@ -803,7 +1654,9 @@ def test_predictor_fit_level_autogluon_kwargs_are_normalized(tmp_path: Path, mon
     monkeypatch.setattr("survarena.api.predictor.read_yaml", fake_read_yaml)
     monkeypatch.setattr("survarena.api.predictor.prepare_validation_fold_cache", fake_prepare_validation_fold_cache)
     monkeypatch.setattr("survarena.api.predictor.select_hyperparameters", fake_select_hyperparameters)
-    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id])
+    monkeypatch.setattr(
+        "survarena.api.predictor._get_method_class", lambda method_id: {"mock_a": MockSurvivalMethod}[method_id]
+    )
 
     predictor = SurvivalPredictor(
         label_time="time",

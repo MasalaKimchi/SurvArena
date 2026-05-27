@@ -42,10 +42,18 @@ foundation-tabpfn = [
 foundation-mitra = [
     "autogluon.tabular[mitra]==1.5.0",
 ]
+foundation-tabarena = [
+    "tabicl>=0.1.4,<0.2",
+    "tabdpt>=1.1.11,<1.2",
+    "pytabkit>=1.7.2,<1.8",
+]
 foundation = [
     "torchvision==0.21.0",
     "tabpfn==6.2.0",
     "autogluon.tabular[mitra]==1.5.0",
+    "tabicl>=0.1.4,<0.2",
+    "tabdpt>=1.1.11,<1.2",
+    "pytabkit>=1.7.2,<1.8",
 ]
 tracking = [
     "mlflow==3.10.1",

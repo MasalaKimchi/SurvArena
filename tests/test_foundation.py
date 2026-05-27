@@ -3,14 +3,15 @@ from __future__ import annotations
 import sys
 import types
 from pathlib import Path
-
 import numpy as np
-
 from survarena.api.predictor import SurvivalPredictor
 from survarena.automl.presets import resolve_preset
 from survarena.config import read_yaml
 from survarena.methods.foundation.catalog import available_foundation_model_specs
 from survarena.methods.foundation.readiness import FoundationRuntimeStatus, foundation_runtime_status
+
+
+# --- test_foundation.py ---
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -23,13 +24,15 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
     assert "tabpfn_survival" in catalog["method_id"].tolist()
     assert "mitra_survival_frozen" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
+    assert "tabm_survival" in catalog["method_id"].tolist()
     assert "dependency_installed" in catalog.columns
     assert "runtime_ready" in catalog.columns
     assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
     assert implemented["mitra_survival_frozen"] is True
-    assert implemented["tabicl_survival"] is False
+    assert implemented["tabicl_survival"] is True
+    assert implemented["tabm_survival"] is True
 
 
 def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
@@ -44,6 +47,21 @@ def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
     assert "n_estimators_final_inference" not in method_cfg["default_params"]
 
 
+def test_direct_foundation_method_configs_use_horizon_adapters() -> None:
+    from survarena.methods.foundation.direct_horizon import TabDPTHorizonSurvivalMethod, TabICLHorizonSurvivalMethod
+    from survarena.methods.registry import get_method_class
+
+    tabicl_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabicl_survival.yaml")
+    tabdpt_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabdpt_survival.yaml")
+
+    assert get_method_class("tabicl_survival") is TabICLHorizonSurvivalMethod
+    assert get_method_class("tabdpt_survival") is TabDPTHorizonSurvivalMethod
+    assert tabicl_cfg["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert tabdpt_cfg["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert "time_limit" not in tabicl_cfg["default_params"]
+    assert "time_limit" not in tabdpt_cfg["default_params"]
+
+
 def test_manuscript_config_includes_foundation_track() -> None:
     benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "manuscript_v1.yaml")
     overrides = benchmark_cfg["hpo"]["method_overrides"]
@@ -55,13 +73,17 @@ def test_manuscript_config_includes_foundation_track() -> None:
     assert "tabpfn_survival" in benchmark_cfg["methods"]
     assert "tabpfn_survival_classifier" not in benchmark_cfg["methods"]
     assert "tabpfn_survival_regressor" not in benchmark_cfg["methods"]
-    assert "mitra_survival_frozen" in benchmark_cfg["methods"]
+    assert "mitra_survival_frozen" not in benchmark_cfg["methods"]
+    assert {"tabicl_survival", "tabm_survival", "tabdpt_survival", "realtabpfn_survival"}.issubset(
+        benchmark_cfg["methods"]
+    )
     assert "mitra_survival_finetune" not in overrides
     assert overrides["tabpfn_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
-    assert overrides["mitra_survival_frozen"]["default_params"]["time_limit"] == 120
+    assert overrides["tabicl_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert overrides["tabdpt_survival"]["default_params"]["context_size"] == 512
     assert benchmark_cfg["profile"] == "manuscript"
     assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "nwtco", "aids", "gbsg2", "flchain", "whas500"}
-    assert "full backbone fine-tuning remains excluded" in benchmark_cfg["notes"]
+    assert "Mitra is excluded" in benchmark_cfg["notes"]
 
 
 def test_manuscript_hpo_config_uses_explicit_hpo_track() -> None:
@@ -261,3 +283,252 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
     assert ((survival >= 0.0) & (survival <= 1.0)).all()
     assert (np.diff(survival, axis=1) <= 1e-8).all()
     assert method.foundation_metadata()["foundation_backbone_task"] == "censored_aware_horizon_classification"
+
+
+def test_tabpfn_survival_batches_prediction_with_fake_backbone() -> None:
+    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+
+    class FakeBackbone:
+        calls: list[int] = []
+        classes_ = np.asarray([0, 1])
+
+        def predict_proba(self, X: np.ndarray) -> np.ndarray:
+            self.calls.append(len(X))
+            positive = np.linspace(0.1, 0.9, len(X), dtype=np.float64)
+            return np.column_stack([1.0 - positive, positive])
+
+    model = FakeBackbone()
+    X = np.zeros((5, 2), dtype=np.float32)
+
+    probabilities = TabPFNSurvivalMethod._positive_class_probability(model, X, batch_size=2)
+
+    assert model.calls == [2, 2, 1]
+    assert probabilities.shape == (5,)
+    assert np.isfinite(probabilities).all()
+
+
+def test_direct_horizon_foundation_adapters_fit_predict_with_fake_backbones(monkeypatch) -> None:
+    from survarena.methods.foundation.direct_horizon import TabDPTHorizonSurvivalMethod, TabICLHorizonSurvivalMethod
+
+    class FakeClassifier:
+        init_kwargs: list[dict[str, object]] = []
+        fit_count = 0
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = dict(kwargs)
+            FakeClassifier.init_kwargs.append(self.kwargs)
+
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeClassifier":
+            self.classes_ = np.asarray([0, 1])
+            self.offset_ = float(np.mean(y))
+            FakeClassifier.fit_count += 1
+            return self
+
+        def predict_proba(self, X: np.ndarray, **kwargs) -> np.ndarray:
+            X_np = np.asarray(X, dtype=np.float32)
+            positive = np.clip(0.3 + 0.2 * X_np[:, 0] + self.offset_, 0.0, 1.0)
+            return np.column_stack([1.0 - positive, positive])
+
+    fake_tabicl = types.ModuleType("tabicl")
+    fake_tabicl.TabICLClassifier = FakeClassifier
+    fake_tabdpt = types.ModuleType("tabdpt")
+    fake_tabdpt.TabDPTClassifier = FakeClassifier
+    monkeypatch.setitem(sys.modules, "tabicl", fake_tabicl)
+    monkeypatch.setitem(sys.modules, "tabdpt", fake_tabdpt)
+    monkeypatch.setattr(
+        "survarena.methods.foundation.direct_horizon.ensure_foundation_runtime_ready", lambda method_id: None
+    )
+
+    X = np.asarray(
+        [
+            [-1.0, 0.0],
+            [-0.5, 0.1],
+            [0.0, 0.2],
+            [0.3, 0.3],
+            [0.7, 0.4],
+            [1.0, 0.5],
+            [1.2, 0.6],
+            [1.5, 0.7],
+        ],
+        dtype=np.float32,
+    )
+    time = np.asarray([2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0, 13.0], dtype=np.float64)
+    event = np.asarray([1, 0, 1, 0, 1, 0, 1, 0], dtype=np.int32)
+
+    tabicl = TabICLHorizonSurvivalMethod(n_estimators=1, horizon_quantiles=[0.25, 0.5], min_known_per_horizon=1)
+    tabdpt = TabDPTHorizonSurvivalMethod(context_size=256, horizon_quantiles=[0.25, 0.5], min_known_per_horizon=1)
+
+    for method in [tabicl, tabdpt]:
+        method.fit(X, time, event)
+        risk = method.predict_risk(X[:3])
+        survival = method.predict_survival(X[:3], np.asarray([1.0, 5.0, 10.0]))
+
+        assert risk.shape == (3,)
+        assert survival.shape == (3, 3)
+        assert np.isfinite(risk).all()
+        assert np.isfinite(survival).all()
+        assert (np.diff(survival, axis=1) <= 1e-8).all()
+
+    assert FakeClassifier.fit_count == 4
+    assert tabicl.foundation_metadata()["foundation_backbone"] == "TabICL"
+    assert tabdpt.foundation_metadata()["foundation_backbone"] == "TabDPT"
+
+
+# --- test_presets.py ---
+
+
+def test_resolve_preset_skips_high_capacity_models_for_low_event_data() -> None:
+    preset = resolve_preset(
+        "best",
+        n_rows=120,
+        n_features=24,
+        event_count=8,
+        event_fraction=8 / 120,
+        enable_foundation_models=True,
+    )
+
+    assert "coxph" in preset.method_ids
+    assert "coxnet" in preset.method_ids
+    assert "rsf" in preset.method_ids
+    assert "deepsurv" not in preset.method_ids
+    assert "deepsurv_moco" not in preset.method_ids
+    assert "tabpfn_survival" not in preset.method_ids
+    assert any("only 8 observed events" in note for note in preset.portfolio_notes)
+
+
+def test_resolve_preset_skips_foundation_models_for_unsupported_feature_shapes() -> None:
+    preset = resolve_preset(
+        "medium",
+        n_rows=1000,
+        n_features=40,
+        event_count=180,
+        event_fraction=0.18,
+        high_cardinality_feature_count=3,
+        has_datetime_features=True,
+        enable_foundation_models=True,
+    )
+
+    assert "tabpfn_survival" not in preset.method_ids
+    assert any("high-cardinality categorical features" in note for note in preset.portfolio_notes)
+    assert any("datetime-aware feature handling" in note for note in preset.portfolio_notes)
+
+
+def test_foundation_preset_requests_foundation_models_without_extra_flag() -> None:
+    from pytest import MonkeyPatch
+
+    monkeypatch = MonkeyPatch()
+    monkeypatch.setattr(
+        "survarena.automl.presets._foundation_runtime_status",
+        lambda spec: FoundationRuntimeStatus(
+            method_id=spec.method_id,
+            dependency_module=spec.dependency_module,
+            install_extra=spec.install_extra,
+            dependency_installed=True,
+            runtime_ready=True,
+            requires_hf_auth=spec.requires_hf_auth,
+            auth_configured=True,
+            install_command=None,
+        ),
+    )
+    preset = resolve_preset(
+        "foundation",
+        n_rows=500,
+        n_features=30,
+        event_count=150,
+        event_fraction=0.3,
+    )
+    monkeypatch.undo()
+
+    assert preset.method_ids == (
+        "coxph",
+        "tabpfn_survival",
+        "mitra_survival_frozen",
+        "tabicl_survival",
+        "tabm_survival",
+        "tabdpt_survival",
+        "realtabpfn_survival",
+    )
+
+
+def test_foundation_preset_reports_when_no_current_adapter_is_eligible() -> None:
+    preset = resolve_preset(
+        "foundation",
+        n_rows=50_000,
+        n_features=2_500,
+        event_count=2_000,
+        event_fraction=0.04,
+    )
+
+    assert preset.method_ids == ("coxph",)
+    assert any(
+        "No currently implemented foundation-model adapters were eligible" in note for note in preset.portfolio_notes
+    )
+
+
+def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> None:
+    from pytest import MonkeyPatch
+
+    monkeypatch = MonkeyPatch()
+    monkeypatch.setattr(
+        "survarena.automl.presets._foundation_runtime_status",
+        lambda spec: FoundationRuntimeStatus(
+            method_id=spec.method_id,
+            dependency_module=spec.dependency_module,
+            install_extra=spec.install_extra,
+            dependency_installed=True,
+            runtime_ready=True,
+            requires_hf_auth=spec.requires_hf_auth,
+            auth_configured=True,
+            install_command=None,
+        ),
+    )
+    preset = resolve_preset(
+        "all",
+        n_rows=500,
+        n_features=30,
+        event_count=150,
+        event_fraction=0.3,
+    )
+    monkeypatch.undo()
+
+    assert preset.method_ids == (
+        "coxph",
+        "coxnet",
+        "rsf",
+        "deepsurv",
+        "deepsurv_moco",
+        "tabpfn_survival",
+        "mitra_survival_frozen",
+        "tabicl_survival",
+        "tabm_survival",
+        "tabdpt_survival",
+        "realtabpfn_survival",
+    )
+
+
+def test_resolve_preset_surfaces_foundation_runtime_warnings(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "survarena.automl.presets._foundation_runtime_status",
+        lambda spec: FoundationRuntimeStatus(
+            method_id=spec.method_id,
+            dependency_module=spec.dependency_module,
+            install_extra=spec.install_extra,
+            dependency_installed=True,
+            runtime_ready=True,
+            requires_hf_auth=spec.requires_hf_auth,
+            auth_configured=False if spec.method_id == "tabpfn_survival" else True,
+            install_command=None,
+            warning_reason="Run `hf auth login` first." if spec.method_id == "tabpfn_survival" else None,
+        ),
+    )
+
+    preset = resolve_preset(
+        "foundation",
+        n_rows=500,
+        n_features=30,
+        event_count=150,
+        event_fraction=0.3,
+    )
+
+    assert "tabpfn_survival" in preset.method_ids
+    assert any("hf auth login" in note for note in preset.portfolio_notes)

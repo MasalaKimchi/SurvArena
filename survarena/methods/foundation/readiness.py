@@ -5,6 +5,7 @@ import importlib
 import importlib.util
 import os
 from pathlib import Path
+import sys
 
 from survarena.methods.foundation.catalog import FoundationModelSpec, available_foundation_model_specs
 
@@ -36,9 +37,11 @@ def _install_command(spec: FoundationModelSpec) -> str | None:
 def _has_dependency(module_name: str | None) -> bool:
     if module_name is None:
         return True
+    if module_name in sys.modules:
+        return True
     try:
         return importlib.util.find_spec(module_name) is not None
-    except ModuleNotFoundError:
+    except (ModuleNotFoundError, ValueError):
         return False
 
 

@@ -3,15 +3,18 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from types import SimpleNamespace
-
 import numpy as np
 import pandas as pd
 import pytest
-
 from survarena.benchmark import runner
 from survarena.benchmark.runner import validate_benchmark_profile_contract
 from survarena.config import read_yaml
 from survarena.data.splitters import SplitDefinition, load_or_create_splits
+from survarena.logging.export import export_coverage_matrix, export_hpo_budget_summary
+from survarena.logging.export import export_run_diagnostics, export_runtime_failure_summary
+
+
+# --- test_benchmark_runner.py ---
 
 # --- Profile contract & split determinism ---
 
@@ -156,7 +159,11 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     assert manuscript_cfg["profile"] == "manuscript"
     assert manuscript_cfg["comparison_modes"] == ["no_hpo"]
     assert manuscript_cfg["exports"]["manuscript_artifact_layout"] == "compact"
-    assert {"tabpfn_survival", "mitra_survival_frozen"}.issubset(manuscript_cfg["methods"])
+    assert "tabpfn_survival" in manuscript_cfg["methods"]
+    assert "mitra_survival_frozen" not in manuscript_cfg["methods"]
+    assert {"tabicl_survival", "tabm_survival", "tabdpt_survival", "realtabpfn_survival"}.issubset(
+        manuscript_cfg["methods"]
+    )
     assert hpo_cfg["profile"] == "manuscript"
     assert hpo_cfg["comparison_modes"] == ["hpo"]
     assert hpo_cfg["hpo"]["enabled"] is True
@@ -434,7 +441,9 @@ def test_exec04_resume_preserves_successful_outputs(tmp_path: Path, monkeypatch)
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0
+    )
 
     assert calls["count"] == 0
 
@@ -496,7 +505,9 @@ def test_exec04_resume_reruns_incomplete_success_outputs(tmp_path: Path, monkeyp
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0
+    )
 
     # Dual-mode governance reruns both no-HPO and HPO when legacy rows are incomplete.
     assert calls["count"] == 2
@@ -520,7 +531,9 @@ def test_exec04_resume_ignores_non_success_completed_keys(tmp_path: Path, monkey
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0
+    )
 
     assert calls["count"] == 2
 
@@ -758,9 +771,13 @@ def test_benchmark_execution_rejects_invalid_n_jobs() -> None:
 
 def test_exec04_retry_budget_caps_failed_rows(tmp_path: Path, monkeypatch) -> None:
     run_records: list[dict[str, object]] = []
-    calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed", "failed"], captured_run_records=run_records)
+    calls = _install_retry_monkeypatches(
+        monkeypatch, statuses=["failed", "failed", "failed"], captured_run_records=run_records
+    )
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1
+    )
 
     assert calls["count"] == 4
     assert run_records
@@ -770,7 +787,9 @@ def test_exec04_failure_records_include_attempt_metadata(tmp_path: Path, monkeyp
     run_records: list[dict[str, object]] = []
     _install_retry_monkeypatches(monkeypatch, statuses=["failed", "failed"], captured_run_records=run_records)
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=1
+    )
 
     assert run_records
 
@@ -779,7 +798,308 @@ def test_exec04_successful_retry_keeps_failed_attempt_evidence(tmp_path: Path, m
     run_records: list[dict[str, object]] = []
     calls = _install_retry_monkeypatches(monkeypatch, statuses=["failed", "success"], captured_run_records=run_records)
 
-    runner.run_benchmark(repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=2)
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=False, max_retries=2
+    )
 
     assert calls["count"] == 3
     assert run_records
+
+
+# --- test_benchmark_exports.py ---
+
+
+def test_coverage_matrix_exports_csv_only(tmp_path) -> None:
+    fold_results = pd.DataFrame(
+        [
+            {
+                "benchmark_id": "manuscript_v1",
+                "dataset_id": "whas500__base",
+                "method_id": "coxph",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_0__base",
+                "status": "success",
+                "runtime_sec": 1.25,
+                "uno_c": 0.72,
+                "harrell_c": 0.70,
+                "robustness_track_id": "base",
+            },
+            {
+                "benchmark_id": "manuscript_v1",
+                "dataset_id": "whas500__base",
+                "method_id": "coxnet",
+                "hpo_mode": "hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_1__base",
+                "status": "success",
+                "runtime_sec": 1.0,
+                "uno_c": None,
+                "harrell_c": 0.69,
+            },
+            {
+                "benchmark_id": "manuscript_v1",
+                "dataset_id": "whas500__base",
+                "method_id": "rsf",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_2__base",
+                "status": "failed",
+                "runtime_sec": 0.5,
+                "failure_type": "ValueError",
+                "exception_message": "bad split",
+                "uno_c": None,
+            },
+        ]
+    )
+
+    coverage = export_coverage_matrix(
+        tmp_path,
+        fold_results,
+        primary_metric="uno_c",
+        output_dir=tmp_path,
+        file_prefix="coxph",
+    )
+
+    assert (tmp_path / "coxph_coverage_matrix.csv").exists()
+    assert not (tmp_path / "coxph_coverage_matrix.md").exists()
+    by_method = coverage.set_index("method_id")
+    assert by_method.loc["coxph", "coverage_status"] == "success"
+    assert by_method.loc["coxnet", "coverage_status"] == "missing_metric"
+    assert by_method.loc["rsf", "coverage_status"] == "failed"
+    assert by_method["repeat"].tolist() == [0, 0, 0]
+    assert by_method.loc["coxph", "fold"] == 0
+    assert by_method.loc["coxnet", "failure_reason"] == "missing_primary_metric"
+    assert by_method.loc["rsf", "failure_reason"] == "ValueError"
+    assert by_method["artifact_path"].tolist() == ["coxph_fold_results.csv"] * 3
+
+
+def test_hpo_budget_summary_reports_requested_vs_realized_trials(tmp_path) -> None:
+    fold_results = pd.DataFrame(
+        [
+            {
+                "benchmark_id": "cloud",
+                "dataset_id": "whas500",
+                "method_id": "fast_survival_svm",
+                "hpo_mode": "hpo",
+                "requested_max_trials": 50,
+                "realized_trial_count": 42,
+                "requested_timeout_seconds": 2400,
+                "requested_sampler": "tpe",
+                "requested_pruner": "median",
+                "hpo_budget_tier": "reduced",
+                "hpo_config_target": 100,
+                "hpo_cap_reason": "runtime cap",
+            },
+            {
+                "benchmark_id": "cloud",
+                "dataset_id": "whas500",
+                "method_id": "fast_survival_svm",
+                "hpo_mode": "hpo",
+                "requested_max_trials": 50,
+                "realized_trial_count": 50,
+                "requested_timeout_seconds": 2400,
+                "requested_sampler": "tpe",
+                "requested_pruner": "median",
+                "hpo_budget_tier": "reduced",
+                "hpo_config_target": 100,
+                "hpo_cap_reason": "runtime cap",
+            },
+        ]
+    )
+
+    summary = export_hpo_budget_summary(tmp_path, fold_results, output_dir=tmp_path, file_prefix="combined")
+
+    row = summary.iloc[0]
+    assert (tmp_path / "combined_hpo_budget_summary.csv").exists()
+    assert row["requested_trials_total"] == 100
+    assert row["realized_trials_total"] == 92
+    assert row["trial_realization_rate"] == 0.92
+    assert row["hpo_config_target"] == 100
+    assert bool(row["hpo_capped"]) is True
+    assert row["hpo_cap_reason"] == "runtime cap"
+
+
+# --- test_runtime_failure_summary.py ---
+
+
+def _synthetic_fold_results() -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "benchmark_id": "bench",
+                "dataset_id": "toy",
+                "method_id": "coxph",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_0__base",
+                "status": "success",
+                "validation_score": np.nan,
+                "uno_c": 0.71,
+                "harrell_c": 0.72,
+                "ibs": 0.2,
+                "td_auc_25": 0.68,
+                "td_auc_50": 0.69,
+                "td_auc_75": 0.7,
+                "runtime_sec": 1.2,
+            },
+            {
+                "benchmark_id": "bench",
+                "dataset_id": "toy",
+                "method_id": "rsf",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_0__base",
+                "status": "failed",
+                "validation_score": np.nan,
+                "uno_c": np.nan,
+                "harrell_c": np.nan,
+                "ibs": np.nan,
+                "td_auc_25": np.nan,
+                "td_auc_50": np.nan,
+                "td_auc_75": np.nan,
+                "runtime_sec": 0.4,
+            },
+            {
+                "benchmark_id": "bench",
+                "dataset_id": "toy",
+                "method_id": "coxnet",
+                "hpo_mode": "hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_1__base",
+                "status": "success",
+                "validation_score": 0.6,
+                "uno_c": np.nan,
+                "harrell_c": 0.61,
+                "ibs": 0.25,
+                "td_auc_25": np.nan,
+                "td_auc_50": np.nan,
+                "td_auc_75": np.nan,
+                "runtime_sec": 2.0,
+            },
+        ]
+    )
+
+
+def test_runtime_failure_summary_exports_csv_only(tmp_path: Path) -> None:
+    run_records = [
+        {
+            "metrics": {
+                "dataset_id": "toy",
+                "method_id": "rsf",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "repeat_0_fold_0__base",
+                "failure_type": "ImportError",
+                "exception_message": "No module named sksurv",
+            },
+            "failure": {"traceback": "ModuleNotFoundError: No module named sksurv"},
+        }
+    ]
+
+    summary = export_runtime_failure_summary(
+        tmp_path,
+        benchmark_id="bench",
+        fold_results=_synthetic_fold_results(),
+        run_records=run_records,
+        output_dir=tmp_path,
+        file_prefix="toy",
+    )
+
+    assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
+    assert not (tmp_path / "toy_runtime_failure_summary.md").exists()
+    by_method = summary.set_index("method_id")
+    assert by_method.loc["coxph", "failure_category"] == "success"
+    assert by_method.loc["coxph", "missing_metric_columns"] == ""
+    assert by_method.loc["rsf", "failure_category"] == "dependency_missing"
+    assert by_method.loc["rsf", "n_crashed"] == 1
+    assert by_method.loc["coxnet", "failure_category"] == "missing_metrics"
+    assert by_method.loc["coxnet", "n_missing_metrics"] == 1
+    assert by_method.loc["coxnet", "missing_metric_columns"] == "uno_c, td_auc_25, td_auc_50, td_auc_75"
+    assert by_method.loc["coxph", "runtime_sec_mean"] == 1.2
+
+
+def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
+    export_run_diagnostics(
+        tmp_path,
+        benchmark_id="bench",
+        fold_results=_synthetic_fold_results(),
+        dataset_curation_rows=[],
+        hpo_trial_rows=[],
+        output_dir=tmp_path,
+        file_prefix="toy",
+    )
+
+    assert (tmp_path / "toy_run_diagnostics.csv").exists()
+    assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
+    assert not (tmp_path / "toy_runtime_failure_summary.md").exists()
+
+
+def test_runtime_failure_summary_classifies_foundation_readiness_failures(tmp_path: Path) -> None:
+    fold_results = pd.DataFrame(
+        [
+            {
+                "benchmark_id": "toy",
+                "dataset_id": "toy_dataset__base",
+                "method_id": "tabpfn_survival",
+                "hpo_mode": "no_hpo",
+                "seed": 11,
+                "split_id": "fixed_split_0__base",
+                "status": "failed",
+                "runtime_sec": 0.1,
+                "uno_c": np.nan,
+            },
+            {
+                "benchmark_id": "toy",
+                "dataset_id": "toy_dataset__base",
+                "method_id": "tabpfn_survival",
+                "hpo_mode": "hpo",
+                "seed": 11,
+                "split_id": "fixed_split_0__base",
+                "status": "failed",
+                "runtime_sec": 0.2,
+                "uno_c": np.nan,
+            },
+        ]
+    )
+    summary = export_runtime_failure_summary(
+        tmp_path,
+        benchmark_id="toy",
+        fold_results=fold_results,
+        run_records=[
+            {
+                "manifest": {
+                    "dataset_id": "toy_dataset__base",
+                    "method_id": "tabpfn_survival",
+                    "seed": 11,
+                    "split_id": "fixed_split_0__base",
+                },
+                "metrics": {
+                    "hpo_mode": "no_hpo",
+                    "failure_type": "RuntimeError",
+                    "exception_message": "Dependency 'tabpfn' is not installed. Install it with `python -m pip install -e \".[foundation-tabpfn]\"`.",
+                },
+                "failure": {"traceback": "RuntimeError: Dependency 'tabpfn' is not installed."},
+            },
+            {
+                "manifest": {
+                    "dataset_id": "toy_dataset__base",
+                    "method_id": "tabpfn_survival",
+                    "seed": 11,
+                    "split_id": "fixed_split_0__base",
+                },
+                "metrics": {
+                    "hpo_mode": "hpo",
+                    "failure_type": "RuntimeError",
+                    "exception_message": "TabPFN access is not ready for the default gated checkpoint. Run `hf auth login`.",
+                },
+                "failure": {"traceback": "RuntimeError: Hugging Face authentication was not detected."},
+            },
+        ],
+        output_dir=tmp_path,
+        file_prefix="toy",
+    )
+
+    by_mode = summary.set_index("hpo_mode")
+    assert by_mode.loc["no_hpo", "failure_category"] == "dependency_missing"
+    assert by_mode.loc["hpo", "failure_category"] == "auth_missing"

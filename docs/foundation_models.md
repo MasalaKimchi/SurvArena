@@ -2,12 +2,11 @@
 
 Living roadmap for optional tabular foundation adapters (not a blocking issue list).
 
-Last reviewed against manuscript config and extras: 2026-05-24.
+Last reviewed against manuscript config and extras: 2026-05-27.
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `mitra_survival_frozen`
-- catalog-only candidates: `tabicl_survival`, `tabdpt_survival`, `realtabpfn_survival`
+- implemented adapters: `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `tabdpt_survival`, `realtabpfn_survival`, `mitra_survival_frozen`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
 - predictor access: `presets="foundation"`, `presets="all"`, or
@@ -16,7 +15,7 @@ Last reviewed against manuscript config and extras: 2026-05-24.
   manuscript-scope no-HPO benchmark for native plus frozen/bounded foundation
   adapters
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
-- dependency extras: `foundation-tabpfn`, `foundation-mitra`, or `foundation`
+- dependency extras: `foundation-tabpfn`, `foundation-tabarena`, `foundation-mitra`, or `foundation`
 
 TabPFN note:
 
@@ -30,7 +29,7 @@ default, not as full survival models that must be fine-tuned end to end. The
 current adapters use a horizon/event-risk contract:
 
 1. fit or load the tabular backbone under `backbone_training: frozen`
-2. train TabPFN horizon classifiers or Mitra event-risk learners on the benchmark training split only
+2. train direct horizon classifiers or AutoGluon event-risk learners on the benchmark training split only
 3. exclude rows whose event status is unknown at a TabPFN horizon
 4. reconstruct or calibrate survival curves from training-side estimates
 5. emit the same `predict_risk` and `predict_survival` outputs as native methods
@@ -45,14 +44,16 @@ Adapter-specific details:
   with known event status at that horizon, falls back to Kaplan-Meier event
   probabilities when a horizon is under-supported, and reconstructs monotone
   survival curves from cumulative event probabilities.
-- `mitra_survival_frozen` uses AutoGluon Tabular's `MITRA` model as a binary event-risk
-  learner with `fine_tune=false` by default, then calibrates survival curves
-  with the shared Breslow baseline survival adapter. The default SurvArena
-  dependency set pins `torch==2.6.0`, matching the current Mitra compatibility
-  path.
-  Full-backbone fine-tuning is intentionally excluded from the manuscript track
-  because CPU-only runs can exceed the
-  conventional model wall-clock budget.
+- `tabicl_survival` and `tabdpt_survival` are censored-aware direct horizon
+  adapters. They train one frozen classifier per event-time horizon using only
+  rows with known event status at that horizon, then reconstruct monotone
+  survival curves from cumulative event probabilities.
+- `tabm_survival` and `realtabpfn_survival` use AutoGluon Tabular backbones as
+  binary event-risk learners, then calibrate survival curves with the shared
+  Breslow baseline survival adapter.
+- `mitra_survival_frozen` remains available but is excluded from the manuscript
+  no-HPO track because local RAM/CPU use can exceed the conventional model
+  wall-clock budget.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated
