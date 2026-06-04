@@ -76,7 +76,8 @@ python scripts/check_environment.py
 ```
 
 The setup script creates `.venv`, upgrades `pip`, installs SurvArena in editable
-mode with developer tooling by default, and runs the environment check.
+mode with developer tooling and the manuscript TabPFN/TabICL foundation
+dependencies by default, and runs the environment check.
 
 Useful setup overrides:
 
@@ -90,8 +91,12 @@ VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 
 # Install optional foundation-model extras.
 INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
+INSTALL_EXTRAS=dev,foundation-tabarena PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-tabpfn PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 INSTALL_EXTRAS=dev,foundation-mitra PYTHON_BIN=python3.11 ./scripts/setup_env.sh
+
+# Explicitly omit foundation dependencies for core-only development.
+INSTALL_EXTRAS=dev PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 ```
 
 ### Manual Setup
@@ -100,7 +105,7 @@ INSTALL_EXTRAS=dev,foundation-mitra PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
+python -m pip install -r requirements.txt
 python scripts/check_environment.py
 ```
 
@@ -114,6 +119,7 @@ Optional extras:
 
 ```bash
 python -m pip install -e ".[foundation]"
+python -m pip install -e ".[foundation-tabarena]"
 python -m pip install -e ".[foundation-tabpfn]"
 python -m pip install -e ".[foundation-mitra]"
 python -m pip install -e ".[tracking]"
@@ -274,6 +280,7 @@ leaderboard = predictor.leaderboard()
 summary = predictor.fit_summary()
 risk = predictor.predict_risk("test.csv")
 survival = predictor.predict_survival("test.csv")
+predictions = predictor.predict_bundle("test.csv")  # Reuses inference when both outputs are needed.
 predictor.plot_kaplan_meier_comparison("test.csv")
 predictor.save()
 ```
@@ -403,7 +410,6 @@ the single benchmark-grade portfolio.
 | `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Manuscript |
 | `tabicl_survival` | TabICL horizon survival adapter | Foundation | `tabicl` | Manuscript |
 | `tabm_survival` | TabM event-risk survival adapter | Foundation | `autogluon.tabular` TABM | Manuscript |
-| `tabdpt_survival` | TabDPT horizon survival adapter | Foundation | `tabdpt` | Manuscript |
 | `realtabpfn_survival` | RealTabPFN-V2 event-risk survival adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript |
 | `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Available, excluded from manuscript no-HPO |
 
@@ -529,7 +535,6 @@ Currently wired foundation adapters:
 - `tabpfn_survival`
 - `tabicl_survival`
 - `tabm_survival`
-- `tabdpt_survival`
 - `realtabpfn_survival`
 - `mitra_survival_frozen`
 
@@ -608,7 +613,9 @@ pytest
 ruff check survarena tests scripts
 ```
 
-The default `requirements.txt` installs the editable package with `dev` extras:
+The default `requirements.txt` installs the editable package with `dev`,
+`foundation-tabpfn`, and `foundation-tabarena` extras so the manuscript
+foundation dependencies are available in the repo-local environment:
 
 ```bash
 python -m pip install -r requirements.txt

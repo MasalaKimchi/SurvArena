@@ -39,7 +39,6 @@ _REGISTRY_TARGETS = {
     "mitra_survival_frozen": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFrozenMethod"),
     "tabicl_survival": ("survarena.methods.foundation.direct_horizon", "TabICLHorizonSurvivalMethod"),
     "tabm_survival": ("survarena.methods.automl.mitra_survival", "TabMSurvivalMethod"),
-    "tabdpt_survival": ("survarena.methods.foundation.direct_horizon", "TabDPTHorizonSurvivalMethod"),
     "realtabpfn_survival": ("survarena.methods.automl.mitra_survival", "RealTabPFNV2SurvivalMethod"),
 }
 

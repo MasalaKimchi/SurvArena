@@ -176,6 +176,72 @@ def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:
     assert "ibs" in metrics
 
 
+def test_time_dependent_auc_uses_horizon_specific_event_probabilities() -> None:
+    train_time = np.asarray([1.0, 2.0, 3.0, 4.0, 8.0, 9.0, 10.0], dtype=float)
+    train_event = np.asarray([1, 1, 1, 1, 1, 1, 0], dtype=int)
+    test_time = np.asarray([1.5, 2.5, 3.5, 6.5, 7.5, 8.5], dtype=float)
+    test_event = np.asarray([1, 1, 1, 0, 0, 0], dtype=int)
+    risk_scores = np.asarray([0.9, 0.8, 0.7, 0.1, 0.2, 0.3], dtype=float)
+    survival_times = np.linspace(1.0, 8.0, 8)
+    aligned_survival = np.vstack(
+        [
+            np.linspace(0.9, 0.2, 8),
+            np.linspace(0.9, 0.25, 8),
+            np.linspace(0.9, 0.3, 8),
+            np.linspace(0.98, 0.8, 8),
+            np.linspace(0.98, 0.78, 8),
+            np.linspace(0.98, 0.76, 8),
+        ]
+    )
+    reversed_survival = aligned_survival[::-1].copy()
+
+    aligned = compute_survival_metrics(
+        train_time=train_time,
+        train_event=train_event,
+        test_time=test_time,
+        test_event=test_event,
+        risk_scores=risk_scores,
+        survival_probs=aligned_survival,
+        survival_times=survival_times,
+        horizons=(2.0, 3.0, 4.0),
+    ).to_dict()
+    reversed_metrics = compute_survival_metrics(
+        train_time=train_time,
+        train_event=train_event,
+        test_time=test_time,
+        test_event=test_event,
+        risk_scores=risk_scores,
+        survival_probs=reversed_survival,
+        survival_times=survival_times,
+        horizons=(2.0, 3.0, 4.0),
+    ).to_dict()
+
+    assert aligned["td_auc_50"] > reversed_metrics["td_auc_50"]
+    assert aligned["brier_50"] < reversed_metrics["brier_50"]
+
+
+def test_compute_survival_metrics_handles_duplicate_clipped_horizons() -> None:
+    metrics = compute_survival_metrics(
+        train_time=np.asarray([1.0, 2.0, 3.0, 10.0]),
+        train_event=np.asarray([1, 1, 1, 0]),
+        test_time=np.asarray([1.5, 2.5]),
+        test_event=np.asarray([1, 0]),
+        risk_scores=np.asarray([0.8, 0.2]),
+        survival_probs=np.asarray(
+            [
+                [0.95, 0.82, 0.75, 0.65],
+                [0.98, 0.92, 0.86, 0.78],
+            ]
+        ),
+        survival_times=np.asarray([1.0, 2.0, 3.0, 9.0]),
+        horizons=(4.0, 5.0, 6.0),
+    ).to_dict()
+
+    assert math.isfinite(metrics["td_auc_25"])
+    assert metrics["td_auc_25"] == metrics["td_auc_50"] == metrics["td_auc_75"]
+    assert metrics["horizon_used_25"] == metrics["horizon_used_50"] == metrics["horizon_used_75"]
+
+
 # --- test_statistics.py ---
 
 

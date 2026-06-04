@@ -7,6 +7,9 @@ OUTPUT_ROOT="${OUTPUT_ROOT:-results/manuscript_dataset_model}"
 MAX_RETRIES="${MAX_RETRIES:-1}"
 LIMIT_SEEDS="${LIMIT_SEEDS:-}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"
+RESUME="${RESUME:-1}"
+SAVE_MODEL_ARTIFACTS="${SAVE_MODEL_ARTIFACTS:-0}"
+EXECUTION_N_JOBS="${EXECUTION_N_JOBS:-}"
 
 if [[ ! -f "$BENCHMARK_CONFIG" ]]; then
   echo "[error] Benchmark config not found: $BENCHMARK_CONFIG" >&2
@@ -68,14 +71,27 @@ for dataset in "${DATASETS[@]}"; do
     start_epoch="$(date +%s)"
 
     set +e
-    "$PYTHON_BIN" -m survarena.run_benchmark \
-      --config "$BENCHMARK_CONFIG" \
-      --dataset "$dataset" \
-      --method "$method" \
-      --output-dir "$run_output_dir" \
-      --resume \
-      --max-retries "$MAX_RETRIES" \
-      ${LIMIT_SEEDS:+--limit-seeds "$LIMIT_SEEDS"} \
+    cmd=(
+      "$PYTHON_BIN" -m survarena.run_benchmark
+      --config "$BENCHMARK_CONFIG"
+      --dataset "$dataset"
+      --method "$method"
+      --output-dir "$run_output_dir"
+      --max-retries "$MAX_RETRIES"
+    )
+    if [[ -n "$LIMIT_SEEDS" ]]; then
+      cmd+=(--limit-seeds "$LIMIT_SEEDS")
+    fi
+    if [[ "$RESUME" != "0" ]]; then
+      cmd+=(--resume)
+    fi
+    if [[ "$SAVE_MODEL_ARTIFACTS" == "1" ]]; then
+      cmd+=(--save-model-artifacts)
+    fi
+    if [[ -n "$EXECUTION_N_JOBS" ]]; then
+      cmd+=(--execution-n-jobs "$EXECUTION_N_JOBS")
+    fi
+    "${cmd[@]}" \
       $EXTRA_ARGS \
       > "$log_path" 2>&1
     status=$?

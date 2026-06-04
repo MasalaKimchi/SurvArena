@@ -52,6 +52,7 @@ from survarena.evaluation.metrics import (
 )
 from survarena.methods.foundation.catalog import foundation_model_catalog
 from survarena.methods.foundation.readiness import foundation_runtime_status
+from survarena.methods.base import SurvivalPredictions
 from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
 from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
 from survarena.utils.quiet import quiet_training_output
@@ -494,6 +495,17 @@ class SurvivalPredictor:
         columns = [f"t_{time:.6g}" for time in survival_times]
         return pd.DataFrame(survival, columns=columns, index=frame.index)
 
+    def predict_bundle(
+        self,
+        data: pd.DataFrame | str | Path,
+        times: np.ndarray | list[float] | None = None,
+        *,
+        model: str | None = None,
+    ) -> SurvivalPredictions:
+        frame, model_id, default_times = self._prepare_prediction_inputs(data, model=model)
+        survival_times = np.asarray(times, dtype=float) if times is not None else default_times
+        return self._predict_model_bundle(model_id, frame, survival_times)
+
     def save(self, path: str | Path | None = None) -> Path:
         return save_predictor(self, path)
 
@@ -664,16 +676,15 @@ class SurvivalPredictor:
                     fold_data["event_val"],
                 )
                 eval_times = self._default_survival_times(fold_data["time_train"], fold_data["event_train"])
-                risk_scores = model.predict_risk(fold_data["X_val"])
-                survival_probs = model.predict_survival(fold_data["X_val"], eval_times)
+                predictions = model.predict_bundle(fold_data["X_val"], eval_times)
                 bundle_rows.append(
                     self._compute_metric_bundle_safe(
                         train_time=fold_data["time_train"],
                         train_event=fold_data["event_train"],
                         test_time=fold_data["time_val"],
                         test_event=fold_data["event_val"],
-                        risk_scores=risk_scores,
-                        survival_probs=survival_probs,
+                        risk_scores=predictions.risk,
+                        survival_probs=predictions.survival,
                         survival_times=eval_times,
                     )
                 )
@@ -738,6 +749,25 @@ class SurvivalPredictor:
         transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
         return np.asarray(model.predict_survival(transformed, survival_times), dtype=float)
 
+    def _predict_model_bundle(
+        self,
+        model_id: str,
+        frame: pd.DataFrame,
+        survival_times: np.ndarray,
+    ) -> SurvivalPredictions:
+        model = self.fitted_models_[model_id]
+        if isinstance(model, BaggedSurvivalEnsemble):
+            return model.predict_bundle(frame, survival_times)
+        preprocessor = self.model_preprocessors_[model_id]
+        if preprocessor is None:
+            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
+        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
+        predictions = model.predict_bundle(transformed, survival_times)
+        return SurvivalPredictions(
+            risk=np.asarray(predictions.risk, dtype=float),
+            survival=np.asarray(predictions.survival, dtype=float),
+        )
+
     def _read_features(self, data: pd.DataFrame | str | Path) -> pd.DataFrame:
         frame = read_tabular_data(data)
         removable = [col for col in (self.label_time, self.label_event) if col in frame.columns]
@@ -747,16 +777,15 @@ class SurvivalPredictor:
         train_reference = self._train_reference_dataset()
         self.model_test_metrics_ = {}
         for method_id in self.model_names():
-            risk = self._predict_model_risk(method_id, dataset.X)
             survival_times = self.model_survival_times_[method_id]
-            survival = self._predict_model_survival(method_id, dataset.X, survival_times)
+            predictions = self._predict_model_bundle(method_id, dataset.X, survival_times)
             metrics = self._compute_metric_bundle_safe(
                 train_time=train_reference.time,
                 train_event=train_reference.event,
                 test_time=dataset.time,
                 test_event=dataset.event,
-                risk_scores=risk,
-                survival_probs=survival,
+                risk_scores=predictions.risk,
+                survival_probs=predictions.survival,
                 survival_times=survival_times,
             )
             self.model_test_metrics_[method_id] = {f"test_{name}": float(value) for name, value in metrics.items()}

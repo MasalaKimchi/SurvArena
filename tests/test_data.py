@@ -356,6 +356,20 @@ def test_load_user_dataset_rejects_missing_or_nonbinary_numeric_event_labels() -
         raise AssertionError("Expected non-binary numeric event labels to raise a ValueError.")
 
 
+@pytest.mark.parametrize("bad_time", [0.0, -1.0, float("nan"), float("inf")])
+def test_load_user_dataset_rejects_nonpositive_or_nonfinite_times(bad_time: float) -> None:
+    frame = pd.DataFrame(
+        {
+            "time": [1.0, bad_time, 3.0],
+            "event": [1, 0, 1],
+            "x1": [0.2, 0.5, 0.7],
+        }
+    )
+
+    with pytest.raises(ValueError, match="Survival times|must be numeric"):
+        load_user_dataset(frame, time_col="time", event_col="event")
+
+
 # --- test_validation.py ---
 
 
@@ -528,13 +542,11 @@ def test_prepare_validation_fold_cache_applies_method_specific_numeric_scaling()
     assert method_uses_scaled_numeric_features("mitra_survival_frozen") is False
     assert method_uses_scaled_numeric_features("tabicl_survival") is True
     assert method_uses_scaled_numeric_features("tabm_survival") is False
-    assert method_uses_scaled_numeric_features("tabdpt_survival") is True
     assert method_uses_scaled_numeric_features("catboost_cox") is False
     assert method_uses_scaled_numeric_features("catboost_survival_aft") is False
     assert method_uses_native_categorical_features("mitra_survival_frozen") is True
     assert method_uses_native_categorical_features("tabicl_survival") is False
     assert method_uses_native_categorical_features("tabm_survival") is True
-    assert method_uses_native_categorical_features("tabdpt_survival") is False
     assert method_uses_native_categorical_features("catboost_cox") is True
     assert method_uses_native_categorical_features("catboost_survival_aft") is True
     np.testing.assert_allclose(rsf_fold["X_train"][:, 0], np.asarray([20.0, 40.0]))

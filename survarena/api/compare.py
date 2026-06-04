@@ -33,6 +33,14 @@ def _normalize_seed_list(seeds: list[int] | tuple[int, ...] | None) -> list[int]
     return resolved
 
 
+def _resolve_compare_modes(hpo_cfg: dict[str, Any]) -> tuple[str, ...]:
+    if not hpo_cfg:
+        return ("no_hpo",)
+    if hpo_cfg.get("enabled") is False:
+        return ("no_hpo",)
+    return _DUAL_HPO_MODE_ORDER
+
+
 def _json_ready_records(frame: Any) -> list[dict[str, Any]]:
     clean_frame = frame.astype(object).where(frame.notna(), None)
     records = clean_frame.to_dict(orient="records")
@@ -180,6 +188,8 @@ def compare_survival_models(
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
     }
+    comparison_modes = _resolve_compare_modes(hpo_cfg)
+    benchmark_cfg["comparison_modes"] = list(comparison_modes)
     benchmark_cfg_hash = payload_sha256(benchmark_cfg)
     summary = {
         "benchmark_id": resolved_benchmark_id,
@@ -198,6 +208,7 @@ def compare_survival_models(
         "decision_curve_thresholds": list(resolved_thresholds),
         "resolved_preset": resolved_preset,
         "portfolio_notes": list(portfolio_notes),
+        "comparison_modes": list(comparison_modes),
     }
     if diagnostics is not None:
         summary["dataset_diagnostics"] = diagnostics.to_dict()
@@ -250,7 +261,7 @@ def compare_survival_models(
         method_cfg = method_cfg_cache[method_id]
         for split in splits:
             parity_key = f"{dataset.metadata.dataset_id}|{split.split_id}|{int(split.seed)}|{method_id}"
-            for hpo_mode in _DUAL_HPO_MODE_ORDER:
+            for hpo_mode in comparison_modes:
                 mode_hpo_cfg = dict(hpo_cfg)
                 mode_hpo_cfg["enabled"] = hpo_mode == "hpo"
                 record = evaluate_split(
@@ -304,47 +315,60 @@ def compare_survival_models(
                     f"{primary_metric}={record.get(primary_metric)}"
                 )
 
-    parity_modes: dict[str, set[str]] = {}
-    for run_payload in run_records:
-        metrics = run_payload.get("metrics", {})
-        status = str(run_payload.get("status", metrics.get("status", ""))).lower()
-        parity_key = str(metrics.get("parity_key", ""))
-        hpo_mode = str(metrics.get("hpo_mode", ""))
-        if status == "success" and parity_key and hpo_mode:
-            parity_modes.setdefault(parity_key, set()).add(hpo_mode)
+    if comparison_modes == _DUAL_HPO_MODE_ORDER:
+        parity_modes: dict[str, set[str]] = {}
+        for run_payload in run_records:
+            metrics = run_payload.get("metrics", {})
+            status = str(run_payload.get("status", metrics.get("status", ""))).lower()
+            parity_key = str(metrics.get("parity_key", ""))
+            hpo_mode = str(metrics.get("hpo_mode", ""))
+            if status == "success" and parity_key and hpo_mode:
+                parity_modes.setdefault(parity_key, set()).add(hpo_mode)
 
-    for run_payload in run_records:
-        metrics = run_payload.get("metrics", {})
-        parity_key = str(metrics.get("parity_key", ""))
-        modes = parity_modes.get(parity_key, set())
-        has_both_modes = "no_hpo" in modes and "hpo" in modes
-        if has_both_modes:
+        for run_payload in run_records:
+            metrics = run_payload.get("metrics", {})
+            parity_key = str(metrics.get("parity_key", ""))
+            modes = parity_modes.get(parity_key, set())
+            has_both_modes = "no_hpo" in modes and "hpo" in modes
+            if has_both_modes:
+                metrics["parity_eligible"] = True
+                metrics["comparison_ineligible"] = False
+                metrics["parity_reason"] = None
+                metrics["missing_modes"] = []
+            else:
+                missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
+                metrics["parity_eligible"] = False
+                metrics["comparison_ineligible"] = True
+                metrics["parity_reason"] = "missing_counterpart_mode"
+                metrics["missing_modes"] = missing_modes
+
+        for row in all_records:
+            parity_key = str(row.get("parity_key", ""))
+            modes = parity_modes.get(parity_key, set())
+            has_both_modes = "no_hpo" in modes and "hpo" in modes
+            if has_both_modes:
+                row["parity_eligible"] = True
+                row["comparison_ineligible"] = False
+                row["parity_reason"] = None
+                row["missing_modes"] = []
+            else:
+                missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
+                row["parity_eligible"] = False
+                row["comparison_ineligible"] = True
+                row["parity_reason"] = "missing_counterpart_mode"
+                row["missing_modes"] = missing_modes
+    else:
+        for run_payload in run_records:
+            metrics = run_payload.get("metrics", {})
             metrics["parity_eligible"] = True
             metrics["comparison_ineligible"] = False
             metrics["parity_reason"] = None
             metrics["missing_modes"] = []
-        else:
-            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
-            metrics["parity_eligible"] = False
-            metrics["comparison_ineligible"] = True
-            metrics["parity_reason"] = "missing_counterpart_mode"
-            metrics["missing_modes"] = missing_modes
-
-    for row in all_records:
-        parity_key = str(row.get("parity_key", ""))
-        modes = parity_modes.get(parity_key, set())
-        has_both_modes = "no_hpo" in modes and "hpo" in modes
-        if has_both_modes:
+        for row in all_records:
             row["parity_eligible"] = True
             row["comparison_ineligible"] = False
             row["parity_reason"] = None
             row["missing_modes"] = []
-        else:
-            missing_modes = [mode for mode in _DUAL_HPO_MODE_ORDER if mode not in modes]
-            row["parity_eligible"] = False
-            row["comparison_ineligible"] = True
-            row["parity_reason"] = "missing_counterpart_mode"
-            row["missing_modes"] = missing_modes
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
     leaderboard = export_leaderboard(

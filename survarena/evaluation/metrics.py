@@ -117,17 +117,19 @@ def compute_survival_metrics(
     supported_time_mask = (original_survival_times >= test_follow_up_lower) & (original_survival_times <= support_upper)
     supported_survival_times = original_survival_times[supported_time_mask]
     supported_survival_probs = np.asarray(survival_probs)[:, supported_time_mask]
-    horizons = tuple(float(min(max(horizon, test_follow_up_lower), support_upper)) for horizon in horizons)
+    requested_horizons = tuple(float(horizon) for horizon in horizons)
+    horizons = tuple(float(min(max(horizon, test_follow_up_lower), support_upper)) for horizon in requested_horizons)
+    unique_horizons, horizon_inverse = _unique_horizons(horizons)
 
     train_event_t = torch.as_tensor(train_event.astype(bool))
     train_time_t = torch.as_tensor(train_time.astype(np.float32))
     test_event_t = torch.as_tensor(test_event.astype(bool))
     test_time_t = torch.as_tensor(test_time.astype(np.float32))
     risk_t = torch.as_tensor(risk_scores.astype(np.float32))
-    horizons_t = torch.as_tensor(np.asarray(horizons, dtype=np.float32))
+    unique_horizons_t = torch.as_tensor(unique_horizons.astype(np.float32))
 
     ipcw_test = get_ipcw(train_event_t, train_time_t, test_time_t)
-    ipcw_horizons = get_ipcw(train_event_t, train_time_t, horizons_t)
+    ipcw_unique_horizons = get_ipcw(train_event_t, train_time_t, unique_horizons_t)
 
     cindex = ConcordanceIndex()
     uno = cindex(risk_t, test_event_t, test_time_t, weight=ipcw_test)
@@ -149,47 +151,64 @@ def compute_survival_metrics(
         )
         ibs = brier.integral()
 
+    horizon_survival = _survival_at_times(survival_probs, survival_times, horizons)
+    horizon_event_probs = 1.0 - horizon_survival
+    unique_horizon_survival = _survival_at_times(survival_probs, survival_times, tuple(unique_horizons.tolist()))
+    unique_horizon_event_probs = 1.0 - unique_horizon_survival
+    unique_horizon_event_probs_t = torch.as_tensor(unique_horizon_event_probs.astype(np.float32))
     auc = Auc()
-    aucs = auc(
-        risk_t,
+    unique_aucs = auc(
+        unique_horizon_event_probs_t,
         test_event_t,
         test_time_t,
         auc_type="cumulative",
-        new_time=horizons_t,
+        new_time=unique_horizons_t,
         weight=ipcw_test,
-        weight_new_time=ipcw_horizons,
+        weight_new_time=ipcw_unique_horizons,
     )
-    horizon_survival = _survival_at_times(survival_probs, survival_times, horizons)
-    horizon_event_probs = 1.0 - horizon_survival
-    horizon_survival_t = torch.as_tensor(horizon_survival.astype(np.float32))
-    brier_at_horizons_t = BrierScore()(
-        horizon_survival_t,
+    aucs = unique_aucs[horizon_inverse]
+    unique_horizon_survival_t = torch.as_tensor(unique_horizon_survival.astype(np.float32))
+    unique_brier_at_horizons_t = BrierScore()(
+        unique_horizon_survival_t,
         test_event_t,
         test_time_t,
-        new_time=horizons_t,
+        new_time=unique_horizons_t,
         weight=ipcw_test,
-        weight_new_time=ipcw_horizons,
+        weight_new_time=ipcw_unique_horizons,
     )
+    brier_at_horizons_t = unique_brier_at_horizons_t[horizon_inverse]
     horizon_observed, horizon_known = _event_status_at_horizons(test_time, test_event, horizons)
+    horizon_weights = _ipcw_weights_at_horizons(
+        ipcw_at_time=ipcw_test.detach().cpu().numpy(),
+        ipcw_at_horizons=ipcw_unique_horizons[horizon_inverse].detach().cpu().numpy(),
+        test_time=test_time,
+        test_event=test_event,
+        horizons=horizons,
+    )
     calibration_slope, calibration_intercept = _calibration_line(
         predicted=horizon_event_probs[:, 1],
         observed=horizon_observed[:, 1],
         known=horizon_known[:, 1],
+        sample_weight=horizon_weights[:, 1],
     )
     net_benefit = _net_benefit(
         predicted=horizon_event_probs[:, 1],
         observed=horizon_observed[:, 1],
         known=horizon_known[:, 1],
+        sample_weight=horizon_weights[:, 1],
         threshold=0.2,
     )
 
     extra_metrics: dict[str, float] = {}
     horizon_labels = ("25", "50", "75")
     for idx, label in enumerate(horizon_labels):
+        extra_metrics[f"horizon_requested_{label}"] = float(requested_horizons[idx])
+        extra_metrics[f"horizon_used_{label}"] = float(horizons[idx])
         slope, intercept = _calibration_line(
             predicted=horizon_event_probs[:, idx],
             observed=horizon_observed[:, idx],
             known=horizon_known[:, idx],
+            sample_weight=horizon_weights[:, idx],
         )
         extra_metrics[f"calibration_slope_{label}"] = float(slope)
         extra_metrics[f"calibration_intercept_{label}"] = float(intercept)
@@ -200,6 +219,7 @@ def compute_survival_metrics(
                 predicted=horizon_event_probs[:, idx],
                 observed=horizon_observed[:, idx],
                 known=horizon_known[:, idx],
+                sample_weight=horizon_weights[:, idx],
                 threshold=float(threshold),
             )
             extra_metrics[f"net_benefit_{label}_t{threshold_pct}"] = float(nb)
@@ -242,6 +262,12 @@ def _survival_at_times(
     )
 
 
+def _unique_horizons(horizons: tuple[float, ...]) -> tuple[np.ndarray, np.ndarray]:
+    values = np.asarray(horizons, dtype=float)
+    unique_values, inverse = np.unique(values, return_inverse=True)
+    return unique_values.astype(float), inverse.astype(int)
+
+
 def _event_status_at_horizons(
     test_time: np.ndarray,
     test_event: np.ndarray,
@@ -260,15 +286,51 @@ def _event_status_at_horizons(
     return np.vstack(observed_rows).T, np.vstack(known_rows).T
 
 
-def _calibration_line(*, predicted: np.ndarray, observed: np.ndarray, known: np.ndarray | None = None) -> tuple[float, float]:
+def _ipcw_weights_at_horizons(
+    *,
+    ipcw_at_time: np.ndarray,
+    ipcw_at_horizons: np.ndarray,
+    test_time: np.ndarray,
+    test_event: np.ndarray,
+    horizons: tuple[float, ...],
+) -> np.ndarray:
+    time = np.asarray(test_time, dtype=float)
+    event = np.asarray(test_event, dtype=bool)
+    event_weights = np.asarray(ipcw_at_time, dtype=float)
+    horizon_weights = np.asarray(ipcw_at_horizons, dtype=float)
+    columns: list[np.ndarray] = []
+    for idx, horizon in enumerate(horizons):
+        case = (time <= float(horizon)) & event
+        control = time > float(horizon)
+        weights = np.zeros_like(time, dtype=float)
+        weights[case] = event_weights[case]
+        weights[control] = horizon_weights[idx]
+        columns.append(weights)
+    return np.vstack(columns).T
+
+
+def _calibration_line(
+    *,
+    predicted: np.ndarray,
+    observed: np.ndarray,
+    known: np.ndarray | None = None,
+    sample_weight: np.ndarray | None = None,
+) -> tuple[float, float]:
     pred = np.asarray(predicted, dtype=float)
     obs = np.asarray(observed, dtype=float)
     mask = np.isfinite(pred) & np.isfinite(obs)
     if known is not None:
         mask &= np.asarray(known, dtype=bool)
+    weights = None
+    if sample_weight is not None:
+        weights = np.asarray(sample_weight, dtype=float)
+        mask &= np.isfinite(weights) & (weights > 0.0)
     if int(mask.sum()) < 2 or float(np.std(pred[mask])) == 0.0:
         return float("nan"), float("nan")
-    slope, intercept = np.polyfit(pred[mask], obs[mask], deg=1)
+    if weights is None:
+        slope, intercept = np.polyfit(pred[mask], obs[mask], deg=1)
+    else:
+        slope, intercept = np.polyfit(pred[mask], obs[mask], deg=1, w=np.sqrt(weights[mask]))
     return float(slope), float(intercept)
 
 
@@ -278,20 +340,32 @@ def _net_benefit(
     observed: np.ndarray,
     threshold: float,
     known: np.ndarray | None = None,
+    sample_weight: np.ndarray | None = None,
 ) -> float:
     pred = np.asarray(predicted, dtype=float)
     obs = np.asarray(observed, dtype=bool)
     mask = np.isfinite(pred)
+    denominator = float(mask.sum())
     if known is not None:
         mask &= np.asarray(known, dtype=bool)
+    weights = None
+    if sample_weight is not None:
+        weights = np.asarray(sample_weight, dtype=float)
+        mask &= np.isfinite(weights) & (weights > 0.0)
     if not mask.any() or not 0.0 < threshold < 1.0:
         return float("nan")
     pred = pred[mask]
     obs = obs[mask]
+    if weights is None:
+        weights = np.ones_like(pred, dtype=float)
+        denominator = float(len(pred))
+    else:
+        weights = weights[mask]
     selected = pred >= threshold
-    n = float(len(pred))
-    true_positive = float(np.sum(selected & obs)) / n
-    false_positive = float(np.sum(selected & ~obs)) / n
+    if denominator <= 0.0:
+        return float("nan")
+    true_positive = float(np.sum(weights * (selected & obs))) / denominator
+    false_positive = float(np.sum(weights * (selected & ~obs))) / denominator
     return true_positive - false_positive * (threshold / (1.0 - threshold))
 
 

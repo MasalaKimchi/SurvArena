@@ -87,8 +87,10 @@ class SurvivalDataset:
     def validate(self) -> None:
         if len(self.X) != len(self.time) or len(self.X) != len(self.event):
             raise ValueError("X, time, and event must have the same row count.")
-        if (self.time < 0).any():
-            raise ValueError("Survival times must be nonnegative.")
+        if not np.isfinite(self.time).all():
+            raise ValueError("Survival times must be finite.")
+        if (self.time <= 0).any():
+            raise ValueError("Survival times must be positive.")
         unique_events = set(np.unique(self.event).tolist())
         if not unique_events.issubset({0, 1, False, True}):
             raise ValueError("Event indicator must be binary.")

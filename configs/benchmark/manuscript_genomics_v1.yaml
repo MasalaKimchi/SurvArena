@@ -50,13 +50,6 @@ hpo:
       search_space: null
       default_params:
         time_limit: 120
-    tabdpt_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        context_size: 512
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
     realtabpfn_survival:
       enabled: false
       search_space: null
@@ -99,7 +92,6 @@ methods:
   - tabpfn_survival
   - tabicl_survival
   - tabm_survival
-  - tabdpt_survival
   - realtabpfn_survival
 notes: >
   Genomics manuscript no-HPO benchmark across the same model families,

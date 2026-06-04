@@ -4,7 +4,7 @@ from typing import Any
 
 import numpy as np
 
-from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.base import BaseSurvivalMethod, SurvivalPredictions
 from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
 
 
@@ -238,6 +238,9 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
 
     def predict_risk(self, X: np.ndarray) -> np.ndarray:
         horizon_event_probs = self._horizon_event_probabilities(X)
+        return self._risk_from_horizon_event_probabilities(horizon_event_probs)
+
+    def _risk_from_horizon_event_probabilities(self, horizon_event_probs: np.ndarray) -> np.ndarray:
         if str(self.params["aggregate_risk"]) == "last_event_probability":
             return horizon_event_probs[:, -1].astype(np.float64)
         return horizon_event_probs.mean(axis=1).astype(np.float64)
@@ -245,8 +248,17 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
         if self.horizon_times_ is None:
             raise RuntimeError("TabPFNSurvivalMethod must be fit before prediction.")
-        eval_times = np.asarray(times, dtype=np.float64).reshape(-1)
         horizon_event_probs = self._horizon_event_probabilities(X)
+        return self._survival_from_horizon_event_probabilities(horizon_event_probs, times)
+
+    def _survival_from_horizon_event_probabilities(
+        self,
+        horizon_event_probs: np.ndarray,
+        times: np.ndarray,
+    ) -> np.ndarray:
+        if self.horizon_times_ is None:
+            raise RuntimeError("TabPFNSurvivalMethod must be fit before prediction.")
+        eval_times = np.asarray(times, dtype=np.float64).reshape(-1)
         rows: list[np.ndarray] = []
         for row in horizon_event_probs:
             event_prob_at_times = np.interp(
@@ -261,3 +273,10 @@ class TabPFNSurvivalMethod(BaseSurvivalMethod):
         survival = np.nan_to_num(survival, nan=1.0, posinf=1.0, neginf=1e-8)
         survival = np.clip(survival, 1e-8, 1.0)
         return np.minimum.accumulate(survival, axis=1).astype(np.float64)
+
+    def predict_bundle(self, X: np.ndarray, times: np.ndarray) -> SurvivalPredictions:
+        horizon_event_probs = self._horizon_event_probabilities(X)
+        return SurvivalPredictions(
+            risk=self._risk_from_horizon_event_probabilities(horizon_event_probs),
+            survival=self._survival_from_horizon_event_probabilities(horizon_event_probs, times),
+        )

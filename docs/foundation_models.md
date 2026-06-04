@@ -6,7 +6,7 @@ Last reviewed against manuscript config and extras: 2026-05-27.
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `tabdpt_survival`, `realtabpfn_survival`, `mitra_survival_frozen`
+- implemented adapters: `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `realtabpfn_survival`, `mitra_survival_frozen`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
 - predictor access: `presets="foundation"`, `presets="all"`, or
@@ -44,10 +44,10 @@ Adapter-specific details:
   with known event status at that horizon, falls back to Kaplan-Meier event
   probabilities when a horizon is under-supported, and reconstructs monotone
   survival curves from cumulative event probabilities.
-- `tabicl_survival` and `tabdpt_survival` are censored-aware direct horizon
-  adapters. They train one frozen classifier per event-time horizon using only
-  rows with known event status at that horizon, then reconstruct monotone
-  survival curves from cumulative event probabilities.
+- `tabicl_survival` is a censored-aware direct horizon adapter. It trains one
+  frozen classifier per event-time horizon using only rows with known event
+  status at that horizon, then reconstructs monotone survival curves from
+  cumulative event probabilities.
 - `tabm_survival` and `realtabpfn_survival` use AutoGluon Tabular backbones as
   binary event-risk learners, then calibrate survival curves with the shared
   Breslow baseline survival adapter.

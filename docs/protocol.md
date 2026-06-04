@@ -17,7 +17,7 @@ Last reviewed against the benchmark config: 2026-05-27.
 - seeds: `[11, 22, 33, 44, 55]`
 - primary metric: `uno_c`
 - secondary metrics: `harrell_c`, `ibs`, `td_auc`, `brier`, `calibration`, and `net_benefit`
-- methods: the native manuscript portfolio plus `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `tabdpt_survival`, and `realtabpfn_survival`
+- methods: the native manuscript portfolio plus `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, and `realtabpfn_survival`
 
 Benchmark profiles (see `validate_benchmark_profile_contract` in
 `survarena/benchmark/runner.py`):

@@ -43,13 +43,6 @@ hpo:
       search_space: null
       default_params:
         time_limit: 120
-    tabdpt_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        context_size: 512
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
     realtabpfn_survival:
       enabled: false
       search_space: null
@@ -68,10 +61,9 @@ datasets:
 methods:
   - tabicl_survival
   - tabm_survival
-  - tabdpt_survival
   - realtabpfn_survival
 notes: >
   Manuscript-grade no-HPO genomics benchmark for newly wired tabular foundation
-  survival adapters. TabICL and TabDPT use direct horizon classifiers; remaining
+  survival adapters. TabICL uses direct horizon classifiers; remaining
   AutoGluon-backed adapters stay bounded. Mitra is excluded because local RAM/CPU
   use can exceed the conventional model wall-clock budget.

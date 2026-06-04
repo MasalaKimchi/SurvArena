@@ -1,6 +1,10 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import gzip
+import json
+import pickle
+import re
 import traceback
 from dataclasses import dataclass
 from pathlib import Path
@@ -48,6 +52,8 @@ class BenchmarkRunUnit:
     benchmark_cfg_hash: str
     autogluon_cfg: dict[str, Any]
     max_retries: int
+    model_artifact_dir: Path | None = None
+    save_model_artifacts: bool = False
 
 
 @dataclass(frozen=True)
@@ -204,6 +210,8 @@ def evaluate_split(
     benchmark_cfg_hash: str,
     autogluon_cfg: dict[str, Any] | None = None,
     hpo_cfg: dict[str, Any] | None = None,
+    model_artifact_dir: Path | None = None,
+    save_model_artifacts: bool = False,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -285,8 +293,9 @@ def evaluate_split(
             50,
         )
         with timer() as infer_timer:
-            risk_scores = model.predict_risk(X_test_proc)
-            surv_probs = model.predict_survival(X_test_proc, eval_times)
+            predictions = model.predict_bundle(X_test_proc, eval_times)
+            risk_scores = predictions.risk
+            surv_probs = predictions.survival
         infer_time_sec = infer_timer.elapsed
 
         horizons = horizons_from_train_event_times(t_train, e_train, horizons_quantiles)
@@ -301,6 +310,29 @@ def evaluate_split(
             horizons=horizons,
             decision_thresholds=decision_thresholds,
         ).to_dict()
+        artifact_metadata: dict[str, Any] = {}
+        if save_model_artifacts and model_artifact_dir is not None:
+            artifact_metadata = _save_model_artifacts(
+                artifact_dir=model_artifact_dir,
+                benchmark_id=benchmark_id,
+                dataset_id=dataset_id,
+                method_id=method_id,
+                split_id=split.split_id,
+                seed=int(split.seed),
+                model=model,
+                preprocessor=pre,
+                best_params=best_params,
+                eval_times=eval_times,
+                horizons=horizons,
+                train_idx=split.train_idx,
+                test_idx=split.test_idx,
+                train_time=t_train,
+                train_event=e_train,
+                test_time=t_test,
+                test_event=e_test,
+                risk_scores=risk_scores,
+                survival_probs=surv_probs,
+            )
 
         peak_memory_mb = peak_process_memory_mb()
         runtime_sec = tuning_sec + fit_time_sec + infer_time_sec
@@ -358,10 +390,12 @@ def evaluate_split(
                 "hpo_status": hpo_metadata.get("status", "disabled"),
                 "hpo_trial_count": hpo_metadata.get("trial_count", 0),
                 **foundation_metadata,
+                **artifact_metadata,
             },
             "backend_metadata": {
                 "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
                 "foundation": foundation_metadata,
+                "artifacts": artifact_metadata,
             },
             "hpo_metadata": hpo_metadata,
             "hpo_trials": hpo_trials,
@@ -393,6 +427,7 @@ def evaluate_split(
             "hpo_status": hpo_metadata.get("status", "disabled"),
             "hpo_trial_count": hpo_metadata.get("trial_count", 0),
             **foundation_metadata,
+            **artifact_metadata,
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
@@ -430,6 +465,9 @@ def evaluate_split(
                 "exception_message": str(exc),
                 "elapsed_time_before_failure": elapsed_before_failure,
                 "peak_memory_mb": peak_memory_mb,
+                "model_artifact_status": "not_saved",
+                "model_artifact_path": None,
+                "prediction_artifact_path": None,
             },
             "failure": {
                 "traceback": tb_str,
@@ -469,7 +507,117 @@ def evaluate_split(
             "status": "failed",
             "failure_type": type(exc).__name__,
             "exception_message": str(exc),
+            "model_artifact_status": "not_saved",
+            "model_artifact_path": None,
+            "prediction_artifact_path": None,
         }
+
+
+def _safe_artifact_component(value: Any) -> str:
+    text = str(value)
+    return re.sub(r"[^A-Za-z0-9_.=-]+", "_", text).strip("_") or "unknown"
+
+
+def _save_model_artifacts(
+    *,
+    artifact_dir: Path,
+    benchmark_id: str,
+    dataset_id: str,
+    method_id: str,
+    split_id: str,
+    seed: int,
+    model: Any,
+    preprocessor: Any,
+    best_params: dict[str, Any],
+    eval_times: Any,
+    horizons: Any,
+    train_idx: Any,
+    test_idx: Any,
+    train_time: Any,
+    train_event: Any,
+    test_time: Any,
+    test_event: Any,
+    risk_scores: Any,
+    survival_probs: Any,
+) -> dict[str, Any]:
+    import numpy as np
+
+    run_dir = (
+        artifact_dir
+        / _safe_artifact_component(dataset_id)
+        / _safe_artifact_component(method_id)
+        / f"{_safe_artifact_component(split_id)}_seed{int(seed)}"
+    )
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    prediction_path = run_dir / "predictions.npz"
+    np.savez_compressed(
+        prediction_path,
+        eval_times=np.asarray(eval_times, dtype=float),
+        horizons=np.asarray(horizons, dtype=float),
+        train_idx=np.asarray(train_idx, dtype=int),
+        test_idx=np.asarray(test_idx, dtype=int),
+        train_time=np.asarray(train_time, dtype=float),
+        train_event=np.asarray(train_event, dtype=bool),
+        test_time=np.asarray(test_time, dtype=float),
+        test_event=np.asarray(test_event, dtype=bool),
+        risk_scores=np.asarray(risk_scores, dtype=float),
+        survival_probs=np.asarray(survival_probs, dtype=float),
+    )
+
+    model_path = run_dir / "model_state.pkl.gz"
+    artifact_error: str | None = None
+    model_saved = False
+    try:
+        with gzip.open(model_path, "wb") as handle:
+            pickle.dump(
+                {
+                    "schema_version": "survarena_model_artifact_v1",
+                    "benchmark_id": benchmark_id,
+                    "dataset_id": dataset_id,
+                    "method_id": method_id,
+                    "split_id": split_id,
+                    "seed": int(seed),
+                    "best_params": best_params,
+                    "model": model,
+                    "preprocessor": preprocessor,
+                    "eval_times": np.asarray(eval_times, dtype=float),
+                    "horizons": np.asarray(horizons, dtype=float),
+                },
+                handle,
+                protocol=pickle.HIGHEST_PROTOCOL,
+            )
+        model_saved = True
+    except Exception as exc:  # noqa: BLE001
+        artifact_error = f"{type(exc).__name__}: {exc}"
+        if model_path.exists():
+            model_path.unlink()
+
+    manifest_path = run_dir / "artifact_manifest.json"
+    manifest = {
+        "schema_version": "survarena_run_artifacts_v1",
+        "benchmark_id": benchmark_id,
+        "dataset_id": dataset_id,
+        "method_id": method_id,
+        "split_id": split_id,
+        "seed": int(seed),
+        "model_artifact_status": "saved" if model_saved else "prediction_only",
+        "model_artifact_path": str(model_path) if model_saved else None,
+        "prediction_artifact_path": str(prediction_path),
+        "artifact_error": artifact_error,
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+    if not model_saved:
+        raise RuntimeError(f"Model artifact persistence failed for {method_id}: {artifact_error}")
+
+    return {
+        "artifact_schema_version": manifest["schema_version"],
+        "artifact_manifest_path": str(manifest_path),
+        "model_artifact_status": manifest["model_artifact_status"],
+        "model_artifact_path": manifest["model_artifact_path"],
+        "prediction_artifact_path": manifest["prediction_artifact_path"],
+        "artifact_error": artifact_error,
+    }
 
 
 def _autogluon_metadata(model: Any) -> dict[str, Any]:
@@ -534,6 +682,8 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
             benchmark_cfg_hash=unit.benchmark_cfg_hash,
             autogluon_cfg=unit.autogluon_cfg,
             hpo_cfg=unit.mode_hpo_cfg,
+            model_artifact_dir=unit.model_artifact_dir,
+            save_model_artifacts=unit.save_model_artifacts,
         )
         run_payload = record.pop("run_payload")
         run_payload["dataset_id"] = unit.track_dataset_id
@@ -731,6 +881,8 @@ def _build_dataset_run_units(
     benchmark_cfg_hash: str,
     autogluon_cfg: dict[str, Any],
     max_retries: int,
+    model_artifact_dir: Path | None = None,
+    save_model_artifacts: bool = False,
 ) -> tuple[dict[str, Any], list[BenchmarkRunUnit], dict[str, float]]:
     from time import perf_counter
 
@@ -816,6 +968,8 @@ def _build_dataset_run_units(
                             autogluon_cfg=autogluon_cfg,
                             mode_hpo_cfg=mode_hpo_cfg,
                             max_retries=int(max_retries),
+                            model_artifact_dir=model_artifact_dir,
+                            save_model_artifacts=bool(save_model_artifacts),
                         )
                     )
     timings["evaluation_prep"] += perf_counter() - phase_started_at
@@ -834,6 +988,8 @@ def run_benchmark(
     resume: bool = False,
     max_retries: int = 0,
     regenerate_splits: bool = False,
+    save_model_artifacts: bool = False,
+    execution_n_jobs_override: int | None = None,
 ) -> None:
     from survarena.logging.export import (
         create_experiment_dir,
@@ -889,10 +1045,16 @@ def run_benchmark(
     hpo_cfg.setdefault("pruner", "median")
     hpo_cfg.setdefault("n_startup_trials", 8)
     comparison_modes = _resolve_comparison_modes(benchmark_cfg)
-    execution_n_jobs = _resolve_execution_n_jobs(benchmark_cfg)
+    execution_n_jobs = (
+        _resolve_execution_n_jobs(benchmark_cfg)
+        if execution_n_jobs_override is None
+        else max(int(execution_n_jobs_override), 1)
+    )
     decision_thresholds = tuple(
         float(x) for x in benchmark_cfg.get("decision_curve", {}).get("thresholds", [0.2])
     )
+    artifact_cfg = dict(benchmark_cfg.get("artifacts", {}))
+    save_model_artifacts = bool(save_model_artifacts or artifact_cfg.get("save_model_artifacts", False))
     if dry_run:
         print("Dry run complete.")
         print(f"benchmark_id={benchmark_id}")
@@ -908,6 +1070,7 @@ def run_benchmark(
         print(f"execution_n_jobs={execution_n_jobs}")
         print(f"decision_thresholds={list(decision_thresholds)}")
         print(f"primary_metric={primary_metric}")
+        print(f"save_model_artifacts={save_model_artifacts}")
         print("exports.profile=core_csv")
         return
 
@@ -982,6 +1145,7 @@ def run_benchmark(
         "max_retries": int(max_retries),
         "execution": {"n_jobs": execution_n_jobs},
         "model_name": model_name,
+        "artifact_options": {"save_model_artifacts": save_model_artifacts},
     }
 
     for dataset_id in datasets:
@@ -1004,6 +1168,8 @@ def run_benchmark(
             benchmark_cfg_hash=benchmark_cfg_hash,
             autogluon_cfg=autogluon_cfg,
             max_retries=max_retries,
+            model_artifact_dir=dataset_output_dirs[dataset_id] / "model_artifacts",
+            save_model_artifacts=save_model_artifacts,
         )
         dataset_curation_rows.append(curation_row)
         phase_timings_sec["loading"] += dataset_timings_sec["loading"]

@@ -4,7 +4,8 @@ from typing import Any
 
 import numpy as np
 
-from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.base import BaseSurvivalMethod, SurvivalPredictions
+from survarena.methods.foundation.inference import positive_class_probability_with_backoff
 from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
 from survarena.methods.foundation.tabpfn_survival import (
     _clean_horizon_event_probabilities,
@@ -23,7 +24,7 @@ class _DirectHorizonClassifierSurvivalMethod(BaseSurvivalMethod):
         min_known_per_horizon: int = 20,
         aggregate_risk: str = "mean_event_probability",
         seed: int | None = None,
-        predict_batch_size: int = 32,
+        predict_batch_size: int | None = None,
         **params: Any,
     ) -> None:
         super().__init__(
@@ -133,47 +134,26 @@ class _DirectHorizonClassifierSurvivalMethod(BaseSurvivalMethod):
         except Exception as exc:
             raise rewrite_foundation_runtime_error(method_id, exc) from exc
 
-    @staticmethod
-    def _positive_class_probability(model: Any, X: np.ndarray, *, batch_size: int) -> np.ndarray:
-        X_np = np.asarray(X, dtype=np.float32)
-        resolved_batch_size = max(1, int(batch_size))
-        if X_np.shape[0] > resolved_batch_size:
-            chunks = [
-                _DirectHorizonClassifierSurvivalMethod._positive_class_probability(
-                    model,
-                    X_np[start : start + resolved_batch_size],
-                    batch_size=resolved_batch_size,
-                )
-                for start in range(0, X_np.shape[0], resolved_batch_size)
-            ]
-            return np.concatenate(chunks) if chunks else np.empty(0, dtype=np.float64)
-
-        probabilities = np.asarray(model.predict_proba(X_np), dtype=np.float64)
-        if probabilities.ndim == 1:
-            return probabilities.reshape(-1)
-        classes = np.asarray(getattr(model, "classes_", np.arange(probabilities.shape[1])))
-        positive_positions = np.flatnonzero(classes.astype(str) == "1")
-        if positive_positions.size:
-            return probabilities[:, int(positive_positions[-1])]
-        return probabilities[:, -1]
-
     def _horizon_event_probabilities(self, X: np.ndarray) -> np.ndarray:
         if self.horizon_times_ is None or self.constant_event_probabilities_ is None:
             raise RuntimeError(f"{self.__class__.__name__} must be fit before prediction.")
         X_np = np.asarray(X, dtype=np.float32)
         columns: list[np.ndarray] = []
-        batch_size = int(self.params.get("predict_batch_size", 32))
+        batch_size = self.params.get("predict_batch_size")
         for model, fallback_prob in zip(self.models_, self.constant_event_probabilities_):
             if model is None:
                 columns.append(np.full(X_np.shape[0], float(fallback_prob), dtype=np.float64))
             else:
-                columns.append(self._positive_class_probability(model, X_np, batch_size=batch_size))
+                columns.append(positive_class_probability_with_backoff(model, X_np, batch_size=batch_size))
         if not columns:
             return np.zeros((X_np.shape[0], 0), dtype=np.float64)
         return _clean_horizon_event_probabilities(np.column_stack(columns))
 
     def predict_risk(self, X: np.ndarray) -> np.ndarray:
         horizon_event_probs = self._horizon_event_probabilities(X)
+        return self._risk_from_horizon_event_probabilities(horizon_event_probs)
+
+    def _risk_from_horizon_event_probabilities(self, horizon_event_probs: np.ndarray) -> np.ndarray:
         if str(self.params["aggregate_risk"]) == "last_event_probability":
             return horizon_event_probs[:, -1].astype(np.float64)
         return horizon_event_probs.mean(axis=1).astype(np.float64)
@@ -181,8 +161,17 @@ class _DirectHorizonClassifierSurvivalMethod(BaseSurvivalMethod):
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
         if self.horizon_times_ is None:
             raise RuntimeError(f"{self.__class__.__name__} must be fit before prediction.")
-        eval_times = np.asarray(times, dtype=np.float64).reshape(-1)
         horizon_event_probs = self._horizon_event_probabilities(X)
+        return self._survival_from_horizon_event_probabilities(horizon_event_probs, times)
+
+    def _survival_from_horizon_event_probabilities(
+        self,
+        horizon_event_probs: np.ndarray,
+        times: np.ndarray,
+    ) -> np.ndarray:
+        if self.horizon_times_ is None:
+            raise RuntimeError(f"{self.__class__.__name__} must be fit before prediction.")
+        eval_times = np.asarray(times, dtype=np.float64).reshape(-1)
         rows: list[np.ndarray] = []
         for row in horizon_event_probs:
             event_prob_at_times = np.interp(
@@ -197,6 +186,13 @@ class _DirectHorizonClassifierSurvivalMethod(BaseSurvivalMethod):
         survival = np.nan_to_num(survival, nan=1.0, posinf=1.0, neginf=1e-8)
         survival = np.clip(survival, 1e-8, 1.0)
         return np.minimum.accumulate(survival, axis=1).astype(np.float64)
+
+    def predict_bundle(self, X: np.ndarray, times: np.ndarray) -> SurvivalPredictions:
+        horizon_event_probs = self._horizon_event_probabilities(X)
+        return SurvivalPredictions(
+            risk=self._risk_from_horizon_event_probabilities(horizon_event_probs),
+            survival=self._survival_from_horizon_event_probabilities(horizon_event_probs, times),
+        )
 
 
 class TabICLHorizonSurvivalMethod(_DirectHorizonClassifierSurvivalMethod):
@@ -240,75 +236,4 @@ class TabICLHorizonSurvivalMethod(_DirectHorizonClassifierSurvivalMethod):
             allow_auto_download=bool(self.params["allow_auto_download"]),
             random_state=self.params.get("seed"),
             verbose=False,
-        )
-
-
-class TabDPTHorizonSurvivalMethod(_DirectHorizonClassifierSurvivalMethod):
-    method_id = "tabdpt_survival"
-    foundation_backbone = "TabDPT"
-
-    def __init__(
-        self,
-        inf_batch_size: int = 16,
-        context_size: int = 512,
-        temperature: float = 0.8,
-        normalizer: str = "standard",
-        feature_reduction: str = "pca",
-        compile: bool = False,  # noqa: A002
-        device: str | None = None,
-        **params: Any,
-    ) -> None:
-        super().__init__(
-            inf_batch_size=inf_batch_size,
-            context_size=context_size,
-            temperature=temperature,
-            normalizer=normalizer,
-            feature_reduction=feature_reduction,
-            compile=compile,
-            device=device,
-            **params,
-        )
-
-    def foundation_metadata(self) -> dict[str, Any]:
-        metadata = super().foundation_metadata()
-        metadata["foundation_context_size"] = int(self.params["context_size"])
-        return metadata
-
-    def _build_backbone(self) -> Any:
-        from tabdpt import TabDPTClassifier
-
-        return _TabDPTPredictProbaAdapter(
-            TabDPTClassifier(
-                inf_batch_size=int(self.params["inf_batch_size"]),
-                normalizer=str(self.params["normalizer"]),
-                feature_reduction=str(self.params["feature_reduction"]),
-                device=self.params.get("device"),
-                compile=bool(self.params["compile"]),
-                verbose=False,
-            ),
-            context_size=int(self.params["context_size"]),
-            temperature=float(self.params["temperature"]),
-            seed=self.params.get("seed"),
-        )
-
-
-class _TabDPTPredictProbaAdapter:
-    def __init__(self, model: Any, *, context_size: int, temperature: float, seed: int | None) -> None:
-        self.model = model
-        self.context_size = context_size
-        self.temperature = temperature
-        self.seed = seed
-        self.classes_: np.ndarray | None = None
-
-    def fit(self, X: np.ndarray, y: np.ndarray) -> "_TabDPTPredictProbaAdapter":
-        self.model.fit(X, y)
-        self.classes_ = np.asarray(getattr(self.model, "classes_", np.unique(y)))
-        return self
-
-    def predict_proba(self, X: np.ndarray) -> np.ndarray:
-        return self.model.predict_proba(
-            X,
-            context_size=self.context_size,
-            temperature=self.temperature,
-            seed=self.seed,
         )

@@ -17,10 +17,12 @@
 # Equivalent scripted setup:
 #   PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 #
-# Optional extras can be installed directly when needed:
+# The default contributor environment includes the foundation dependencies used
+# by the manuscript benchmark, including TabPFN and TabICL:
+#   python -m pip install -e ".[dev,foundation-tabpfn,foundation-tabarena]"
 #   python -m pip install -e ".[foundation]"
 #   python -m pip install -e ".[foundation-tabpfn]"
 #   python -m pip install -e ".[foundation-mitra]"
 #   python -m pip install -e ".[tracking]"
 
--e ".[dev]"
+-e ".[dev,foundation-tabpfn,foundation-tabarena]"

@@ -31,4 +31,4 @@ default_params:
   use_amp: false
   allow_auto_download: true
   seed: 0
-  predict_batch_size: 32
+  predict_batch_size: null

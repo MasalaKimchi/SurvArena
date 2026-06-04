@@ -443,6 +443,7 @@ def test_deepsurv_moco_requires_observed_events() -> None:
 class FakeTabularPredictor:
     init_kwargs: dict[str, object] | None = None
     fit_kwargs: dict[str, object] | None = None
+    predict_proba_calls = 0
 
     def __init__(self, **kwargs) -> None:
         FakeTabularPredictor.init_kwargs = kwargs
@@ -457,6 +458,7 @@ class FakeTabularPredictor:
         return pd.DataFrame([{"model": "WeightedEnsemble_L2", "score_val": 0.75, "fit_time": 0.1}])
 
     def predict_proba(self, frame: pd.DataFrame) -> pd.DataFrame:
+        FakeTabularPredictor.predict_proba_calls += 1
         return pd.DataFrame({0: np.full(len(frame), 0.25), 1: np.full(len(frame), 0.75)})
 
 
@@ -545,3 +547,31 @@ def test_autogluon_foundation_event_risk_variants_force_single_backbone() -> Non
 
         assert model.params["hyperparameters"] == {hyperparameter_key: {"ag.max_memory_usage_ratio": 1.1}}
         assert model.foundation_metadata()["foundation_autogluon_hyperparameter_key"] == hyperparameter_key
+
+
+def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, tmp_path) -> None:
+    fake_module = ModuleType("autogluon.tabular")
+    fake_module.TabularPredictor = FakeTabularPredictor
+    monkeypatch.setitem(sys.modules, "autogluon", ModuleType("autogluon"))
+    monkeypatch.setitem(sys.modules, "autogluon.tabular", fake_module)
+    monkeypatch.setattr(
+        "survarena.methods.automl.mitra_survival.ensure_foundation_runtime_ready",
+        lambda method_id: None,
+    )
+    model = TabMSurvivalMethod(path=tmp_path / "tabm", time_limit=1)
+    train = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    model.fit(train, np.asarray([1.0, 2.0, 3.0, 4.0]), np.asarray([1, 0, 1, 0]))
+    evaluation = pd.DataFrame({"x": [4.0, 5.0]})
+    times = np.asarray([1.0, 2.0, 3.0])
+
+    FakeTabularPredictor.predict_proba_calls = 0
+    risk = model.predict_risk(evaluation)
+    survival = model.predict_survival(evaluation, times)
+    separate_calls = FakeTabularPredictor.predict_proba_calls
+    FakeTabularPredictor.predict_proba_calls = 0
+    predictions = model.predict_bundle(evaluation, times)
+
+    np.testing.assert_array_equal(predictions.risk, risk)
+    np.testing.assert_array_equal(predictions.survival, survival)
+    assert separate_calls == 2
+    assert FakeTabularPredictor.predict_proba_calls == 1

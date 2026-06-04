@@ -4,15 +4,33 @@ set -euo pipefail
 PYTHON_BIN="${PYTHON_BIN:-python}"
 BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/manuscript_v1.yaml}"
 WORK_DIR="${WORK_DIR:-results/protocol_validation}"
+FOCUSED_BENCHMARK_CONFIG="$WORK_DIR/focused_benchmark.yaml"
 
 echo "[protocol] Running dry-run config validation"
 "$PYTHON_BIN" -m survarena.run_benchmark \
   --config "$BENCHMARK_CONFIG" \
   --dry-run
 
+mkdir -p "$WORK_DIR"
+"$PYTHON_BIN" - "$BENCHMARK_CONFIG" "$FOCUSED_BENCHMARK_CONFIG" <<'PY'
+from pathlib import Path
+import sys
+
+import yaml
+
+source = Path(sys.argv[1])
+target = Path(sys.argv[2])
+with source.open("r", encoding="utf-8") as handle:
+    cfg = yaml.safe_load(handle)
+cfg["benchmark_id"] = f"{cfg['benchmark_id']}_protocol_validation"
+target.parent.mkdir(parents=True, exist_ok=True)
+with target.open("w", encoding="utf-8") as handle:
+    yaml.safe_dump(cfg, handle, sort_keys=False)
+PY
+
 echo "[protocol] Running focused benchmark execution"
 "$PYTHON_BIN" -m survarena.run_benchmark \
-  --config "$BENCHMARK_CONFIG" \
+  --config "$FOCUSED_BENCHMARK_CONFIG" \
   --dataset whas500 \
   --method coxph \
   --limit-seeds 1 \

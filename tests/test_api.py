@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import pandas as pd
 from survarena import cli
+from survarena import SurvivalPredictions
 from survarena.benchmark import overview
 from survarena.methods.foundation.readiness import FoundationRuntimeStatus
 from pathlib import Path
@@ -12,13 +13,22 @@ from survarena.data.splitters import SplitDefinition
 import json
 import math
 import pytest
+from types import SimpleNamespace
 from survarena.api.predictor import PredictorModelResult, SurvivalPredictor
 from survarena.automl.presets import PresetConfig
 from survarena.evaluation.metrics import MetricBundle
+from survarena.methods.base import BaseSurvivalMethod
 import importlib
 
 
 # --- test_cli.py ---
+
+
+def test_survival_predictions_is_exported_from_public_api() -> None:
+    predictions = SurvivalPredictions(risk=np.asarray([0.2]), survival=np.asarray([[0.9]]))
+
+    assert predictions.risk.tolist() == [0.2]
+    assert predictions.survival.tolist() == [[0.9]]
 
 
 def test_fit_cli_passes_models_and_retention_flags(monkeypatch, capsys) -> None:
@@ -367,6 +377,23 @@ def test_benchmark_doctor_cli_supports_deeper_checks(monkeypatch, capsys) -> Non
     assert '"dataset_id": "whas500"' in output
 
 
+def test_benchmark_doctor_checks_tabicl_foundation_readiness(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr(
+        overview,
+        "foundation_runtime_status_for_method",
+        lambda method_id: SimpleNamespace(
+            dependency_installed=False,
+            install_command='python -m pip install -e ".[foundation-tabarena]"',
+            warning_reason=None,
+        ),
+    )
+
+    issues: list[dict[str, str]] = []
+    overview._append_method_issues(tmp_path, ["tabicl_survival"], issues, check_imports=False)
+
+    assert any(issue["check"] == "foundation_dependency" for issue in issues)
+
+
 def test_benchmark_run_cli_delegates_to_runner(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -513,7 +540,8 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
     assert summary["benchmark_id"] == "user_compare_fixed"
     assert summary["methods"] == ["coxph"]
     assert summary["split_count"] == 1
-    assert summary["fold_results_rows"] == 2
+    assert summary["fold_results_rows"] == 1
+    assert summary["comparison_modes"] == ["no_hpo"]
     assert summary["output_dir"] == str(output_dir)
     assert summary["artifacts"] == {
         "experiment_manifest": str(output_dir / "experiment_manifest.json"),
@@ -521,7 +549,7 @@ def test_compare_survival_models_writes_benchmark_style_outputs(tmp_path: Path, 
         "leaderboard": str(output_dir / "coxph_leaderboard.csv"),
         "run_diagnostics": str(output_dir / "coxph_run_diagnostics.csv"),
     }
-    assert {row["hpo_mode"] for row in summary["leaderboard"]} == {"no_hpo", "hpo"}
+    assert {row["hpo_mode"] for row in summary["leaderboard"]} == {"no_hpo"}
     assert {row["method_id"] for row in summary["leaderboard"]} == {"coxph"}
     assert {row["uno_c"] for row in summary["leaderboard"]} == {0.79}
     assert (output_dir / "experiment_manifest.json").exists()
@@ -593,6 +621,7 @@ def test_compare_exports_exclude_parity_ineligible_rows(tmp_path: Path, monkeypa
         dataset_name="toy_dataset",
         models=["coxph"],
         output_dir=output_dir,
+        hpo={"enabled": True, "max_trials": 1},
     )
 
     fold_results = pd.read_csv(output_dir / "coxph_fold_results.csv")
@@ -850,7 +879,7 @@ def test_compute_metric_bundle_safe_falls_back_to_harrell_only_when_no_rows_are_
 # --- test_predictor_registry.py ---
 
 
-class MockSurvivalMethod:
+class MockSurvivalMethod(BaseSurvivalMethod):
     def __init__(self, bias: float = 0.0, seed: int | None = None) -> None:
         self.bias = float(bias)
         self.seed = seed
@@ -907,6 +936,56 @@ class MockFrameAwareMethod:
         self.survival_columns = list(X.columns) if isinstance(X, pd.DataFrame) else None
         risk = np.maximum(self.predict_risk(X), 0.1)
         return np.exp(-np.outer(risk, np.asarray(times, dtype=float)))
+
+
+def test_fold_cache_metric_summary_uses_bundle_contract(monkeypatch) -> None:
+    class BundleOnlyMockMethod(MockSurvivalMethod):
+        bundle_calls = 0
+
+        def predict_risk(self, X: np.ndarray) -> np.ndarray:
+            raise AssertionError("fold metric summary should use predict_bundle")
+
+        def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
+            raise AssertionError("fold metric summary should use predict_bundle")
+
+        def predict_bundle(self, X: np.ndarray, times: np.ndarray):
+            BundleOnlyMockMethod.bundle_calls += 1
+            risk = X.sum(axis=1).astype(float) + self.bias
+            survival = np.exp(-np.outer(np.maximum(risk, 0.1), np.asarray(times, dtype=float)))
+            return SimpleNamespace(risk=risk, survival=survival)
+
+    monkeypatch.setattr("survarena.api.predictor._get_method_class", lambda method_id: BundleOnlyMockMethod)
+    monkeypatch.setattr(
+        SurvivalPredictor,
+        "_compute_metric_bundle_safe",
+        lambda self, **kwargs: {
+            "uno_c": 0.7,
+            "harrell_c": 0.7,
+            "ibs": 0.2,
+            "td_auc_25": 0.7,
+            "td_auc_50": 0.7,
+            "td_auc_75": 0.7,
+        },
+    )
+    fold_cache = [
+        {
+            "X_train": np.asarray([[0.0], [1.0]], dtype=float),
+            "X_val": np.asarray([[0.5], [1.5]], dtype=float),
+            "time_train": np.asarray([1.0, 2.0], dtype=float),
+            "event_train": np.asarray([1, 1], dtype=int),
+            "time_val": np.asarray([1.5, 2.5], dtype=float),
+            "event_val": np.asarray([1, 0], dtype=int),
+        }
+    ]
+
+    summary = SurvivalPredictor(label_time="time", label_event="event")._fold_cache_metric_summary(
+        method_id="mock_a",
+        params={},
+        fold_cache=fold_cache,
+    )
+
+    assert BundleOnlyMockMethod.bundle_calls == 1
+    assert summary["validation_uno_c"] == 0.7
 
 
 def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, monkeypatch) -> None:
@@ -994,6 +1073,7 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
     assert set(predictor.model_names()) == {"mock_a", "mock_b"}
 
     best_risk = predictor.predict_risk(frame)
+    best_predictions = predictor.predict_bundle(frame)
     alt_risk = predictor.predict_risk(frame, model="mock_a")
     assert not np.allclose(best_risk, alt_risk)
 
@@ -1007,6 +1087,8 @@ def test_predictor_tracks_multiple_fitted_models_and_roundtrips(tmp_path: Path, 
 
     loaded = SurvivalPredictor.load(saved_path)
     np.testing.assert_allclose(loaded.predict_risk(frame, model="mock_b"), best_risk)
+    np.testing.assert_allclose(best_predictions.risk, best_risk)
+    assert best_predictions.survival.shape[0] == len(frame)
 
 
 def test_predictor_retains_only_the_best_model_by_default(tmp_path: Path, monkeypatch) -> None:

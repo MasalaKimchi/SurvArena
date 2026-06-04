@@ -78,20 +78,6 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         max_features_hint=2_000,
     ),
     FoundationModelSpec(
-        method_id="tabdpt_survival",
-        backbone="TabDPT",
-        provider="AutoGluon / Layer 6",
-        task_support=("classification", "regression"),
-        supports_finetune=False,
-        supports_pretrained_weights=True,
-        status="implemented",
-        notes="Censored-aware direct TabDPT horizon classification adapter with monotone survival reconstruction.",
-        dependency_module="tabdpt",
-        install_extra="foundation-tabarena",
-        max_rows_hint=30_000,
-        max_features_hint=2_000,
-    ),
-    FoundationModelSpec(
         method_id="realtabpfn_survival",
         backbone="RealTabPFN-2.5",
         provider="AutoGluon / Prior Labs",
@@ -118,7 +104,6 @@ _WIRED_FOUNDATION_METHOD_IDS = frozenset(
         "mitra_survival_frozen",
         "tabicl_survival",
         "tabm_survival",
-        "tabdpt_survival",
         "realtabpfn_survival",
     }
 )

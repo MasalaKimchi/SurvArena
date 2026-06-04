@@ -1,9 +1,16 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+
+
+@dataclass(frozen=True, slots=True)
+class SurvivalPredictions:
+    risk: np.ndarray
+    survival: np.ndarray
 
 
 class BaseSurvivalMethod(ABC):
@@ -29,6 +36,12 @@ class BaseSurvivalMethod(ABC):
     @abstractmethod
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
         raise NotImplementedError
+
+    def predict_bundle(self, X: np.ndarray, times: np.ndarray) -> SurvivalPredictions:
+        return SurvivalPredictions(
+            risk=np.asarray(self.predict_risk(X)),
+            survival=np.asarray(self.predict_survival(X, times)),
+        )
 
     def get_params(self) -> dict[str, Any]:
         return dict(self.params)

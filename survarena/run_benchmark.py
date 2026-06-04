@@ -24,6 +24,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--resume", action="store_true", help="Resume from an existing output directory if available.")
     parser.add_argument("--max-retries", type=int, default=0, help="Retry failed runs this many times.")
     parser.add_argument(
+        "--save-model-artifacts",
+        action="store_true",
+        help="Persist fitted model/preprocessor state and prediction arrays for every successful split.",
+    )
+    parser.add_argument(
+        "--execution-n-jobs",
+        type=int,
+        default=None,
+        help="Override configured parallel run-unit workers.",
+    )
+    parser.add_argument(
         "--regenerate-splits",
         action="store_true",
         help="Allow split artifact regeneration when an existing manifest payload mismatches.",
@@ -59,6 +70,8 @@ def main() -> None:
         resume=bool(args.resume),
         max_retries=max(int(args.max_retries), 0),
         regenerate_splits=bool(args.regenerate_splits),
+        save_model_artifacts=bool(args.save_model_artifacts),
+        execution_n_jobs_override=args.execution_n_jobs,
     )
 
 

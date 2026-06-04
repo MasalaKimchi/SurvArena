@@ -9,7 +9,7 @@ from survarena.automl.autogluon_backend import (
     fit_autogluon_event_predictor,
     predict_event_probability,
 )
-from survarena.methods.base import BaseSurvivalMethod
+from survarena.methods.base import BaseSurvivalMethod, SurvivalPredictions
 from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
 from survarena.methods.survival_utils import fit_breslow_baseline_survival, predict_breslow_survival
 
@@ -74,12 +74,21 @@ class _AutoGluonEventRiskSurvivalBase(BaseSurvivalMethod):
     def predict_survival(self, X: Any, times: np.ndarray) -> np.ndarray:
         if self.baseline_event_times_ is None or self.baseline_survival_ is None:
             raise RuntimeError(f"{self.__class__.__name__} must be fit before survival prediction.")
+        return self._survival_from_risk(self.predict_risk(X), times)
+
+    def _survival_from_risk(self, risk_scores: np.ndarray, times: np.ndarray) -> np.ndarray:
+        if self.baseline_event_times_ is None or self.baseline_survival_ is None:
+            raise RuntimeError(f"{self.__class__.__name__} must be fit before survival prediction.")
         return predict_breslow_survival(
-            risk_scores=self.predict_risk(X),
+            risk_scores=risk_scores,
             times=np.asarray(times, dtype=float),
             baseline_event_times=self.baseline_event_times_,
             baseline_survival=self.baseline_survival_,
         )
+
+    def predict_bundle(self, X: Any, times: np.ndarray) -> SurvivalPredictions:
+        risk = self.predict_risk(X)
+        return SurvivalPredictions(risk=risk, survival=self._survival_from_risk(risk, times))
 
     def autogluon_metadata(self) -> dict[str, Any]:
         if self.fit_metadata_ is None:
@@ -178,13 +187,6 @@ class TabMSurvivalMethod(_AutoGluonFoundationSurvivalMethod):
     foundation_backbone = "TabM"
     foundation_hyperparameter_key = "TABM"
     foundation_training = "fit"
-
-
-class TabDPTSurvivalMethod(_AutoGluonFoundationSurvivalMethod):
-    foundation_method_id = "tabdpt_survival"
-    foundation_backbone = "TabDPT"
-    foundation_hyperparameter_key = "TABDPT"
-    foundation_training = "in_context"
 
 
 class RealTabPFNV2SurvivalMethod(_AutoGluonFoundationSurvivalMethod):

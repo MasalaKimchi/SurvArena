@@ -10,10 +10,11 @@ from survarena.benchmark.runner import validate_benchmark_profile_contract
 from survarena.config import read_yaml
 from survarena.evaluation.statistics import metric_direction
 from survarena.methods.foundation import foundation_runtime_status_for_method
+from survarena.methods.foundation.catalog import available_foundation_model_specs
 from survarena.methods.registry import get_method_class, registered_method_ids
 
 
-FOUNDATION_METHOD_PREFIXES = ("tabpfn_", "mitra_")
+FOUNDATION_METHOD_IDS = frozenset(spec.method_id for spec in available_foundation_model_specs())
 
 
 def _resolve_repo_path(repo_root: Path, path: str | Path) -> Path:
@@ -162,7 +163,7 @@ def _append_method_issues(
             issues.append(
                 {"severity": "error", "check": "method_config", "message": f"Missing method config: {method_path}"}
             )
-        if str(method_id).startswith(FOUNDATION_METHOD_PREFIXES):
+        if str(method_id) in FOUNDATION_METHOD_IDS:
             status = foundation_runtime_status_for_method(str(method_id))
             if not status.dependency_installed:
                 issues.append(

@@ -23,11 +23,6 @@ CORE_REQUIRED = [
     "catboost",
 ]
 
-FOUNDATION_REQUIRED = [
-    "tabpfn",
-]
-
-
 def _print_header() -> None:
     print("SurvArena environment check")
     print(f"python={sys.version.split()[0]}")
@@ -80,6 +75,9 @@ def _check_foundation_runtime(method_ids: list[str] | None = None) -> None:
             print(f"foundation[{status.method_id}].blocked_reason={status.blocked_reason}")
         if status.warning_reason is not None:
             print(f"foundation[{status.method_id}].warning_reason={status.warning_reason}")
+    unavailable = [status.method_id for status in statuses if not status.runtime_ready]
+    if unavailable:
+        raise RuntimeError(f"Foundation methods are not runtime-ready: {unavailable}")
     print("foundation_runtime=ok")
 
 
@@ -154,7 +152,6 @@ def main() -> None:
     _check_virtualenv()
     _check_imports(CORE_REQUIRED, label="core_imports")
     if args.include_foundation:
-        _check_imports(FOUNDATION_REQUIRED, label="foundation_imports")
         selected_methods = None
         if args.foundation_methods:
             selected_methods = [item.strip() for item in args.foundation_methods.split(",") if item.strip()]

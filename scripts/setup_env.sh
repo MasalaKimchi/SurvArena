@@ -3,7 +3,7 @@ set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 VENV_DIR="${VENV_DIR:-.venv}"
-INSTALL_EXTRAS="${INSTALL_EXTRAS:-dev}"
+INSTALL_EXTRAS="${INSTALL_EXTRAS:-dev,foundation-tabpfn,foundation-tabarena}"
 
 echo "Creating virtual environment in ${VENV_DIR} using ${PYTHON_BIN}"
 "${PYTHON_BIN}" - <<'PY'
@@ -32,8 +32,24 @@ python -m pip install -e "${INSTALL_TARGET}"
 echo "Running environment check"
 CHECK_ARGS=()
 case ",${INSTALL_EXTRAS}," in
-    *",foundation,"* | *",foundation-tabpfn,"* | *",foundation-mitra,"*)
+    *",foundation,"*)
         CHECK_ARGS+=(--include-foundation)
+        ;;
+    *)
+        FOUNDATION_METHODS=()
+        if [[ ",${INSTALL_EXTRAS}," == *",foundation-tabpfn,"* ]]; then
+            FOUNDATION_METHODS+=(tabpfn_survival)
+        fi
+        if [[ ",${INSTALL_EXTRAS}," == *",foundation-tabarena,"* ]]; then
+            FOUNDATION_METHODS+=(tabicl_survival tabm_survival realtabpfn_survival)
+        fi
+        if [[ ",${INSTALL_EXTRAS}," == *",foundation-mitra,"* ]]; then
+            FOUNDATION_METHODS+=(mitra_survival_frozen)
+        fi
+        if [[ "${#FOUNDATION_METHODS[@]}" -gt 0 ]]; then
+            FOUNDATION_METHODS_CSV="$(IFS=,; echo "${FOUNDATION_METHODS[*]}")"
+            CHECK_ARGS+=(--include-foundation --foundation-methods "${FOUNDATION_METHODS_CSV}")
+        fi
         ;;
 esac
 python scripts/check_environment.py "${CHECK_ARGS[@]}"

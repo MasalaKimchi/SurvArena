@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import gzip
 import json
+import pickle
 from pathlib import Path
 from types import SimpleNamespace
 import numpy as np
@@ -12,6 +14,7 @@ from survarena.config import read_yaml
 from survarena.data.splitters import SplitDefinition, load_or_create_splits
 from survarena.logging.export import export_coverage_matrix, export_hpo_budget_summary
 from survarena.logging.export import export_run_diagnostics, export_runtime_failure_summary
+from survarena.methods.base import BaseSurvivalMethod
 
 
 # --- test_benchmark_runner.py ---
@@ -161,9 +164,7 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     assert manuscript_cfg["exports"]["manuscript_artifact_layout"] == "compact"
     assert "tabpfn_survival" in manuscript_cfg["methods"]
     assert "mitra_survival_frozen" not in manuscript_cfg["methods"]
-    assert {"tabicl_survival", "tabm_survival", "tabdpt_survival", "realtabpfn_survival"}.issubset(
-        manuscript_cfg["methods"]
-    )
+    assert {"tabicl_survival", "tabm_survival", "realtabpfn_survival"}.issubset(manuscript_cfg["methods"])
     assert hpo_cfg["profile"] == "manuscript"
     assert hpo_cfg["comparison_modes"] == ["hpo"]
     assert hpo_cfg["hpo"]["enabled"] is True
@@ -261,6 +262,22 @@ def _single_split(seed: int = 11) -> list[SplitDefinition]:
             val_idx=np.asarray([1], dtype=int),
         )
     ]
+
+
+class PickleableBenchmarkMethod(BaseSurvivalMethod):
+    def __init__(self, **_params) -> None:
+        self.scale_: float | None = None
+
+    def fit(self, X, time, event) -> None:
+        self.scale_ = float(np.mean(time[event.astype(bool)]))
+
+    def predict_risk(self, X):
+        return np.asarray(X, dtype=float)[:, 0]
+
+    def predict_survival(self, X, times):
+        risk = np.asarray(self.predict_risk(X), dtype=float)
+        baseline = np.maximum(float(self.scale_ or 1.0), 1e-8)
+        return np.exp(-np.outer(np.maximum(risk, 1e-6), np.asarray(times, dtype=float) / baseline))
 
 
 def _resume_record(status: str = "success") -> dict[str, object]:
@@ -363,6 +380,103 @@ def test_evaluate_split_failure_payload_covers_major_method_families(
     assert metrics["exception_message"] == failure_message
     assert "RuntimeError" in run_payload["failure"]["traceback"]
     assert failure_message in run_payload["failure"]["traceback"]
+
+
+def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, monkeypatch) -> None:
+    frame = pd.DataFrame(
+        {
+            "x1": np.linspace(0.1, 1.2, 12),
+            "x2": ["a", "b", "a", "c", "b", "a", "c", "b", "a", "c", "b", "a"],
+        }
+    )
+    time = np.asarray([1.0, 2.0, 2.5, 3.0, 4.0, 4.5, 5.0, 6.0, 6.5, 7.0, 8.0, 9.0], dtype=float)
+    event = np.asarray([1, 0, 1, 1, 0, 1, 0, 1, 1, 0, 1, 1], dtype=int)
+    split = SplitDefinition(
+        split_id="artifact_split",
+        seed=7,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([0, 1, 2, 3, 4, 5, 6, 7], dtype=int),
+        test_idx=np.asarray([8, 9, 10, 11], dtype=int),
+        val_idx=np.asarray([6, 7], dtype=int),
+    )
+    monkeypatch.setattr(runner, "get_method_class", lambda _method_id: PickleableBenchmarkMethod)
+
+    record = runner.evaluate_split(
+        benchmark_id="artifact_test",
+        dataset_id="toy_dataset",
+        method_id="coxph",
+        split=split,
+        X=frame,
+        time=time,
+        event=event,
+        method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
+        inner_folds=2,
+        timeout_seconds=None,
+        primary_metric="uno_c",
+        horizons_quantiles=(0.25, 0.5, 0.75),
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg-hash",
+        hpo_cfg={"enabled": False},
+        model_artifact_dir=tmp_path / "model_artifacts",
+        save_model_artifacts=True,
+    )
+
+    assert record["status"] == "success"
+    assert record["model_artifact_status"] == "saved"
+    model_path = Path(record["model_artifact_path"])
+    prediction_path = Path(record["prediction_artifact_path"])
+    manifest_path = Path(record["artifact_manifest_path"])
+    assert model_path.exists()
+    assert prediction_path.exists()
+    assert manifest_path.exists()
+
+    with gzip.open(model_path, "rb") as handle:
+        payload = pickle.load(handle)
+    assert payload["schema_version"] == "survarena_model_artifact_v1"
+    assert payload["method_id"] == "coxph"
+    assert payload["preprocessor"] is not None
+    assert isinstance(payload["model"], PickleableBenchmarkMethod)
+
+    predictions = np.load(prediction_path)
+    assert predictions["risk_scores"].shape == (4,)
+    assert predictions["survival_probs"].shape[0] == 4
+    assert predictions["test_time"].tolist() == time[split.test_idx].tolist()
+
+
+def test_model_artifact_request_fails_if_fitted_state_is_not_pickleable(tmp_path: Path) -> None:
+    class UnpickleableModel:
+        def __getstate__(self):
+            raise TypeError("cannot pickle model state")
+
+    artifact_dir = tmp_path / "model_artifacts"
+    with pytest.raises(RuntimeError, match="Model artifact persistence failed"):
+        runner._save_model_artifacts(
+            artifact_dir=artifact_dir,
+            benchmark_id="artifact_test",
+            dataset_id="toy_dataset",
+            method_id="unpickleable",
+            split_id="split_0",
+            seed=7,
+            model=UnpickleableModel(),
+            preprocessor=None,
+            best_params={},
+            eval_times=np.asarray([1.0, 2.0]),
+            horizons=np.asarray([1.0, 2.0, 3.0]),
+            train_idx=np.asarray([0, 1]),
+            test_idx=np.asarray([2]),
+            train_time=np.asarray([1.0, 2.0]),
+            train_event=np.asarray([1, 0]),
+            test_time=np.asarray([3.0]),
+            test_event=np.asarray([1]),
+            risk_scores=np.asarray([0.5]),
+            survival_probs=np.asarray([[0.8, 0.6]]),
+        )
+
+    manifest = json.loads(next(artifact_dir.rglob("artifact_manifest.json")).read_text(encoding="utf-8"))
+    assert manifest["model_artifact_status"] == "prediction_only"
+    assert Path(manifest["prediction_artifact_path"]).exists()
+    assert manifest["model_artifact_path"] is None
 
 
 def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, status: str = "success") -> None:

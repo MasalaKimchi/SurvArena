@@ -17,13 +17,16 @@ source .venv/bin/activate
 The setup script:
 
 - creates `.venv`
-- installs SurvArena in editable mode
+- installs SurvArena in editable mode with developer tooling and the manuscript
+  TabPFN/TabICL foundation dependencies
 - runs `scripts/check_environment.py`
 
 Useful overrides:
 
 - `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev ./scripts/setup_env.sh` for a core-only contributor environment
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
+- `INSTALL_EXTRAS=dev,foundation-tabarena ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
 
@@ -33,8 +36,9 @@ Useful overrides:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -e ".[dev]"
-python scripts/check_environment.py
+python -m pip install -r requirements.txt
+python scripts/check_environment.py --include-foundation \
+  --foundation-methods tabpfn_survival,tabicl_survival,tabm_survival,realtabpfn_survival
 ```
 
 Optional foundation extras:
@@ -48,8 +52,17 @@ survarena foundation-check
 Install only one foundation backend when isolating dependency issues:
 
 ```bash
+python -m pip install -e ".[foundation-tabarena]"
 python -m pip install -e ".[foundation-tabpfn]"
 python -m pip install -e ".[foundation-mitra]"
+```
+
+Always run benchmark commands with the activated repo-local environment:
+
+```bash
+source .venv/bin/activate
+python -c "import sys, tabicl; print(sys.executable); print(tabicl.__file__)"
+python -m survarena.run_benchmark --dry-run
 ```
 
 Optional tracking extras:
