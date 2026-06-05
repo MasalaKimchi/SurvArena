@@ -5,34 +5,34 @@ right-censored tabular survival analysis. The retained benchmark contract is a
 single config-driven evidence path:
 
 - config: `configs/benchmark/manuscript_v1.yaml`
-- datasets: `support`, `metabric`, `aids`, `gbsg2`, `flchain`, `whas500`
-- methods: the native manuscript portfolio plus `tabpfn_survival` and
-  `mitra_survival_frozen`
+- datasets: `support`, `metabric`, `nwtco`, `aids`, `gbsg2`, `flchain`, `whas500`
+- methods: the native manuscript portfolio plus `tabpfn_survival`,
+  `tabicl_survival`, `tabm_survival`, and `realtabpfn_survival`
 - mode: `no_hpo`
 - geometry: 5 folds x 3 repeats per dataset/method pair
-- artifact policy: compact `core_csv` outputs and one retained manuscript Elo
-  evidence bundle under `results/manuscript_elo/`
+- artifact policy: compact CSV outputs and one retained manuscript Elo/report
+  evidence bundle under `results/manuscript_grade/clinical_no_hpo/elo/`
 
 Retired benchmark surfaces include smoke, standard, local-HPO, cloud-HPO,
-foundation-only, KKBox, NWTCO, XGBSE, and separate foundation Elo configs.
+foundation-only, KKBox, XGBSE, and separate foundation Elo configs.
 Those paths should not be cited as maintained evidence or used as defaults.
 
 ## Current Evidence
 
-The retained native manuscript evidence bundle is complete for the previous
-23-method native-only matrix: 2,070 successful fold rows across 6 datasets,
-23 methods, and 15 splits per dataset/method pair.
+The retained clinical manuscript no-HPO evidence bundle is complete for the
+current 27-method matrix: 2,835 successful fold rows across 7 datasets, 27
+methods, and 15 splits per dataset/method pair.
 
-After adding `tabpfn_survival` and `mitra_survival_frozen` to the manuscript
-config, the unified manuscript matrix expects 2,250 fold rows. The two
-foundation methods still need manuscript-grade runs before native+foundation
-claims are complete.
+The retained Elo/reporting bundle now contains metric-specific Elo ladders,
+paired win-rate tables, rank summaries, coverage summaries, method summaries,
+figures, and `metric_suite_index.csv`. Raw calibration slope/intercept values
+remain diagnostics; ranking uses calibration absolute-error metrics.
 
 ## Remaining Work
 
-- run the two foundation methods across the six manuscript datasets
-- rebuild `results/manuscript_elo/` with the unified 25-method matrix
-- regenerate README/doc figures from the unified artifact bundle
+- keep the metric-suite Elo bundle synchronized with any new manuscript result
+  artifacts
+- rerun calibration-sensitive foundation checks after adapter changes
 - keep code-review-graph updated after cleanup passes
 - avoid reintroducing parallel benchmark YAMLs unless the protocol itself
   changes enough to justify a new maintained track

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from survarena.evaluation._metric_stats import metric_direction
@@ -54,22 +55,32 @@ def pairwise_win_rate(frame: pd.DataFrame, *, metric: str) -> pd.DataFrame:
             benchmark_id, dataset_id = _key
         else:
             benchmark_id, dataset_id, _hpo = _key
-        values = sub[["method_id", metric]].dropna()
-        for _, left in values.iterrows():
-            for _, right in values.iterrows():
-                if left["method_id"] == right["method_id"]:
+        values = sub[["method_id", metric]].dropna().copy()
+        values["method_id"] = values["method_id"].astype(str)
+        method_values = {
+            method_id: group[metric].to_numpy(dtype=float)
+            for method_id, group in values.groupby("method_id", sort=True)
+            if not group.empty
+        }
+        for left_id, left_scores in method_values.items():
+            for right_id, right_scores in method_values.items():
+                if left_id == right_id:
                     continue
-                left_score = float(left[metric])
-                right_score = float(right[metric])
-                win = left_score > right_score if higher_is_better else left_score < right_score
-                tie = left_score == right_score
+                if left_scores.size == 0 or right_scores.size == 0:
+                    continue
+                left_matrix = left_scores[:, np.newaxis]
+                right_matrix = right_scores[np.newaxis, :]
+                win = left_matrix > right_matrix if higher_is_better else left_matrix < right_matrix
+                tie = left_matrix == right_matrix
+                n = int(win.size)
                 row: dict[str, object] = {
                     "benchmark_id": benchmark_id,
                     "dataset_id": dataset_id,
-                    "method_id": left["method_id"],
-                    "opponent_method_id": right["method_id"],
-                    "win": float(win),
-                    "tie": float(tie),
+                    "method_id": left_id,
+                    "opponent_method_id": right_id,
+                    "wins": float(np.sum(win)),
+                    "ties": float(np.sum(tie)),
+                    "n": n,
                 }
                 if "hpo_mode" in sub.columns and not sub["hpo_mode"].empty:
                     row["hpo_mode"] = sub["hpo_mode"].iloc[0]
@@ -90,8 +101,11 @@ def pairwise_win_rate(frame: pd.DataFrame, *, metric: str) -> pd.DataFrame:
     group_out = ["benchmark_id", "method_id", "opponent_method_id"]
     if "hpo_mode" in pairwise.columns:
         group_out = ["benchmark_id", "hpo_mode", "method_id", "opponent_method_id"]
-    return pairwise.groupby(group_out, as_index=False).agg(
-        win_rate=("win", "mean"),
-        tie_rate=("tie", "mean"),
-        n=("win", "count"),
+    grouped = pairwise.groupby(group_out, as_index=False).agg(
+        wins=("wins", "sum"),
+        ties=("ties", "sum"),
+        n=("n", "sum"),
     )
+    grouped["win_rate"] = grouped["wins"] / grouped["n"].replace(0, np.nan)
+    grouped["tie_rate"] = grouped["ties"] / grouped["n"].replace(0, np.nan)
+    return grouped[[*group_out, "win_rate", "tie_rate", "n"]]

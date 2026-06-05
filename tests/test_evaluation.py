@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 import numpy as np
 import pytest
+from scripts import build_manuscript_elo as manuscript_elo
 from survarena.benchmark import tuning
 from survarena.evaluation.metrics import (
     MetricBundle,
@@ -161,6 +163,72 @@ def test_raw_calibration_slope_is_not_ranked_as_higher_is_better() -> None:
         metric_direction("calibration_slope_50")
 
     assert metric_direction("calibration_slope_abs_error_50") == "minimize"
+
+
+def test_manuscript_elo_discovers_derived_calibration_error_not_raw_slope() -> None:
+    frame = pd.DataFrame(
+        {
+            "uno_c": [0.7, 0.6],
+            "calibration_slope_50": [1.25, 2.5],
+            "calibration_intercept_50": [-0.2, 0.3],
+        }
+    )
+
+    metrics = manuscript_elo._available_metrics(frame)
+
+    assert "uno_c" in metrics
+    assert "calibration_slope_abs_error_50" in metrics
+    assert "calibration_intercept_abs_error_50" in metrics
+    assert "calibration_slope_50" not in metrics
+    assert "calibration_intercept_50" not in metrics
+
+
+def test_manuscript_elo_metric_suite_writes_index_with_multiple_metrics(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    fold_dir = input_dir / "toy" / "mock"
+    fold_dir.mkdir(parents=True)
+    pd.DataFrame(
+        [
+            {
+                "benchmark_id": "bench",
+                "dataset_id": "toy__baseline",
+                "method_id": "left",
+                "split_id": "repeat_0_fold_0__baseline",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.72,
+                "calibration_slope_50": 1.1,
+                "runtime_sec": 1.0,
+            },
+            {
+                "benchmark_id": "bench",
+                "dataset_id": "toy__baseline",
+                "method_id": "right",
+                "split_id": "repeat_0_fold_0__baseline",
+                "seed": 11,
+                "hpo_mode": "no_hpo",
+                "status": "success",
+                "uno_c": 0.68,
+                "calibration_slope_50": 1.8,
+                "runtime_sec": 1.2,
+            },
+        ]
+    ).to_csv(fold_dir / "mock_fold_results.csv", index=False)
+
+    outputs = manuscript_elo.build_metric_suite_outputs(
+        repo_root=tmp_path,
+        input_dir=input_dir,
+        output_dir=tmp_path / "elo",
+        asset_dir=None,
+        metrics=["uno_c", "calibration_slope_abs_error_50"],
+        n_bootstrap=0,
+    )
+
+    index = pd.read_csv(outputs["metric_suite_index"])
+    assert index["metric"].tolist() == ["uno_c", "calibration_slope_abs_error_50"]
+    assert (tmp_path / "elo" / "elo_ratings_uno_c.csv").exists()
+    assert (tmp_path / "elo" / "elo_ratings_calibration_slope_abs_error_50.csv").exists()
 
 
 def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:

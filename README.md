@@ -15,8 +15,9 @@ leaderboards, persisted artifacts, and manuscript-friendly benchmark summaries.
 ## Benchmark Preview
 
 Quick view of the current manuscript-grade no-HPO Elo evidence bundle, built
-from `configs/benchmark/manuscript_v1.yaml` across 7 datasets, 25 methods, and
-15 outer folds per dataset/method pair:
+from `configs/benchmark/manuscript_v1.yaml` across 7 datasets, 27 methods, and
+15 outer folds per dataset/method pair. The preview below is the Uno C ladder;
+the retained Elo artifact directory includes one ladder per comparable metric:
 
 ![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
 
@@ -163,11 +164,15 @@ training remains CPU-only here.
 The current manuscript evidence bundle uses the completed `manuscript_v1`
 no-HPO matrix. It covers all seven built-in benchmark datasets and all 27
 manuscript methods with 5 folds x 3 repeats per dataset/method pair. Rebuild
-the Elo tables and README figure from local result artifacts with:
+the metric-specific Elo tables, figures, and `metric_suite_index.csv` from local
+result artifacts with:
 
 ```bash
 python scripts/build_manuscript_elo.py
 ```
+
+The default command builds one Elo ladder per comparable metric. The README
+preview below shows the discrimination-focused Uno C ladder.
 
 ![Manuscript no-HPO Elo ratings by Uno C](docs/assets/elo_manuscript_no_hpo_uno_c.png)
 

@@ -18,7 +18,26 @@ from survarena.evaluation.statistics import aggregate_rank_summary, elo_ratings,
 DEFAULT_INPUT = Path("results/manuscript_grade/clinical_no_hpo/dataset_model")
 DEFAULT_OUTPUT = Path("results/manuscript_grade/clinical_no_hpo/elo")
 DEFAULT_ASSET_DIR = Path("docs/assets")
-DEFAULT_METRIC = "uno_c"
+DEFAULT_METRIC_SUITE = (
+    "uno_c",
+    "harrell_c",
+    "ibs",
+    "td_auc_25",
+    "td_auc_50",
+    "td_auc_75",
+    "brier_25",
+    "brier_50",
+    "brier_75",
+    "calibration_slope_abs_error_25",
+    "calibration_slope_abs_error_50",
+    "calibration_slope_abs_error_75",
+    "calibration_intercept_abs_error_25",
+    "calibration_intercept_abs_error_50",
+    "calibration_intercept_abs_error_75",
+    "net_benefit_25",
+    "net_benefit_50",
+    "net_benefit_75",
+)
 
 DISPLAY_NAMES = {
     "aalen_additive": "Aalen Additive",
@@ -67,9 +86,15 @@ METRIC_LABELS = {
     "brier_25": "Brier Score (25%)",
     "brier_50": "Brier Score (50%)",
     "brier_75": "Brier Score (75%)",
-    "calibration_slope_50": "Calibration Slope (50%)",
-    "calibration_intercept_50": "Calibration Intercept (50%)",
+    "calibration_slope_abs_error_25": "Calibration Slope Absolute Error (25%)",
+    "calibration_slope_abs_error_50": "Calibration Slope Absolute Error (50%)",
+    "calibration_slope_abs_error_75": "Calibration Slope Absolute Error (75%)",
+    "calibration_intercept_abs_error_25": "Calibration Intercept Absolute Error (25%)",
+    "calibration_intercept_abs_error_50": "Calibration Intercept Absolute Error (50%)",
+    "calibration_intercept_abs_error_75": "Calibration Intercept Absolute Error (75%)",
+    "net_benefit_25": "Net Benefit (25%)",
     "net_benefit_50": "Net Benefit (50%)",
+    "net_benefit_75": "Net Benefit (75%)",
 }
 
 
@@ -106,6 +131,7 @@ def _load_method_metadata(repo_root: Path, method_ids: list[str]) -> pd.DataFram
 
 
 def _available_metrics(frame: pd.DataFrame) -> list[str]:
+    frame = _with_derived_comparable_metrics(frame)
     metrics: list[str] = []
     for column in frame.columns:
         try:
@@ -117,15 +143,39 @@ def _available_metrics(frame: pd.DataFrame) -> list[str]:
     return metrics
 
 
+def _with_derived_comparable_metrics(frame: pd.DataFrame) -> pd.DataFrame:
+    out = frame.copy()
+    for column in list(out.columns):
+        if column.startswith("calibration_slope_") and not column.startswith("calibration_slope_abs_error_"):
+            suffix = column.removeprefix("calibration_slope_")
+            target = f"calibration_slope_abs_error_{suffix}"
+            if target not in out.columns:
+                out[target] = (pd.to_numeric(out[column], errors="coerce") - 1.0).abs()
+        if column.startswith("calibration_intercept_") and not column.startswith("calibration_intercept_abs_error_"):
+            suffix = column.removeprefix("calibration_intercept_")
+            target = f"calibration_intercept_abs_error_{suffix}"
+            if target not in out.columns:
+                out[target] = pd.to_numeric(out[column], errors="coerce").abs()
+    return out
+
+
+def _default_metrics_for_frame(frame: pd.DataFrame) -> list[str]:
+    available = set(_available_metrics(frame))
+    return [metric for metric in DEFAULT_METRIC_SUITE if metric in available]
+
+
 def _load_raw_fold_results(input_dir: Path) -> pd.DataFrame:
     paths = sorted(input_dir.glob("*/*/*_fold_results.csv"))
     if not paths:
         raise ValueError(f"No fold result CSVs found under {input_dir}.")
-    return pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False)
+    return _with_derived_comparable_metrics(pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False))
 
 
 def _load_fold_results(input_dir: Path, *, metric: str) -> pd.DataFrame:
-    frame = _load_raw_fold_results(input_dir)
+    return _prepare_fold_results(_load_raw_fold_results(input_dir), metric=metric)
+
+
+def _prepare_fold_results(frame: pd.DataFrame, *, metric: str) -> pd.DataFrame:
     required = {"benchmark_id", "dataset_id", "method_id", "split_id", "seed", "hpo_mode", "status", metric}
     missing = required.difference(frame.columns)
     if missing:
@@ -211,12 +261,34 @@ def build_outputs(
     input_dir: Path,
     output_dir: Path,
     asset_path: Path | None,
-    metric: str = DEFAULT_METRIC,
+    metric: str,
     n_bootstrap: int = 1000,
     strict_coverage: bool = False,
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
     fold_results = _load_fold_results(input_dir, metric=metric)
+    return _build_outputs_from_fold_results(
+        repo_root=repo_root,
+        output_dir=output_dir,
+        asset_path=asset_path,
+        metric=metric,
+        n_bootstrap=n_bootstrap,
+        strict_coverage=strict_coverage,
+        fold_results=fold_results,
+    )
+
+
+def _build_outputs_from_fold_results(
+    *,
+    repo_root: Path,
+    output_dir: Path,
+    asset_path: Path | None,
+    metric: str,
+    n_bootstrap: int,
+    strict_coverage: bool,
+    fold_results: pd.DataFrame,
+) -> dict[str, Path]:
+    output_dir.mkdir(parents=True, exist_ok=True)
     coverage = _validate_coverage(fold_results, metric=metric, strict=strict_coverage)
     stem = _metric_stem(metric)
 
@@ -273,11 +345,62 @@ def build_outputs(
     return outputs
 
 
+def build_metric_suite_outputs(
+    *,
+    repo_root: Path,
+    input_dir: Path,
+    output_dir: Path,
+    asset_dir: Path | None,
+    metrics: list[str],
+    n_bootstrap: int = 1000,
+    strict_coverage: bool = False,
+) -> dict[str, Path]:
+    if not metrics:
+        raise ValueError("No comparable metrics were requested or found in fold results.")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    raw_fold_results = _load_raw_fold_results(input_dir)
+    rows: list[dict[str, str]] = []
+    outputs: dict[str, Path] = {}
+    for metric in metrics:
+        asset_path = None if asset_dir is None else asset_dir / f"elo_manuscript_no_hpo_{_metric_stem(metric)}.png"
+        metric_outputs = _build_outputs_from_fold_results(
+            repo_root=repo_root,
+            output_dir=output_dir,
+            asset_path=asset_path,
+            metric=metric,
+            n_bootstrap=n_bootstrap,
+            strict_coverage=strict_coverage,
+            fold_results=_prepare_fold_results(raw_fold_results, metric=metric),
+        )
+        for name, path in metric_outputs.items():
+            outputs[f"{metric}.{name}"] = path
+        rows.append(
+            {
+                "metric": metric,
+                "direction": metric_direction(metric),
+                "label": _metric_label(metric),
+                "elo": str(metric_outputs["elo"]),
+                "pairwise": str(metric_outputs["pairwise"]),
+                "ranks": str(metric_outputs["ranks"]),
+                "figure_png": str(metric_outputs["figure_png"]),
+            }
+        )
+    index_path = output_dir / "metric_suite_index.csv"
+    pd.DataFrame(rows).to_csv(index_path, index=False)
+    outputs["metric_suite_index"] = index_path
+    return outputs
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build manuscript no-HPO Elo outputs from matrix fold results.")
     parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
-    parser.add_argument("--metric", default=DEFAULT_METRIC)
+    parser.add_argument(
+        "--metric",
+        action="append",
+        default=None,
+        help="Comparable metric to build. Can be repeated. Defaults to the manuscript metric suite.",
+    )
     parser.add_argument("--bootstrap", type=int, default=1000, help="Number of bootstrap draws for Elo confidence intervals.")
     parser.add_argument("--asset-path", type=Path, default=None)
     parser.add_argument("--no-asset", action="store_true", help="Do not copy the PNG into docs/assets.")
@@ -296,21 +419,43 @@ def main() -> None:
         for metric in metrics:
             print(f"{metric}\t{metric_direction(metric)}\t{_metric_label(metric)}")
         return
+    raw_fold_results = _load_raw_fold_results(input_dir)
+    metrics = list(args.metric) if args.metric else _default_metrics_for_frame(raw_fold_results)
+    if not metrics:
+        raise ValueError("No comparable metrics found in fold results.")
     if args.no_asset:
-        asset_path = None
+        asset_dir = None
     elif args.asset_path is None:
-        asset_path = repo_root / DEFAULT_ASSET_DIR / f"elo_manuscript_no_hpo_{_metric_stem(args.metric)}.png"
+        asset_dir = repo_root / DEFAULT_ASSET_DIR
     else:
+        if len(metrics) > 1:
+            raise ValueError("--asset-path can only be used with exactly one --metric.")
         asset_path = args.asset_path if args.asset_path.is_absolute() else repo_root / args.asset_path
-    outputs = build_outputs(
-        repo_root=repo_root,
-        input_dir=input_dir,
-        output_dir=output_dir,
-        asset_path=asset_path,
-        metric=args.metric,
-        n_bootstrap=args.bootstrap,
-        strict_coverage=args.strict_coverage,
-    )
+        asset_dir = None
+    if args.asset_path is not None or args.metric:
+        if len(metrics) != 1:
+            raise ValueError("Single-metric output requires exactly one metric.")
+        if args.asset_path is None:
+            asset_path = None if asset_dir is None else asset_dir / f"elo_manuscript_no_hpo_{_metric_stem(metrics[0])}.png"
+        outputs = build_outputs(
+            repo_root=repo_root,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            asset_path=asset_path,
+            metric=metrics[0],
+            n_bootstrap=args.bootstrap,
+            strict_coverage=args.strict_coverage,
+        )
+    else:
+        outputs = build_metric_suite_outputs(
+            repo_root=repo_root,
+            input_dir=input_dir,
+            output_dir=output_dir,
+            asset_dir=asset_dir,
+            metrics=metrics,
+            n_bootstrap=args.bootstrap,
+            strict_coverage=args.strict_coverage,
+        )
     for name, path in outputs.items():
         print(f"{name}={path}")
 

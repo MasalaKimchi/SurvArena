@@ -5,7 +5,7 @@ shared protocol. A run starts from YAML configuration, resolves datasets and
 method adapters, creates reusable split definitions, and writes compact
 experiment artifacts for downstream reporting.
 
-Last reviewed against the CLI and benchmark configs: 2026-05-18.
+Last reviewed against the CLI and benchmark configs: 2026-06-05.
 
 ```mermaid
 flowchart TD
@@ -22,6 +22,7 @@ flowchart TD
     J --> K["Compute metrics<br/>Uno C, Harrell C, IBS, AUC, calibration, net benefit"]
     K --> L["Aggregate results<br/>folds, seeds, ranks, pairwise tests, CIs"]
     L --> M["Write compact artifacts<br/>fold results, leaderboard, diagnostics, manifest"]
+    L --> N["Build Elo suite<br/>one ladder per comparable metric"]
 ```
 
 ## What Is Compared
@@ -69,6 +70,18 @@ survarena benchmark report results/manuscript_grade/clinical_no_hpo/elo
 batch workers and scripts that do not need the broader `survarena benchmark`
 command group.
 
+Rebuild the retained manuscript no-HPO Elo suite from dataset/model artifacts
+with:
+
+```bash
+python scripts/build_manuscript_elo.py
+```
+
+The default report builds separate Elo, paired win-rate, rank, coverage, and
+method-summary files for each comparable metric and writes
+`results/manuscript_grade/clinical_no_hpo/elo/metric_suite_index.csv`. Use
+`--metric <metric>` for a single-metric rebuild.
+
 ## Output Flow
 
 Benchmark results are written under a generated results directory or the
@@ -80,6 +93,7 @@ Core artifacts include:
 - leaderboards
 - run diagnostics
 - experiment manifests with config and environment metadata
+- metric-specific Elo/reporting tables for retained manuscript evidence
 
 For the full protocol and artifact contract, see [`protocol.md`](protocol.md).
 

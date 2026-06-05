@@ -15,9 +15,15 @@ MANUSCRIPT_METRIC_COLUMNS = [
     "brier_25",
     "brier_50",
     "brier_75",
-    "calibration_slope_50",
-    "calibration_intercept_50",
+    "calibration_slope_abs_error_25",
+    "calibration_slope_abs_error_50",
+    "calibration_slope_abs_error_75",
+    "calibration_intercept_abs_error_25",
+    "calibration_intercept_abs_error_50",
+    "calibration_intercept_abs_error_75",
+    "net_benefit_25",
     "net_benefit_50",
+    "net_benefit_75",
 ]
 EFFICIENCY_COLUMNS = [
     "tuning_time_sec",
