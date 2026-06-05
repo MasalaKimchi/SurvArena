@@ -190,6 +190,25 @@ def _prepare_fold_results(frame: pd.DataFrame, *, metric: str) -> pd.DataFrame:
     return successful
 
 
+def _prepare_metric_suite_fold_results(frame: pd.DataFrame, *, metrics: list[str]) -> pd.DataFrame:
+    required = {"benchmark_id", "dataset_id", "method_id", "split_id", "seed", "hpo_mode", "status"}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"Fold results are missing required columns: {sorted(missing)}")
+    for metric in metrics:
+        if metric not in frame.columns:
+            raise ValueError(f"Fold results are missing required metric column: {metric}")
+        metric_direction(metric)
+
+    metric_frame = frame[metrics].apply(pd.to_numeric, errors="coerce")
+    successful = frame[frame["status"].eq("success") & metric_frame.notna().any(axis=1)].copy()
+    successful["dataset_id"] = successful["dataset_id"].map(_base_id)
+    successful["split_id"] = successful["split_id"].map(_base_id)
+    successful["benchmark_id"] = "manuscript_v1"
+    successful["hpo_mode"] = "no_hpo"
+    return successful
+
+
 def _validate_coverage(frame: pd.DataFrame, *, metric: str, strict: bool) -> pd.DataFrame:
     coverage = (
         frame.groupby(["dataset_id", "method_id"], as_index=False)
@@ -275,6 +294,7 @@ def build_outputs(
         n_bootstrap=n_bootstrap,
         strict_coverage=strict_coverage,
         fold_results=fold_results,
+        include_metric_column=False,
     )
 
 
@@ -289,47 +309,36 @@ def _build_outputs_from_fold_results(
     fold_results: pd.DataFrame,
 ) -> dict[str, Path]:
     output_dir.mkdir(parents=True, exist_ok=True)
-    coverage = _validate_coverage(fold_results, metric=metric, strict=strict_coverage)
     stem = _metric_stem(metric)
+    tables = _metric_output_tables(
+        repo_root=repo_root,
+        metric=metric,
+        n_bootstrap=n_bootstrap,
+        strict_coverage=strict_coverage,
+        fold_results=fold_results,
+    )
+    fold_results = tables["fold_results"]
 
     combined_path = output_dir / f"manuscript_fold_results_success_{stem}.csv"
     fold_results.to_csv(combined_path, index=False)
 
-    method_ids = sorted(fold_results["method_id"].dropna().astype(str).unique())
-    metadata = _load_method_metadata(repo_root, method_ids)
-
-    elo = elo_ratings(fold_results, metric=metric, n_bootstrap=n_bootstrap, seed=33).merge(
-        metadata,
-        on="method_id",
-        how="left",
-    )
+    elo = tables["elo"]
     elo_path = output_dir / f"elo_ratings_{stem}.csv"
     elo.to_csv(elo_path, index=False)
 
-    wins = pairwise_win_rate(fold_results, metric=metric)
+    wins = tables["pairwise"]
     wins_path = output_dir / f"pairwise_win_rate_{stem}.csv"
     wins.to_csv(wins_path, index=False)
 
-    ranks = aggregate_rank_summary(fold_results, metric=metric)
+    ranks = tables["ranks"]
     ranks_path = output_dir / f"rank_summary_{stem}.csv"
     ranks.to_csv(ranks_path, index=False)
 
+    coverage = tables["coverage"]
     coverage_path = output_dir / f"coverage_summary_{stem}.csv"
     coverage.to_csv(coverage_path, index=False)
 
-    summary = (
-        fold_results.groupby(["benchmark_id", "hpo_mode", "method_id"], as_index=False)
-        .agg(
-            successful_folds=("status", "size"),
-            mean_score=(metric, "mean"),
-            median_score=(metric, "median"),
-            mean_runtime_sec=("runtime_sec", "mean"),
-            total_runtime_sec=("runtime_sec", "sum"),
-        )
-        .merge(metadata, on="method_id", how="left")
-        .sort_values("mean_score", ascending=metric_direction(metric) == "minimize")
-    )
-    summary["metric"] = metric
+    summary = tables["summary"]
     summary_path = output_dir / f"method_summary_{stem}.csv"
     summary.to_csv(summary_path, index=False)
 
@@ -343,6 +352,56 @@ def _build_outputs_from_fold_results(
     }
     outputs.update(_write_plot(elo, output_dir, asset_path, metric=metric))
     return outputs
+
+
+def _metric_output_tables(
+    *,
+    repo_root: Path,
+    metric: str,
+    n_bootstrap: int,
+    strict_coverage: bool,
+    fold_results: pd.DataFrame,
+    include_metric_column: bool,
+) -> dict[str, pd.DataFrame]:
+    coverage = _validate_coverage(fold_results, metric=metric, strict=strict_coverage)
+    method_ids = sorted(fold_results["method_id"].dropna().astype(str).unique())
+    metadata = _load_method_metadata(repo_root, method_ids)
+
+    elo = elo_ratings(fold_results, metric=metric, n_bootstrap=n_bootstrap, seed=33).merge(
+        metadata,
+        on="method_id",
+        how="left",
+    )
+    wins = pairwise_win_rate(fold_results, metric=metric)
+    ranks = aggregate_rank_summary(fold_results, metric=metric)
+    summary = (
+        fold_results.groupby(["benchmark_id", "hpo_mode", "method_id"], as_index=False)
+        .agg(
+            successful_folds=("status", "size"),
+            mean_score=(metric, "mean"),
+            median_score=(metric, "median"),
+            mean_runtime_sec=("runtime_sec", "mean"),
+            total_runtime_sec=("runtime_sec", "sum"),
+        )
+        .merge(metadata, on="method_id", how="left")
+        .sort_values("mean_score", ascending=metric_direction(metric) == "minimize")
+    )
+
+    tables = {
+        "fold_results": fold_results.copy(),
+        "elo": elo,
+        "pairwise": wins,
+        "ranks": ranks,
+        "coverage": coverage,
+        "summary": summary,
+    }
+    if include_metric_column:
+        for name, table in tables.items():
+            if name != "fold_results":
+                table["metric"] = metric
+    else:
+        summary["metric"] = metric
+    return tables
 
 
 def build_metric_suite_outputs(
@@ -361,30 +420,57 @@ def build_metric_suite_outputs(
     raw_fold_results = _load_raw_fold_results(input_dir)
     rows: list[dict[str, str]] = []
     outputs: dict[str, Path] = {}
+    aggregate_tables: dict[str, list[pd.DataFrame]] = {
+        "elo": [],
+        "pairwise": [],
+        "ranks": [],
+        "coverage": [],
+        "summary": [],
+    }
     for metric in metrics:
         asset_path = None if asset_dir is None else asset_dir / f"elo_manuscript_no_hpo_{_metric_stem(metric)}.png"
-        metric_outputs = _build_outputs_from_fold_results(
+        metric_tables = _metric_output_tables(
             repo_root=repo_root,
-            output_dir=output_dir,
-            asset_path=asset_path,
             metric=metric,
             n_bootstrap=n_bootstrap,
             strict_coverage=strict_coverage,
             fold_results=_prepare_fold_results(raw_fold_results, metric=metric),
+            include_metric_column=True,
         )
-        for name, path in metric_outputs.items():
+        for name, table in metric_tables.items():
+            if name == "fold_results":
+                continue
+            aggregate_tables[name].append(table)
+        plot_outputs = _write_plot(metric_tables["elo"], output_dir, asset_path, metric=metric)
+        for name, path in plot_outputs.items():
             outputs[f"{metric}.{name}"] = path
         rows.append(
             {
                 "metric": metric,
                 "direction": metric_direction(metric),
                 "label": _metric_label(metric),
-                "elo": str(metric_outputs["elo"]),
-                "pairwise": str(metric_outputs["pairwise"]),
-                "ranks": str(metric_outputs["ranks"]),
-                "figure_png": str(metric_outputs["figure_png"]),
+                "elo": str(output_dir / "elo_ratings.csv"),
+                "pairwise": str(output_dir / "pairwise_win_rates.csv"),
+                "ranks": str(output_dir / "rank_summary.csv"),
+                "coverage": str(output_dir / "coverage_summary.csv"),
+                "summary": str(output_dir / "method_summary.csv"),
+                "fold_results": str(output_dir / "manuscript_fold_results_success.csv"),
+                "figure_png": str(plot_outputs["figure_png"]),
             }
         )
+    aggregate_paths = {
+        "elo": output_dir / "elo_ratings.csv",
+        "pairwise": output_dir / "pairwise_win_rates.csv",
+        "ranks": output_dir / "rank_summary.csv",
+        "coverage": output_dir / "coverage_summary.csv",
+        "summary": output_dir / "method_summary.csv",
+    }
+    fold_results_path = output_dir / "manuscript_fold_results_success.csv"
+    _prepare_metric_suite_fold_results(raw_fold_results, metrics=metrics).to_csv(fold_results_path, index=False)
+    outputs["fold_results"] = fold_results_path
+    for name, path in aggregate_paths.items():
+        pd.concat(aggregate_tables[name], ignore_index=True, sort=False).to_csv(path, index=False)
+        outputs[name] = path
     index_path = output_dir / "metric_suite_index.csv"
     pd.DataFrame(rows).to_csv(index_path, index=False)
     outputs["metric_suite_index"] = index_path

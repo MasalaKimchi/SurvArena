@@ -227,8 +227,20 @@ def test_manuscript_elo_metric_suite_writes_index_with_multiple_metrics(tmp_path
 
     index = pd.read_csv(outputs["metric_suite_index"])
     assert index["metric"].tolist() == ["uno_c", "calibration_slope_abs_error_50"]
-    assert (tmp_path / "elo" / "elo_ratings_uno_c.csv").exists()
-    assert (tmp_path / "elo" / "elo_ratings_calibration_slope_abs_error_50.csv").exists()
+    assert index["elo"].nunique() == 1
+    assert index["fold_results"].nunique() == 1
+
+    elo = pd.read_csv(outputs["elo"])
+    assert sorted(elo["metric"].unique()) == ["calibration_slope_abs_error_50", "uno_c"]
+    assert set(elo["method_id"]) == {"left", "right"}
+
+    folds = pd.read_csv(outputs["fold_results"])
+    assert len(folds) == 2
+    assert {"calibration_slope_abs_error_50", "uno_c"}.issubset(folds.columns)
+    assert "metric" not in folds.columns
+    assert (tmp_path / "elo" / "elo_ratings.csv").exists()
+    assert not (tmp_path / "elo" / "elo_ratings_uno_c.csv").exists()
+    assert not (tmp_path / "elo" / "elo_ratings_calibration_slope_abs_error_50.csv").exists()
 
 
 def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:
