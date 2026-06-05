@@ -161,7 +161,7 @@ training remains CPU-only here.
 ### Current Manuscript Elo Preview
 
 The current manuscript evidence bundle uses the completed `manuscript_v1`
-no-HPO matrix. It covers all seven built-in benchmark datasets and all 25
+no-HPO matrix. It covers all seven built-in benchmark datasets and all 27
 manuscript methods with 5 folds x 3 repeats per dataset/method pair. Rebuild
 the Elo tables and README figure from local result artifacts with:
 
@@ -224,7 +224,7 @@ survarena benchmark run \
   --limit-seeds 1
 
 # Summarize fold-result artifacts, top methods, coverage, and failures.
-survarena benchmark report results/manuscript_elo
+survarena benchmark report results/manuscript_grade/clinical_no_hpo/elo
 ```
 
 The one-dataset validation run writes model-prefixed artifacts such as
@@ -409,8 +409,8 @@ the single benchmark-grade portfolio.
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Manuscript |
 | `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Manuscript |
 | `tabicl_survival` | TabICL horizon survival adapter | Foundation | `tabicl` | Manuscript |
-| `tabm_survival` | TabM event-risk survival adapter | Foundation | `autogluon.tabular` TABM | Manuscript |
-| `realtabpfn_survival` | RealTabPFN-V2 event-risk survival adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript |
+| `tabm_survival` | TabM horizon survival adapter | Foundation | `autogluon.tabular` TABM | Manuscript |
+| `realtabpfn_survival` | RealTabPFN-V2 horizon survival adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript |
 | `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Available, excluded from manuscript no-HPO |
 
 For the end-to-end benchmark flow, including split creation, no-HPO/HPO tracks,
@@ -516,7 +516,7 @@ Resume a partial benchmark run (reusing an output directory):
 ```bash
 python -m survarena.run_benchmark \
   --benchmark-config <same-config-used-for-original-run> \
-  --output-dir results/manuscript_dataset_model/support/coxph \
+  --output-dir results/manuscript_grade/clinical_no_hpo/dataset_model/support/coxph \
   --resume \
   --max-retries 2
 ```

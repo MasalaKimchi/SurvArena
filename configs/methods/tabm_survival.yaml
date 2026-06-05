@@ -1,19 +1,32 @@
 method_id: tabm_survival
 family: foundation
 library: autogluon.tabular
-display_name: TabM Event-Risk Survival
+display_name: TabM Horizon Survival
 notes: >
-  AutoGluon TABM event-risk adapter. It trains TABM as a binary event
-  classifier and calibrates survival curves with a training-side Breslow
-  baseline.
+  Censored-aware AutoGluon TABM horizon adapter. It trains one binary event
+  classifier per survival horizon using only rows with known event status at
+  that horizon and reconstructs monotone survival curves from cumulative event
+  probabilities.
 search_space:
   time_limit:
     type: categorical
     choices: [60, 120, 300]
+  horizon_quantiles:
+    type: categorical
+    choices: ["0.25-0.5-0.75", "0.2-0.4-0.6-0.8"]
+  min_known_per_horizon:
+    type: categorical
+    choices: [20, 40]
+  aggregate_risk:
+    type: categorical
+    choices: [mean_event_probability, last_event_probability]
 default_params:
   presets: null
   time_limit: 120
   tabm_params: {}
+  horizon_quantiles: "0.25-0.5-0.75"
+  min_known_per_horizon: 20
+  aggregate_risk: mean_event_probability
   num_bag_folds: 0
   num_stack_levels: 0
   refit_full: false

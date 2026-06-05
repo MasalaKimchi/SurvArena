@@ -15,8 +15,8 @@ from survarena.config import read_yaml
 from survarena.evaluation.statistics import aggregate_rank_summary, elo_ratings, metric_direction, pairwise_win_rate
 
 
-DEFAULT_INPUT = Path("results/manuscript_dataset_model")
-DEFAULT_OUTPUT = Path("results/manuscript_elo")
+DEFAULT_INPUT = Path("results/manuscript_grade/clinical_no_hpo/dataset_model")
+DEFAULT_OUTPUT = Path("results/manuscript_grade/clinical_no_hpo/elo")
 DEFAULT_ASSET_DIR = Path("docs/assets")
 DEFAULT_METRIC = "uno_c"
 

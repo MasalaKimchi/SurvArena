@@ -443,6 +443,7 @@ def test_deepsurv_moco_requires_observed_events() -> None:
 class FakeTabularPredictor:
     init_kwargs: dict[str, object] | None = None
     fit_kwargs: dict[str, object] | None = None
+    fit_kwargs_history: list[dict[str, object]] = []
     predict_proba_calls = 0
 
     def __init__(self, **kwargs) -> None:
@@ -452,6 +453,7 @@ class FakeTabularPredictor:
 
     def fit(self, **kwargs) -> "FakeTabularPredictor":
         FakeTabularPredictor.fit_kwargs = kwargs
+        FakeTabularPredictor.fit_kwargs_history.append(kwargs)
         return self
 
     def leaderboard(self, silent: bool = True) -> pd.DataFrame:
@@ -558,11 +560,22 @@ def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, t
         "survarena.methods.automl.mitra_survival.ensure_foundation_runtime_ready",
         lambda method_id: None,
     )
-    model = TabMSurvivalMethod(path=tmp_path / "tabm", time_limit=1)
+    model = TabMSurvivalMethod(path=tmp_path / "tabm", time_limit=1, min_known_per_horizon=2)
     train = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    FakeTabularPredictor.fit_kwargs_history = []
     model.fit(train, np.asarray([1.0, 2.0, 3.0, 4.0]), np.asarray([1, 0, 1, 0]))
     evaluation = pd.DataFrame({"x": [4.0, 5.0]})
     times = np.asarray([1.0, 2.0, 3.0])
+
+    assert len(FakeTabularPredictor.fit_kwargs_history) == 3
+    target_col = "__survarena_event_target__"
+    horizon_targets = [
+        kwargs["train_data"][target_col].to_numpy(dtype=int).tolist()
+        for kwargs in FakeTabularPredictor.fit_kwargs_history
+    ]
+    assert horizon_targets == [[1, 0, 0, 0], [1, 0, 0], [1, 0, 0]]
+    assert model.foundation_metadata()["foundation_backbone_task"] == "censored_aware_horizon_classification"
+    assert model.foundation_metadata()["foundation_horizon_count"] == 3
 
     FakeTabularPredictor.predict_proba_calls = 0
     risk = model.predict_risk(evaluation)
@@ -573,5 +586,5 @@ def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, t
 
     np.testing.assert_array_equal(predictions.risk, risk)
     np.testing.assert_array_equal(predictions.survival, survival)
-    assert separate_calls == 2
-    assert FakeTabularPredictor.predict_proba_calls == 1
+    assert separate_calls == 6
+    assert FakeTabularPredictor.predict_proba_calls == 3

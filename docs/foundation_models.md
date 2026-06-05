@@ -2,7 +2,7 @@
 
 Living roadmap for optional tabular foundation adapters (not a blocking issue list).
 
-Last reviewed against manuscript config and extras: 2026-05-27.
+Last reviewed against manuscript config and extras: 2026-06-04.
 
 ## Current State
 
@@ -26,11 +26,11 @@ TabPFN note:
 
 SurvArena treats tabular foundation models as frozen tabular learners by
 default, not as full survival models that must be fine-tuned end to end. The
-current adapters use a horizon/event-risk contract:
+current adapters use a horizon survival contract for manuscript-scope backbones:
 
 1. fit or load the tabular backbone under `backbone_training: frozen`
-2. train direct horizon classifiers or AutoGluon event-risk learners on the benchmark training split only
-3. exclude rows whose event status is unknown at a TabPFN horizon
+2. train direct horizon classifiers on the benchmark training split only
+3. exclude rows whose event status is unknown at a survival horizon
 4. reconstruct or calibrate survival curves from training-side estimates
 5. emit the same `predict_risk` and `predict_survival` outputs as native methods
 
@@ -48,12 +48,15 @@ Adapter-specific details:
   frozen classifier per event-time horizon using only rows with known event
   status at that horizon, then reconstructs monotone survival curves from
   cumulative event probabilities.
-- `tabm_survival` and `realtabpfn_survival` use AutoGluon Tabular backbones as
-  binary event-risk learners, then calibrate survival curves with the shared
-  Breslow baseline survival adapter.
+- `tabm_survival` and `realtabpfn_survival` are censored-aware AutoGluon horizon
+  adapters. They train one binary classifier per survival horizon using only
+  rows with known event status at that horizon, fall back to training-side
+  Kaplan-Meier event probabilities when a horizon is under-supported, and
+  reconstruct monotone survival curves from cumulative event probabilities.
 - `mitra_survival_frozen` remains available but is excluded from the manuscript
   no-HPO track because local RAM/CPU use can exceed the conventional model
-  wall-clock budget.
+  wall-clock budget. It still uses the AutoGluon event-risk plus Breslow
+  survival adapter because Mitra is exposed as an event-risk tabular backbone.
 
 Other survival heads can be added behind the same interface: discrete-time
 hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated

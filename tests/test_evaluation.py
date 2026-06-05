@@ -17,6 +17,7 @@ from survarena.evaluation.statistics import (
     aggregate_rank_summary,
     critical_difference_summary,
     elo_ratings,
+    metric_direction,
     pairwise_significance,
     pairwise_win_rate,
 )
@@ -153,6 +154,13 @@ def test_metric_bundle_float_conversion_stays_finite_for_normal_values() -> None
 
     assert math.isfinite(values["uno_c"])
     assert math.isfinite(values["harrell_c"])
+
+
+def test_raw_calibration_slope_is_not_ranked_as_higher_is_better() -> None:
+    with pytest.raises(ValueError, match="calibration_slope_50"):
+        metric_direction("calibration_slope_50")
+
+    assert metric_direction("calibration_slope_abs_error_50") == "minimize"
 
 
 def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:

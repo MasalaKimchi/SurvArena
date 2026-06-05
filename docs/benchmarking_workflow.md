@@ -62,7 +62,7 @@ Use the benchmark subcommands for a staged run:
 survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
 survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
 survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dataset whas500 --method coxph --limit-seeds 1
-survarena benchmark report results/manuscript_elo
+survarena benchmark report results/manuscript_grade/clinical_no_hpo/elo
 ```
 
 `python -m survarena.run_benchmark` remains the thin module entry point for
@@ -95,7 +95,7 @@ scripts/run_manuscript_by_dataset_model.sh
 Defaults:
 
 - config: `configs/benchmark/manuscript_v1.yaml`
-- output root: `results/manuscript_dataset_model`
+- output root: `results/manuscript_grade/clinical_no_hpo/dataset_model`
 - retries per run: `1`
 
 Useful overrides:

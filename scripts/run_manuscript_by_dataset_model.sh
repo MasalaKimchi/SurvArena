@@ -3,7 +3,7 @@ set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python}"
 BENCHMARK_CONFIG="${BENCHMARK_CONFIG:-configs/benchmark/manuscript_v1.yaml}"
-OUTPUT_ROOT="${OUTPUT_ROOT:-results/manuscript_dataset_model}"
+OUTPUT_ROOT="${OUTPUT_ROOT:-results/manuscript_grade/clinical_no_hpo/dataset_model}"
 MAX_RETRIES="${MAX_RETRIES:-1}"
 LIMIT_SEEDS="${LIMIT_SEEDS:-}"
 EXTRA_ARGS="${EXTRA_ARGS:-}"

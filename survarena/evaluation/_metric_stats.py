@@ -12,7 +12,6 @@ MAXIMIZE_METRICS = {
     "td_auc_25",
     "td_auc_50",
     "td_auc_75",
-    "calibration_slope_50",
     "net_benefit_50",
 }
 MINIMIZE_METRICS = {
@@ -59,5 +58,7 @@ def metric_direction(metric: str) -> str:
     if metric.startswith(("td_auc_", "net_benefit_", "decision_curve_aunb_")):
         return "maximize"
     if metric.startswith("brier_"):
+        return "minimize"
+    if metric.startswith(("calibration_slope_abs_error_", "calibration_intercept_abs_error_")):
         return "minimize"
     raise ValueError(f"Unknown metric direction for '{metric}'.")

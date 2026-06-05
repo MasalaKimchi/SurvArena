@@ -1,7 +1,7 @@
 method_id: tabicl_survival
 family: foundation
 library: autogluon.tabular
-display_name: TabICL Event-Risk Survival
+display_name: TabICL Horizon Survival
 notes: >
   Censored-aware direct TabICL horizon classifier adapter. It trains one
   frozen TabICL classifier per survival horizon using only rows with known

@@ -211,7 +211,13 @@ def compute_survival_metrics(
             sample_weight=horizon_weights[:, idx],
         )
         extra_metrics[f"calibration_slope_{label}"] = float(slope)
+        extra_metrics[f"calibration_slope_abs_error_{label}"] = (
+            float(abs(slope - 1.0)) if np.isfinite(slope) else float("nan")
+        )
         extra_metrics[f"calibration_intercept_{label}"] = float(intercept)
+        extra_metrics[f"calibration_intercept_abs_error_{label}"] = (
+            float(abs(intercept)) if np.isfinite(intercept) else float("nan")
+        )
         threshold_scores: list[float] = []
         for threshold in decision_thresholds:
             threshold_pct = int(round(float(threshold) * 100))
