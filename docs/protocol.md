@@ -75,6 +75,8 @@ Metric computation is backed by `torchsurv`.
 - split manifests guard against stale splits after dataset or config changes
 - benchmark and method config hashes are recorded in run payloads
 - experiment manifests capture run-level metadata
+- retained manuscript evidence and local machine notes are documented in
+  [`manuscript_evidence.md`](manuscript_evidence.md)
 
 ## Automated protocol check
 

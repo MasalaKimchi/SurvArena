@@ -33,15 +33,8 @@ split definitions are reused across methods so differences reflect model
 behavior rather than different train/test partitions.
 
 The standard and manuscript configs use right-censored survival targets and the
-same built-in dataset suite by default:
-
-- `support`
-- `metabric`
-- `nwtco`
-- `aids`
-- `gbsg2`
-- `flchain`
-- `whas500`
+same built-in dataset suite by default. See [`datasets.md`](datasets.md) for
+the current dataset table and [`methods.md`](methods.md) for method IDs.
 
 ## Run Geometry
 

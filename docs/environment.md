@@ -1,6 +1,6 @@
 # Environment
 
-Last reviewed against `pyproject.toml` and setup scripts: 2026-05-18.
+Last reviewed against `pyproject.toml` and setup scripts: 2026-06-05.
 
 ## Supported Python
 
@@ -10,25 +10,28 @@ Last reviewed against `pyproject.toml` and setup scripts: 2026-05-18.
 ## Quick Setup
 
 ```bash
-./scripts/setup_env.sh
+PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 source .venv/bin/activate
 ```
 
 The setup script:
 
 - creates `.venv`
-- installs SurvArena in editable mode with developer tooling and the manuscript
-  TabPFN/TabICL foundation dependencies
+- installs SurvArena in editable mode with developer tooling and the default
+  manuscript TabPFN/TabICL/AutoGluon foundation dependencies
 - runs `scripts/check_environment.py`
 
 Useful overrides:
 
 - `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
+- `PYTHON_BIN=python3.10 ./scripts/setup_env.sh`
+- `PYTHON_BIN=python3.12 ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev ./scripts/setup_env.sh` for a core-only contributor environment
 - `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabarena ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
 - `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
+- `VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
 
 ## Manual Setup
 
@@ -36,14 +39,14 @@ Useful overrides:
 python3.11 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-python -m pip install -r requirements.txt
-python scripts/check_environment.py --include-foundation \
-  --foundation-methods tabpfn_survival,tabicl_survival,tabm_survival,realtabpfn_survival
+python -m pip install -e ".[dev]"
+python scripts/check_environment.py
 ```
 
 Optional foundation extras:
 
 ```bash
+python -m pip install -e ".[dev,foundation-tabpfn,foundation-tabarena]"
 python -m pip install -e ".[foundation]"
 python scripts/check_environment.py --include-foundation
 survarena foundation-check
@@ -62,7 +65,7 @@ Always run benchmark commands with the activated repo-local environment:
 ```bash
 source .venv/bin/activate
 python -c "import sys, tabicl; print(sys.executable); print(tabicl.__file__)"
-python -m survarena.run_benchmark --dry-run
+survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
 ```
 
 Optional tracking extras:
@@ -83,7 +86,7 @@ python -m pip install -e ".[tracking]"
 
 ```bash
 python -m compileall survarena
-python -m survarena.run_benchmark --dry-run
+survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
 survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
 survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
 ```
