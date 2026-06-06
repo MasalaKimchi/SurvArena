@@ -1,0 +1,42 @@
+method_id: shared_discrete_hazard
+family: deep
+library: torch
+display_name: Shared Discrete Hazard
+notes: >
+  Native shared-representation discrete-time hazard neural model. It outputs
+  one conditional interval hazard per event-time bin and reconstructs survival
+  by cumulative products, avoiding independent horizon classifiers.
+search_space:
+  hidden_layers:
+    type: categorical
+    choices: ["64", "128-64", "256-128"]
+  dropout:
+    type: float
+    low: 0.0
+    high: 0.4
+  lr:
+    type: loguniform
+    low: 0.0001
+    high: 0.01
+  weight_decay:
+    type: loguniform
+    low: 0.000001
+    high: 0.01
+  time_bin_quantiles:
+    type: categorical
+    choices: ["0.25-0.5-0.75", "0.2-0.4-0.6-0.8"]
+default_params:
+  time_bin_quantiles: "0.25-0.5-0.75"
+  hidden_layers: "128-64"
+  activation: relu
+  dropout: 0.1
+  batch_norm: true
+  optimizer: adamw
+  lr: 0.001
+  weight_decay: 0.0001
+  batch_size: 128
+  max_epochs: 200
+  patience: 20
+  aggregate_risk: mean_event_probability
+  seed: 0
+  device: auto
