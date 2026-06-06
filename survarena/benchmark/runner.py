@@ -54,6 +54,7 @@ class BenchmarkRunUnit:
     max_retries: int
     model_artifact_dir: Path | None = None
     save_model_artifacts: bool = False
+    validation_diagnostics: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -212,6 +213,7 @@ def evaluate_split(
     hpo_cfg: dict[str, Any] | None = None,
     model_artifact_dir: Path | None = None,
     save_model_artifacts: bool = False,
+    validation_diagnostics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -281,6 +283,19 @@ def evaluate_split(
         pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
         X_train_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
         X_test_proc = finalize_preprocessed_features(method_id, pre.transform(X_test))
+        diagnostic_metadata = _validation_diagnostic_metadata(
+            method_id=method_id,
+            best_params=best_params,
+            seed=int(split.seed),
+            X_train=X_train,
+            time_train=t_train,
+            event_train=e_train,
+            X_test=X_test,
+            time_test=t_test,
+            event_test=e_test,
+            primary_metric=primary_metric,
+            validation_diagnostics=validation_diagnostics,
+        )
 
         model = get_method_class(method_id)(**resolve_runtime_method_params(best_params, seed=split.seed))
         with timer() as fit_timer:
@@ -389,6 +404,7 @@ def evaluate_split(
                 "best_params": best_params,
                 "hpo_status": hpo_metadata.get("status", "disabled"),
                 "hpo_trial_count": hpo_metadata.get("trial_count", 0),
+                **diagnostic_metadata,
                 **foundation_metadata,
                 **artifact_metadata,
             },
@@ -426,6 +442,7 @@ def evaluate_split(
             "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
             "hpo_status": hpo_metadata.get("status", "disabled"),
             "hpo_trial_count": hpo_metadata.get("trial_count", 0),
+            **diagnostic_metadata,
             **foundation_metadata,
             **artifact_metadata,
             "status": "success",
@@ -504,6 +521,12 @@ def evaluate_split(
             "stack_levels": 0,
             "hpo_status": "failed",
             "hpo_trial_count": 0,
+            "validation_diagnostic_score": np.nan,
+            "validation_diagnostic_test_score": np.nan,
+            "validation_diagnostic_gap": np.nan,
+            "validation_diagnostic_horizon_auc": np.nan,
+            "validation_diagnostic_test_horizon_auc": np.nan,
+            "validation_diagnostic_horizon_auc_gap": np.nan,
             "status": "failed",
             "failure_type": type(exc).__name__,
             "exception_message": str(exc),
@@ -634,6 +657,153 @@ def _foundation_metadata(model: Any) -> dict[str, Any]:
     return {}
 
 
+def _validation_diagnostic_metadata(
+    *,
+    method_id: str,
+    best_params: dict[str, Any],
+    seed: int,
+    X_train: Any,
+    time_train: Any,
+    event_train: Any,
+    X_test: Any,
+    time_test: Any,
+    event_test: Any,
+    primary_metric: str,
+    validation_diagnostics: dict[str, Any] | None,
+) -> dict[str, Any]:
+    import numpy as np
+
+    empty = {
+        "validation_diagnostic_score": np.nan,
+        "validation_diagnostic_test_score": np.nan,
+        "validation_diagnostic_gap": np.nan,
+        "validation_diagnostic_horizon_auc": np.nan,
+        "validation_diagnostic_test_horizon_auc": np.nan,
+        "validation_diagnostic_horizon_auc_gap": np.nan,
+    }
+    cfg = dict(validation_diagnostics or {})
+    if not bool(cfg.get("enabled", False)):
+        return empty
+
+    try:
+        from sklearn.metrics import roc_auc_score
+        from sklearn.model_selection import StratifiedKFold
+
+        from survarena.data.preprocess import TabularPreprocessor
+        from survarena.evaluation.metrics import compute_primary_metric_score
+        from survarena.methods.preprocessing import (
+            finalize_preprocessed_features,
+            method_preprocessor_kwargs,
+        )
+        from survarena.methods.registry import get_method_class
+
+        inner_folds = max(int(cfg.get("inner_folds", 3)), 2)
+        skf = StratifiedKFold(n_splits=inner_folds, shuffle=True, random_state=int(seed))
+        train_index = np.arange(len(event_train))
+        sub_idx, val_idx = next(skf.split(train_index, np.asarray(event_train, dtype=int)))
+
+        pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
+        X_sub = finalize_preprocessed_features(method_id, pre.fit_transform(X_train.iloc[sub_idx]))
+        X_val = finalize_preprocessed_features(method_id, pre.transform(X_train.iloc[val_idx]))
+        X_test_proc = finalize_preprocessed_features(method_id, pre.transform(X_test))
+
+        params = resolve_runtime_method_params(best_params, seed=int(seed))
+        diagnostic_model = get_method_class(method_id)(**params)
+        diagnostic_model.fit(
+            X_sub,
+            np.asarray(time_train)[sub_idx],
+            np.asarray(event_train)[sub_idx],
+            X_val,
+            np.asarray(time_train)[val_idx],
+            np.asarray(event_train)[val_idx],
+        )
+
+        val_risk = diagnostic_model.predict_risk(X_val)
+        test_risk = diagnostic_model.predict_risk(X_test_proc)
+        diagnostic_score = compute_primary_metric_score(
+            primary_metric=primary_metric,
+            train_time=np.asarray(time_train)[sub_idx],
+            train_event=np.asarray(event_train)[sub_idx],
+            eval_time=np.asarray(time_train)[val_idx],
+            eval_event=np.asarray(event_train)[val_idx],
+            eval_risk_scores=val_risk,
+        )
+        diagnostic_test_score = compute_primary_metric_score(
+            primary_metric=primary_metric,
+            train_time=np.asarray(time_train)[sub_idx],
+            train_event=np.asarray(event_train)[sub_idx],
+            eval_time=np.asarray(time_test),
+            eval_event=np.asarray(event_test),
+            eval_risk_scores=test_risk,
+        )
+
+        val_horizon_auc = _horizon_binary_auc(
+            diagnostic_model,
+            X_val,
+            np.asarray(time_train)[val_idx],
+            np.asarray(event_train)[val_idx],
+            roc_auc_score=roc_auc_score,
+        )
+        test_horizon_auc = _horizon_binary_auc(
+            diagnostic_model,
+            X_test_proc,
+            np.asarray(time_test),
+            np.asarray(event_test),
+            roc_auc_score=roc_auc_score,
+        )
+        return {
+            "validation_diagnostic_score": float(diagnostic_score),
+            "validation_diagnostic_test_score": float(diagnostic_test_score),
+            "validation_diagnostic_gap": float(diagnostic_score - diagnostic_test_score),
+            "validation_diagnostic_horizon_auc": val_horizon_auc,
+            "validation_diagnostic_test_horizon_auc": test_horizon_auc,
+            "validation_diagnostic_horizon_auc_gap": float(val_horizon_auc - test_horizon_auc)
+            if np.isfinite(val_horizon_auc) and np.isfinite(test_horizon_auc)
+            else np.nan,
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            **empty,
+            "validation_diagnostic_error": f"{type(exc).__name__}: {exc}",
+        }
+
+
+def _horizon_binary_auc(
+    model: Any,
+    X_eval: Any,
+    time_eval: Any,
+    event_eval: Any,
+    *,
+    roc_auc_score: Any,
+) -> float:
+    import numpy as np
+
+    probabilities_getter = getattr(model, "_horizon_event_probabilities", None)
+    labels_getter = getattr(model, "_horizon_known_labels", None)
+    horizon_times = getattr(model, "horizon_times_", None)
+    if not callable(probabilities_getter) or not callable(labels_getter) or horizon_times is None:
+        return float("nan")
+    probabilities = probabilities_getter(X_eval)
+    aucs: list[float] = []
+    for idx, horizon in enumerate(np.asarray(horizon_times, dtype=float)):
+        try:
+            known, labels = labels_getter(
+                time_train=np.asarray(time_eval, dtype=float),
+                event_train=np.asarray(event_eval, dtype=int),
+                horizon=float(horizon),
+            )
+        except TypeError:
+            known, labels = labels_getter(
+                time=np.asarray(time_eval, dtype=float),
+                event=np.asarray(event_eval, dtype=int),
+                horizon=float(horizon),
+            )
+        if len(np.unique(labels)) < 2:
+            continue
+        aucs.append(float(roc_auc_score(labels, probabilities[np.asarray(known, dtype=bool), idx])))
+    return float(np.mean(aucs)) if aucs else float("nan")
+
+
 def _method_cfg_with_autogluon_defaults(method_cfg: dict[str, Any], autogluon_cfg: dict[str, Any] | None) -> dict[str, Any]:
     if not is_autogluon_method(str(method_cfg.get("method_id"))):
         return method_cfg
@@ -684,6 +854,7 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
             hpo_cfg=unit.mode_hpo_cfg,
             model_artifact_dir=unit.model_artifact_dir,
             save_model_artifacts=unit.save_model_artifacts,
+            validation_diagnostics=unit.validation_diagnostics,
         )
         run_payload = record.pop("run_payload")
         run_payload["dataset_id"] = unit.track_dataset_id
@@ -913,6 +1084,7 @@ def _build_dataset_run_units(
     phase_started_at = perf_counter()
     filtered_splits = [split for split in splits if split.seed in seeds]
     horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
+    validation_diagnostics = dict(benchmark_cfg.get("validation_diagnostics", {}) or {})
     robustness_tracks = resolve_robustness_tracks(
         benchmark_cfg.get("robustness", {}),
         dataset_id=dataset_id,
@@ -970,6 +1142,7 @@ def _build_dataset_run_units(
                             max_retries=int(max_retries),
                             model_artifact_dir=model_artifact_dir,
                             save_model_artifacts=bool(save_model_artifacts),
+                            validation_diagnostics=validation_diagnostics,
                         )
                     )
     timings["evaluation_prep"] += perf_counter() - phase_started_at

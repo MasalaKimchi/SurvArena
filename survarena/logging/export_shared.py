@@ -4,6 +4,12 @@ import pandas as pd
 
 CORE_METRIC_COLUMNS = [
     "validation_score",
+    "validation_diagnostic_score",
+    "validation_diagnostic_test_score",
+    "validation_diagnostic_gap",
+    "validation_diagnostic_horizon_auc",
+    "validation_diagnostic_test_horizon_auc",
+    "validation_diagnostic_horizon_auc_gap",
     "uno_c",
     "harrell_c",
     "ibs",
