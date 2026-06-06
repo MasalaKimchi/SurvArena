@@ -22,17 +22,23 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
     catalog = predictor.foundation_model_catalog()
 
     assert "tabpfn_survival" in catalog["method_id"].tolist()
+    assert "tabpfn_discrete_hazard_survival" in catalog["method_id"].tolist()
     assert "mitra_survival_frozen" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
+    assert "tabicl_discrete_hazard_survival" in catalog["method_id"].tolist()
     assert "tabm_survival" in catalog["method_id"].tolist()
+    assert "tabm_discrete_hazard_survival" in catalog["method_id"].tolist()
     assert "dependency_installed" in catalog.columns
     assert "runtime_ready" in catalog.columns
     assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
+    assert implemented["tabpfn_discrete_hazard_survival"] is True
     assert implemented["mitra_survival_frozen"] is True
     assert implemented["tabicl_survival"] is True
+    assert implemented["tabicl_discrete_hazard_survival"] is True
     assert implemented["tabm_survival"] is True
+    assert implemented["tabm_discrete_hazard_survival"] is True
 
 
 def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
@@ -400,6 +406,123 @@ def test_direct_horizon_foundation_adapters_fit_predict_with_fake_backbones(monk
     assert tabicl.foundation_metadata()["foundation_backbone"] == "TabICL"
 
 
+def test_direct_discrete_hazard_foundation_adapter_fit_predicts_with_fake_backbone(monkeypatch) -> None:
+    from survarena.methods.foundation.discrete_hazard import TabICLDiscreteHazardSurvivalMethod
+
+    class FakeClassifier:
+        fit_y: np.ndarray | None = None
+        predict_count = 0
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = dict(kwargs)
+
+        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeClassifier":
+            self.classes_ = np.asarray([0, 1])
+            self.offset_ = float(np.mean(y))
+            FakeClassifier.fit_y = np.asarray(y, dtype=np.int32)
+            return self
+
+        def predict_proba(self, X: np.ndarray, **kwargs) -> np.ndarray:
+            FakeClassifier.predict_count += 1
+            X_np = np.asarray(X, dtype=np.float32)
+            positive = np.clip(0.15 + 0.15 * X_np[:, 0] + 0.1 * X_np[:, -4] + self.offset_, 0.0, 1.0)
+            return np.column_stack([1.0 - positive, positive])
+
+    fake_tabicl = types.ModuleType("tabicl")
+    fake_tabicl.TabICLClassifier = FakeClassifier
+    monkeypatch.setitem(sys.modules, "tabicl", fake_tabicl)
+    monkeypatch.setattr(
+        "survarena.methods.foundation.discrete_hazard.ensure_foundation_runtime_ready", lambda method_id, **kwargs: None
+    )
+
+    X = np.asarray(
+        [
+            [-1.0, 0.0],
+            [-0.5, 0.1],
+            [0.0, 0.2],
+            [0.3, 0.3],
+            [0.7, 0.4],
+            [1.0, 0.5],
+            [1.2, 0.6],
+            [1.5, 0.7],
+        ],
+        dtype=np.float32,
+    )
+    time = np.asarray([2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0, 13.0], dtype=np.float64)
+    event = np.asarray([1, 0, 1, 0, 1, 0, 1, 0], dtype=np.int32)
+
+    method = TabICLDiscreteHazardSurvivalMethod(
+        n_estimators=1,
+        horizon_quantiles=[0.25, 0.5],
+        min_rows_per_interval=1,
+    )
+    method.fit(X, time, event)
+    FakeClassifier.predict_count = 0
+    risk = method.predict_risk(X[:3])
+    survival = method.predict_survival(X[:3], np.asarray([1.0, 5.0, 10.0]))
+    separate_predict_count = FakeClassifier.predict_count
+    FakeClassifier.predict_count = 0
+    predictions = method.predict_bundle(X[:3], np.asarray([1.0, 5.0, 10.0]))
+
+    assert FakeClassifier.fit_y is not None
+    assert FakeClassifier.fit_y.sum() >= 1
+    assert risk.shape == (3,)
+    assert survival.shape == (3, 3)
+    assert np.isfinite(risk).all()
+    assert np.isfinite(survival).all()
+    assert (np.diff(survival, axis=1) <= 1e-8).all()
+    np.testing.assert_array_equal(predictions.risk, risk)
+    np.testing.assert_array_equal(predictions.survival, survival)
+    assert separate_predict_count == 4
+    assert FakeClassifier.predict_count == 2
+    metadata = method.foundation_metadata()
+    assert metadata["foundation_backbone_task"] == "censored_aware_pooled_discrete_time_hazard_classification"
+    assert metadata["foundation_sample_weight_supported"] is False
+    assert metadata["foundation_sample_weight_requested"] == "normalized"
+    assert metadata["foundation_sample_weight_applied"] is False
+
+
+def test_direct_discrete_hazard_applies_sample_weight_when_backbone_supports_it(monkeypatch) -> None:
+    from survarena.methods.foundation.discrete_hazard import TabICLDiscreteHazardSurvivalMethod
+
+    class WeightedFakeClassifier:
+        received_sample_weight: np.ndarray | None = None
+
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = dict(kwargs)
+
+        def fit(self, X: np.ndarray, y: np.ndarray, sample_weight: np.ndarray | None = None) -> "WeightedFakeClassifier":
+            self.classes_ = np.asarray([0, 1])
+            WeightedFakeClassifier.received_sample_weight = None if sample_weight is None else np.asarray(sample_weight)
+            return self
+
+        def predict_proba(self, X: np.ndarray, **kwargs) -> np.ndarray:
+            positive = np.full(np.asarray(X).shape[0], 0.2, dtype=float)
+            return np.column_stack([1.0 - positive, positive])
+
+    fake_tabicl = types.ModuleType("tabicl")
+    fake_tabicl.TabICLClassifier = WeightedFakeClassifier
+    monkeypatch.setitem(sys.modules, "tabicl", fake_tabicl)
+    monkeypatch.setattr(
+        "survarena.methods.foundation.discrete_hazard.ensure_foundation_runtime_ready", lambda method_id, **kwargs: None
+    )
+
+    X = np.asarray([[0.0], [1.0], [2.0], [3.0]], dtype=np.float32)
+    time = np.asarray([1.0, 2.0, 3.0, 4.0], dtype=np.float64)
+    event = np.asarray([1, 0, 1, 0], dtype=np.int32)
+    method = TabICLDiscreteHazardSurvivalMethod(
+        horizon_quantiles=[0.25, 0.5, 0.75],
+        min_rows_per_interval=1,
+    )
+
+    method.fit(X, time, event)
+
+    assert WeightedFakeClassifier.received_sample_weight is not None
+    metadata = method.foundation_metadata()
+    assert metadata["foundation_sample_weight_supported"] is True
+    assert metadata["foundation_sample_weight_applied"] is True
+
+
 # --- test_presets.py ---
 
 
@@ -468,10 +591,14 @@ def test_foundation_preset_requests_foundation_models_without_extra_flag() -> No
     assert preset.method_ids == (
         "coxph",
         "tabpfn_survival",
+        "tabpfn_discrete_hazard_survival",
         "mitra_survival_frozen",
         "tabicl_survival",
+        "tabicl_discrete_hazard_survival",
         "tabm_survival",
+        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
+        "realtabpfn_discrete_hazard_survival",
     )
 
 
@@ -523,10 +650,14 @@ def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> Non
         "deepsurv",
         "deepsurv_moco",
         "tabpfn_survival",
+        "tabpfn_discrete_hazard_survival",
         "mitra_survival_frozen",
         "tabicl_survival",
+        "tabicl_discrete_hazard_survival",
         "tabm_survival",
+        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
+        "realtabpfn_discrete_hazard_survival",
     )
 
 

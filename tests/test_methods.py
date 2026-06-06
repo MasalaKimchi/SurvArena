@@ -17,8 +17,16 @@ from types import ModuleType
 from survarena.automl.autogluon_backend import fit_autogluon_event_predictor, predict_event_probability
 from survarena.methods.automl.mitra_survival import (
     MitraSurvivalFrozenMethod,
+    RealTabPFNV2DiscreteHazardSurvivalMethod,
     RealTabPFNV2SurvivalMethod,
+    TabMDiscreteHazardSurvivalMethod,
     TabMSurvivalMethod,
+)
+from survarena.methods.discrete_time import (
+    build_discrete_hazard_frame,
+    build_event_quantile_time_grid,
+    build_person_time_hazard_frame,
+    interval_label_matrix,
 )
 
 
@@ -55,6 +63,34 @@ def test_resolve_torch_training_device_keeps_mac_local_deep_training_on_cpu(monk
         resolve_torch_training_device("mps")
 
 
+def test_shared_discrete_hazard_fit_predicts_monotone_survival() -> None:
+    from survarena.methods.deep.discrete_hazard import SharedDiscreteHazardMethod
+
+    X_train, time_train, event_train, X_eval = _toy_survival_arrays()
+    method = SharedDiscreteHazardMethod(
+        time_bin_quantiles=[0.25, 0.5, 0.75],
+        hidden_layers="16",
+        batch_norm=False,
+        max_epochs=3,
+        patience=2,
+        batch_size=16,
+        seed=3,
+        device="cpu",
+    )
+
+    method.fit(X_train, time_train, event_train)
+    risk = method.predict_risk(X_eval[:5])
+    survival = method.predict_survival(X_eval[:5], np.asarray([0.5, 1.0, 2.0, 4.0]))
+
+    assert risk.shape == (5,)
+    assert survival.shape == (5, 4)
+    assert np.isfinite(risk).all()
+    assert np.isfinite(survival).all()
+    assert ((survival >= 0.0) & (survival <= 1.0)).all()
+    assert (np.diff(survival, axis=1) <= 1e-8).all()
+    assert method.foundation_metadata()["foundation_backbone_task"] == "shared_discrete_hazard_likelihood"
+
+
 def test_registered_method_ids_include_new_survival_adapters() -> None:
     registered = set(registered_method_ids())
     assert {
@@ -76,7 +112,81 @@ def test_registered_method_ids_include_new_survival_adapters() -> None:
         "deephit_single",
         "pchazard",
         "cox_time",
+        "shared_discrete_hazard",
+        "tabpfn_discrete_hazard_survival",
+        "tabicl_discrete_hazard_survival",
+        "tabm_discrete_hazard_survival",
+        "realtabpfn_discrete_hazard_survival",
     }.issubset(registered)
+
+
+def test_person_time_hazard_rows_exclude_censored_inside_interval() -> None:
+    time = np.asarray([2.0, 3.0, 5.0, 7.0])
+    event = np.asarray([1, 0, 0, 1])
+    bins = np.asarray([2.5, 5.0, 8.0])
+
+    known, labels = interval_label_matrix(time=time, event=event, time_bins=bins)
+
+    np.testing.assert_array_equal(
+        known,
+        np.asarray(
+            [
+                [True, False, False],
+                [True, False, False],
+                [True, False, False],
+                [True, True, True],
+            ]
+        ),
+    )
+    np.testing.assert_array_equal(
+        labels,
+        np.asarray(
+            [
+                [1, 0, 0],
+                [0, 0, 0],
+                [0, 0, 0],
+                [0, 0, 1],
+            ],
+            dtype=np.float32,
+        ),
+    )
+
+    X_pt, y_pt, bin_indices = build_person_time_hazard_frame(
+        X=np.asarray([[0.0], [1.0], [2.0], [3.0]], dtype=np.float32),
+        time=time,
+        event=event,
+        time_bins=bins,
+    )
+
+    assert X_pt.shape == (6, 5)
+    np.testing.assert_array_equal(y_pt, np.asarray([1, 0, 0, 0, 0, 1], dtype=np.int32))
+    np.testing.assert_array_equal(bin_indices, np.asarray([0, 0, 0, 0, 1, 2], dtype=np.int32))
+
+
+def test_discrete_hazard_frame_subject_weights_and_grid_metadata() -> None:
+    X = np.asarray([[0.0], [1.0], [2.0], [3.0]], dtype=np.float32)
+    time = np.asarray([2.0, 3.0, 5.0, 7.0])
+    event = np.asarray([1, 0, 0, 1])
+    grid = build_event_quantile_time_grid(time, event, n_intervals=3, min_events_per_interval=1)
+
+    assert grid.endpoints.size <= 3
+    assert grid.metadata["actual_n_intervals"] == int(grid.endpoints.size)
+
+    frame = build_discrete_hazard_frame(
+        X=X,
+        time=time,
+        event=event,
+        time_grid=np.asarray([2.5, 5.0, 8.0]),
+        subject_weighting="normalized",
+        time_feature_spec="km",
+    )
+
+    assert frame.row_weights is not None
+    for subject_id in np.unique(frame.subject_ids):
+        assert frame.row_weights[frame.subject_ids == subject_id].sum() == pytest.approx(1.0)
+    assert frame.metadata["excluded_censored_in_interval_rows"] == 2
+    assert frame.metadata["requested_subject_weighting"] == "normalized"
+    assert frame.metadata["time_features"] == ["interval_index", "log_interval_end", "interval_width", "km_survival"]
 
 
 @pytest.mark.parametrize(
@@ -540,6 +650,13 @@ def test_autogluon_foundation_event_risk_variants_force_single_backbone() -> Non
     cases = [
         ("tabm_survival", TabMSurvivalMethod, "TABM", "tabm_params"),
         ("realtabpfn_survival", RealTabPFNV2SurvivalMethod, "REALTABPFN-V2", "realtabpfn_v2_params"),
+        ("tabm_discrete_hazard_survival", TabMDiscreteHazardSurvivalMethod, "TABM", "tabm_params"),
+        (
+            "realtabpfn_discrete_hazard_survival",
+            RealTabPFNV2DiscreteHazardSurvivalMethod,
+            "REALTABPFN-V2",
+            "realtabpfn_v2_params",
+        ),
     ]
 
     for method_id, cls, hyperparameter_key, params_key in cases:
@@ -588,3 +705,44 @@ def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, t
     np.testing.assert_array_equal(predictions.survival, survival)
     assert separate_calls == 6
     assert FakeTabularPredictor.predict_proba_calls == 3
+
+
+def test_autogluon_discrete_hazard_prediction_bundle_uses_single_stacked_predictor(monkeypatch, tmp_path) -> None:
+    fake_module = ModuleType("autogluon.tabular")
+    fake_module.TabularPredictor = FakeTabularPredictor
+    monkeypatch.setitem(sys.modules, "autogluon", ModuleType("autogluon"))
+    monkeypatch.setitem(sys.modules, "autogluon.tabular", fake_module)
+    monkeypatch.setattr(
+        "survarena.methods.automl.mitra_survival.ensure_foundation_runtime_ready",
+        lambda method_id: None,
+    )
+    model = TabMDiscreteHazardSurvivalMethod(path=tmp_path / "tabm_discrete", time_limit=1, min_rows_per_interval=2)
+    train = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
+    FakeTabularPredictor.fit_kwargs_history = []
+    model.fit(train, np.asarray([1.0, 2.0, 3.0, 4.0]), np.asarray([1, 0, 1, 0]))
+    evaluation = pd.DataFrame({"x": [4.0, 5.0]})
+    times = np.asarray([1.0, 2.0, 3.0])
+
+    assert len(FakeTabularPredictor.fit_kwargs_history) == 1
+    target_col = "__survarena_event_target__"
+    train_frame = FakeTabularPredictor.fit_kwargs_history[0]["train_data"]
+    assert "__survarena_interval_index__" in train_frame.columns
+    assert int(train_frame[target_col].sum()) >= 1
+    assert len(train_frame) > len(train)
+    metadata = model.foundation_metadata()
+    assert metadata["foundation_backbone_task"] == "censored_aware_pooled_discrete_time_hazard_classification"
+    assert metadata["foundation_interval_count"] == 5
+    assert metadata["foundation_sample_weight_requested"] == "normalized"
+    assert metadata["foundation_sample_weight_applied"] is False
+
+    FakeTabularPredictor.predict_proba_calls = 0
+    risk = model.predict_risk(evaluation)
+    survival = model.predict_survival(evaluation, times)
+    separate_calls = FakeTabularPredictor.predict_proba_calls
+    FakeTabularPredictor.predict_proba_calls = 0
+    predictions = model.predict_bundle(evaluation, times)
+
+    np.testing.assert_array_equal(predictions.risk, risk)
+    np.testing.assert_array_equal(predictions.survival, survival)
+    assert separate_calls == 10
+    assert FakeTabularPredictor.predict_proba_calls == 5

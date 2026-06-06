@@ -69,9 +69,13 @@ before including them in long runs.
 | `pchazard` | Piecewise constant hazard neural model | Deep learning | `pycox` | Manuscript |
 | `cox_time` | Cox-Time neural survival model | Deep learning | `pycox` | Manuscript |
 | `tabpfn_survival` | TabPFN horizon survival adapter | Foundation | `tabpfn` | Manuscript |
+| `tabpfn_discrete_hazard_survival` | TabPFN pooled discrete-time hazard adapter | Foundation | `tabpfn` | Manuscript comparison |
 | `tabicl_survival` | TabICL horizon survival adapter | Foundation | `tabicl` | Manuscript |
+| `tabicl_discrete_hazard_survival` | TabICL pooled discrete-time hazard adapter | Foundation | `tabicl` | Manuscript comparison |
 | `tabm_survival` | TabM horizon survival adapter | Foundation | `autogluon.tabular` TABM | Manuscript |
+| `tabm_discrete_hazard_survival` | TabM pooled discrete-time hazard adapter | Foundation | `autogluon.tabular` TABM | Manuscript comparison |
 | `realtabpfn_survival` | RealTabPFN-V2 horizon survival adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript |
+| `realtabpfn_discrete_hazard_survival` | RealTabPFN-V2 pooled discrete-time hazard adapter | Foundation | `autogluon.tabular` REALTABPFN-V2 | Manuscript comparison |
 | `mitra_survival_frozen` | Frozen Mitra event-risk adapter | Foundation | `autogluon.tabular` MITRA | Available, excluded from manuscript no-HPO |
 
 ## Adding Methods

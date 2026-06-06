@@ -3,7 +3,9 @@ from __future__ import annotations
 import gzip
 import json
 import pickle
+import subprocess
 from pathlib import Path
+import sys
 from types import SimpleNamespace
 import numpy as np
 import pandas as pd
@@ -183,6 +185,118 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     ]
 
 
+def test_foundation_discrete_hazard_configs_resolve_and_dry_run() -> None:
+    from survarena.methods.registry import registered_method_ids
+
+    registered = set(registered_method_ids())
+    smoke_cfg = read_yaml(Path("configs/benchmark/foundation_discrete_hazard_smoke.yaml"))
+    manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_foundation_adapters_v1.yaml"))
+    expected = {
+        "tabpfn_discrete_hazard_survival",
+        "tabicl_discrete_hazard_survival",
+        "tabm_discrete_hazard_survival",
+        "realtabpfn_discrete_hazard_survival",
+    }
+
+    assert expected.issubset(registered)
+    assert expected.intersection(smoke_cfg["methods"]) == {
+        "tabpfn_discrete_hazard_survival",
+        "tabicl_discrete_hazard_survival",
+    }
+    assert expected.issubset(manuscript_cfg["methods"])
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "survarena.run_benchmark",
+            "--config",
+            "configs/benchmark/foundation_discrete_hazard_smoke.yaml",
+            "--dry-run",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert "Dry run complete." in result.stdout
+
+
+def test_compare_foundation_adapters_script_writes_requested_outputs(tmp_path: Path) -> None:
+    input_dir = tmp_path / "input"
+    output_dir = tmp_path / "out"
+    input_dir.mkdir()
+    rows = [
+        {
+            "benchmark_id": "b",
+            "dataset_id": "support",
+            "split_id": "s1",
+            "seed": 11,
+            "method_id": "tabpfn_survival",
+            "uno_c": 0.60,
+            "ibs": 0.20,
+            "foundation_horizon_count": 3,
+        },
+        {
+            "benchmark_id": "b",
+            "dataset_id": "support",
+            "split_id": "s1",
+            "seed": 11,
+            "method_id": "tabpfn_discrete_hazard_survival",
+            "uno_c": 0.65,
+            "ibs": 0.18,
+            "foundation_interval_count": 5,
+            "foundation_stacked_rows": 40,
+        },
+        {
+            "benchmark_id": "b",
+            "dataset_id": "support",
+            "split_id": "s2",
+            "seed": 22,
+            "method_id": "tabpfn_survival",
+            "uno_c": 0.62,
+            "ibs": 0.19,
+            "foundation_horizon_count": 3,
+        },
+        {
+            "benchmark_id": "b",
+            "dataset_id": "support",
+            "split_id": "s2",
+            "seed": 22,
+            "method_id": "tabpfn_discrete_hazard_survival",
+            "uno_c": 0.61,
+            "ibs": 0.18,
+            "foundation_interval_count": 5,
+            "foundation_stacked_rows": 42,
+        },
+    ]
+    pd.DataFrame(rows).to_csv(input_dir / "toy_fold_results.csv", index=False)
+
+    subprocess.run(
+        [
+            sys.executable,
+            "scripts/compare_foundation_adapters.py",
+            "--input-dir",
+            str(input_dir),
+            "--output-dir",
+            str(output_dir),
+            "--bootstrap",
+            "10",
+        ],
+        check=True,
+    )
+
+    for name in [
+        "leaderboard.csv",
+        "paired_deltas.csv",
+        "dataset_summary.csv",
+        "adapter_metadata_summary.csv",
+        "manuscript_summary.md",
+    ]:
+        assert (output_dir / name).exists()
+    paired = pd.read_csv(output_dir / "paired_deltas.csv")
+    assert set(paired["hazard_method_id"]) == {"tabpfn_discrete_hazard_survival"}
+
+
 def test_event_fingerprint_rejects_non_binary_labels() -> None:
     from survarena.data.splitters import _event_fingerprint
 
@@ -278,6 +392,20 @@ class PickleableBenchmarkMethod(BaseSurvivalMethod):
         risk = np.asarray(self.predict_risk(X), dtype=float)
         baseline = np.maximum(float(self.scale_ or 1.0), 1e-8)
         return np.exp(-np.outer(np.maximum(risk, 1e-6), np.asarray(times, dtype=float) / baseline))
+
+
+class DiagnosticBenchmarkMethod(BaseSurvivalMethod):
+    def fit(self, X, time, event, X_val=None, time_val=None, event_val=None) -> "DiagnosticBenchmarkMethod":
+        del time, event, X_val, time_val, event_val
+        self.offset_ = float(np.asarray(X, dtype=float)[:, 0].mean())
+        return self
+
+    def predict_risk(self, X):
+        return np.asarray(X, dtype=float)[:, 0] - self.offset_
+
+    def predict_survival(self, X, times):
+        risk = np.maximum(np.asarray(self.predict_risk(X), dtype=float), 1e-6)
+        return np.exp(-np.outer(risk, np.asarray(times, dtype=float)))
 
 
 def _resume_record(status: str = "success") -> dict[str, object]:
@@ -380,6 +508,52 @@ def test_evaluate_split_failure_payload_covers_major_method_families(
     assert metrics["exception_message"] == failure_message
     assert "RuntimeError" in run_payload["failure"]["traceback"]
     assert failure_message in run_payload["failure"]["traceback"]
+
+
+def test_evaluate_split_adds_optional_validation_diagnostics(monkeypatch) -> None:
+    dataset = SimpleNamespace(
+        X=pd.DataFrame({"x1": np.arange(12, dtype=float), "x2": np.tile([0.0, 1.0], 6)}),
+        time=np.asarray([1.0, 1.4, 2.0, 2.5, 3.0, 3.4, 4.0, 4.4, 5.0, 5.4, 6.0, 6.4]),
+        event=np.asarray([1, 0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0], dtype=int),
+    )
+    split = SplitDefinition(
+        split_id="repeat_0_fold_0",
+        seed=11,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([0, 1, 2, 3, 4, 5, 6, 7], dtype=int),
+        test_idx=np.asarray([8, 9, 10, 11], dtype=int),
+    )
+    monkeypatch.setattr(runner, "get_method_class", lambda _method_id: DiagnosticBenchmarkMethod)
+    monkeypatch.setattr("survarena.methods.registry.get_method_class", lambda _method_id: DiagnosticBenchmarkMethod)
+    monkeypatch.setattr(runner, "peak_process_memory_mb", lambda: 64.0, raising=False)
+
+    record = runner.evaluate_split(
+        benchmark_id="validation_diagnostics",
+        dataset_id="toy_dataset",
+        method_id="coxph",
+        split=split,
+        X=dataset.X,
+        time=dataset.time,
+        event=dataset.event,
+        method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
+        inner_folds=2,
+        timeout_seconds=None,
+        primary_metric="harrell_c",
+        horizons_quantiles=(0.25, 0.5, 0.75),
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg-hash",
+        hpo_cfg={"enabled": False},
+        validation_diagnostics={"enabled": True, "inner_folds": 2},
+    )
+
+    assert record["status"] == "success"
+    assert np.isfinite(record["validation_diagnostic_score"])
+    assert np.isfinite(record["validation_diagnostic_test_score"])
+    assert np.isfinite(record["validation_diagnostic_gap"])
+    metrics = record["run_payload"]["metrics"]
+    assert metrics["validation_diagnostic_score"] == record["validation_diagnostic_score"]
+    assert metrics["validation_diagnostic_test_score"] == record["validation_diagnostic_test_score"]
 
 
 def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, monkeypatch) -> None:

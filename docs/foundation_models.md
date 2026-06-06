@@ -6,14 +6,18 @@ Last reviewed against manuscript config and extras: 2026-06-04.
 
 ## Current State
 
-- implemented adapters: `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `realtabpfn_survival`, `mitra_survival_frozen`
+- implemented adapters: `tabpfn_survival`, `tabicl_survival`, `tabm_survival`,
+  `realtabpfn_survival`, `tabpfn_discrete_hazard_survival`,
+  `tabicl_discrete_hazard_survival`, `tabm_discrete_hazard_survival`,
+  `realtabpfn_discrete_hazard_survival`, `mitra_survival_frozen`
 - runtime inspection: `survarena foundation-check`
 - CLI access: `--foundation`
 - predictor access: `presets="foundation"`, `presets="all"`, or
   `enable_foundation_models=True`
 - benchmark access: `configs/benchmark/manuscript_v1.yaml` is the
   manuscript-scope no-HPO benchmark for native plus frozen/bounded foundation
-  adapters
+  adapters; `configs/benchmark/manuscript_foundation_adapters_v1.yaml`
+  compares legacy horizon adapters against pooled discrete-time hazard adapters
 - current skip rules: low-event data, unsupported feature types, or dataset shape beyond backbone hints
 - dependency extras: `foundation-tabpfn`, `foundation-tabarena`, `foundation-mitra`, or `foundation`
 
@@ -26,7 +30,7 @@ TabPFN note:
 
 SurvArena treats tabular foundation models as frozen tabular learners by
 default, not as full survival models that must be fine-tuned end to end. The
-current adapters use a horizon survival contract for manuscript-scope backbones:
+legacy adapters use a horizon survival contract for manuscript-scope backbones:
 
 1. fit or load the tabular backbone under `backbone_training: frozen`
 2. train direct horizon classifiers on the benchmark training split only
@@ -53,16 +57,22 @@ Adapter-specific details:
   rows with known event status at that horizon, fall back to training-side
   Kaplan-Meier event probabilities when a horizon is under-supported, and
   reconstruct monotone survival curves from cumulative event probabilities.
+- `tabpfn_discrete_hazard_survival`, `tabicl_discrete_hazard_survival`,
+  `tabm_discrete_hazard_survival`, and `realtabpfn_discrete_hazard_survival`
+  are pooled discrete-time hazard adapters. They train one classifier on
+  patient-interval rows among subjects known to be at risk at interval start,
+  then reconstruct survival by cumulative products of predicted conditional
+  survival probabilities.
 - `mitra_survival_frozen` remains available but is excluded from the manuscript
   no-HPO track because local RAM/CPU use can exceed the conventional model
   wall-clock budget. It still uses the AutoGluon event-risk plus Breslow
   survival adapter because Mitra is exposed as an event-risk tabular backbone.
 
-Other survival heads can be added behind the same interface: discrete-time
-hazard heads, AFT heads, DeepHit-style competing-risk heads, or calibrated
-stacking heads. The benchmark requirement is that each head is trained only on
-training-side data and returns risk scores plus survival probabilities at
-requested evaluation times.
+See [`discrete_time_hazard_adapter.md`](discrete_time_hazard_adapter.md) for
+the mathematical distinction between cumulative-horizon and pooled
+discrete-time hazard adapters. The benchmark requirement is that each head is
+trained only on training-side data and returns risk scores plus survival
+probabilities at requested evaluation times.
 
 ## Next Steps
 
