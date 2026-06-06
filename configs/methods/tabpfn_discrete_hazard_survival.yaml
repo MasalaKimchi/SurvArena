@@ -1,0 +1,45 @@
+method_id: tabpfn_discrete_hazard_survival
+family: foundation
+library: tabpfn
+display_name: TabPFN Discrete Hazard Survival
+notes: >
+  Pooled discrete-time hazard adapter for TabPFN. It trains one frozen
+  classifier on patient-interval rows and reconstructs survival by cumulative
+  products of predicted conditional hazards.
+search_space:
+  n_estimators:
+    type: categorical
+    choices: [1, 4, 8]
+  model_version:
+    type: categorical
+    choices: [auto, v2, v2.5]
+  n_intervals:
+    type: categorical
+    choices: [3, 5, 10]
+  subject_weighting:
+    type: categorical
+    choices: [normalized, none]
+  aggregate_risk:
+    type: categorical
+    choices: [cumulative_event_probability_at_last, mean_cumulative_event_probability]
+  time_feature_set:
+    type: categorical
+    choices: [minimal, km]
+default_params:
+  n_estimators: 4
+  fit_mode: fit_preprocessors
+  model_version: v2.5
+  checkpoint_path: null
+  time_grid: event_quantile
+  n_intervals: 5
+  horizon_quantiles: null
+  min_events_per_interval: 5
+  min_rows_per_interval: 20
+  max_stacked_rows: 50000
+  subject_weighting: normalized
+  censoring_weighting: none
+  aggregate_risk: cumulative_event_probability_at_last
+  time_feature_set: km
+  device: auto
+  seed: 0
+  predict_batch_size: null

@@ -29,6 +29,7 @@ _REGISTRY_TARGETS = {
     "catboost_survival_aft": ("survarena.methods.boosting.tabular_boosting", "CatBoostSurvivalAFTMethod"),
     "deepsurv": ("survarena.methods.deep.deepsurv", "DeepSurvMethod"),
     "deepsurv_moco": ("survarena.methods.deep.deepsurv_moco", "DeepSurvMomentumMethod"),
+    "shared_discrete_hazard": ("survarena.methods.deep.discrete_hazard", "SharedDiscreteHazardMethod"),
     "logistic_hazard": ("survarena.methods.deep.pycox_models", "LogisticHazardMethod"),
     "pmf": ("survarena.methods.deep.pycox_models", "PMFMethod"),
     "mtlr": ("survarena.methods.deep.pycox_models", "MTLRMethod"),
@@ -36,17 +37,35 @@ _REGISTRY_TARGETS = {
     "pchazard": ("survarena.methods.deep.pycox_models", "PCHazardMethod"),
     "cox_time": ("survarena.methods.deep.pycox_models", "CoxTimeMethod"),
     "tabpfn_survival": ("survarena.methods.foundation.tabpfn_survival", "TabPFNSurvivalMethod"),
+    "tabpfn_discrete_hazard_survival": (
+        "survarena.methods.foundation.discrete_hazard",
+        "TabPFNDiscreteHazardSurvivalMethod",
+    ),
     "mitra_survival_frozen": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFrozenMethod"),
     "tabicl_survival": ("survarena.methods.foundation.direct_horizon", "TabICLHorizonSurvivalMethod"),
+    "tabicl_discrete_hazard_survival": (
+        "survarena.methods.foundation.discrete_hazard",
+        "TabICLDiscreteHazardSurvivalMethod",
+    ),
     "tabm_survival": ("survarena.methods.automl.mitra_survival", "TabMSurvivalMethod"),
+    "tabm_discrete_hazard_survival": (
+        "survarena.methods.automl.mitra_survival",
+        "TabMDiscreteHazardSurvivalMethod",
+    ),
     "realtabpfn_survival": ("survarena.methods.automl.mitra_survival", "RealTabPFNV2SurvivalMethod"),
+    "realtabpfn_discrete_hazard_survival": (
+        "survarena.methods.automl.mitra_survival",
+        "RealTabPFNV2DiscreteHazardSurvivalMethod",
+    ),
 }
 
 _AUTOGLUON_METHOD_IDS = frozenset(
     {
         "mitra_survival_frozen",
         "tabm_survival",
+        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
+        "realtabpfn_discrete_hazard_survival",
     }
 )
 

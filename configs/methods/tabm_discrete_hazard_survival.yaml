@@ -1,0 +1,41 @@
+method_id: tabm_discrete_hazard_survival
+family: foundation
+library: autogluon.tabular
+display_name: TabM Discrete Hazard Survival
+notes: >
+  Pooled discrete-time hazard adapter for AutoGluon TABM. It fits one binary
+  patient-interval hazard predictor instead of one predictor per horizon.
+search_space:
+  time_limit:
+    type: categorical
+    choices: [60, 120, 300]
+  n_intervals:
+    type: categorical
+    choices: [3, 5, 10]
+  subject_weighting:
+    type: categorical
+    choices: [normalized, none]
+  aggregate_risk:
+    type: categorical
+    choices: [cumulative_event_probability_at_last, mean_cumulative_event_probability]
+  time_feature_set:
+    type: categorical
+    choices: [minimal, km]
+default_params:
+  presets: null
+  time_limit: 120
+  tabm_params: {}
+  time_grid: event_quantile
+  n_intervals: 5
+  horizon_quantiles: null
+  min_events_per_interval: 5
+  min_rows_per_interval: 20
+  max_stacked_rows: 50000
+  subject_weighting: normalized
+  censoring_weighting: none
+  aggregate_risk: cumulative_event_probability_at_last
+  time_feature_set: km
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+  verbosity: 0
