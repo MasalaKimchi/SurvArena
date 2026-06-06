@@ -52,11 +52,11 @@ def test_metric_bundle_to_dict_casts_all_metrics_to_plain_floats() -> None:
         "brier_25",
         "brier_50",
         "brier_75",
-        "calibration_slope_50",
-        "calibration_intercept_50",
         "net_benefit_50",
     ]:
         assert math.isnan(as_dict[key])
+    assert "calibration_slope_50" not in as_dict
+    assert "calibration_intercept_50" not in as_dict
     assert all(isinstance(value, float) for value in as_dict.values())
 
 
@@ -161,6 +161,10 @@ def test_metric_bundle_float_conversion_stays_finite_for_normal_values() -> None
 def test_raw_calibration_slope_is_not_ranked_as_higher_is_better() -> None:
     with pytest.raises(ValueError, match="calibration_slope_50"):
         metric_direction("calibration_slope_50")
+    with pytest.raises(ValueError, match="decision_curve_aunb_50"):
+        metric_direction("decision_curve_aunb_50")
+    with pytest.raises(ValueError, match="net_benefit_50_t20"):
+        metric_direction("net_benefit_50_t20")
 
     assert metric_direction("calibration_slope_abs_error_50") == "minimize"
 

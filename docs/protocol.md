@@ -64,7 +64,7 @@ runtime planning ranges for manuscript-shaped runs.
 
 - discrimination: Harrell C-index, Uno C-index
 - overall survival quality: integrated Brier score, Brier score at 25/50/75% event-time horizons, time-dependent AUC
-- calibration and utility: horizon-specific calibration slope/intercept diagnostics, calibration slope/intercept absolute-error metrics for ranking, and horizon-specific net benefit
+- calibration and utility: horizon-specific calibration slope/intercept absolute-error metrics and horizon-specific net benefit
 - efficiency: fit time, inference time, peak memory
 
 Metric computation is backed by `torchsurv`.
@@ -110,7 +110,7 @@ Outputs are always core CSV artifacts and each run writes:
 
 Fold-result schemas include identifiers, split and mode fields, core and
 time-horizon metrics, timing and memory telemetry, HPO governance fields,
-robustness/parity fields, retry metadata, and status. Raw calibration slope and
-intercept values are diagnostic fields; comparable reports and Elo ladders use
+robustness/parity fields, retry metadata, and status. Calibration reports use
 `calibration_slope_abs_error_*` and `calibration_intercept_abs_error_*` because
-closer to zero error is better.
+closer to zero error is better; raw slope/intercept diagnostics and legacy
+decision-curve aliases are not part of the retained metric contract.

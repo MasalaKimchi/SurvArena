@@ -25,8 +25,9 @@ methods, and 15 splits per dataset/method pair.
 
 The retained Elo/reporting bundle now contains metric-specific Elo ladders,
 paired win-rate tables, rank summaries, coverage summaries, method summaries,
-figures, and `metric_suite_index.csv`. Raw calibration slope/intercept values
-remain diagnostics; ranking uses calibration absolute-error metrics.
+figures, and `metric_suite_index.csv`. Calibration reporting uses absolute-error
+metrics; raw slope/intercept diagnostics and old decision-curve aliases are no
+longer retained in exported metric bundles.
 
 ## Remaining Work
 

@@ -48,14 +48,16 @@ GOVERNANCE_COLUMNS = [
 
 def expand_dynamic_metric_columns(frame: pd.DataFrame) -> list[str]:
     dynamic_prefixes = (
-        "calibration_slope_",
-        "calibration_intercept_",
         "net_benefit_",
-        "decision_curve_aunb_",
         "brier_",
         "td_auc_",
     )
-    dynamic = [col for col in frame.columns if any(col.startswith(prefix) for prefix in dynamic_prefixes)]
+    allowed_suffixes = ("25", "50", "75")
+    dynamic = [
+        col
+        for col in frame.columns
+        if any(col.startswith(prefix) for prefix in dynamic_prefixes) and col.endswith(allowed_suffixes)
+    ]
     return sorted(set(dynamic))
 
 

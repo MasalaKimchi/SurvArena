@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
+
 @dataclass(slots=True)
 class MetricBundle:
     uno_c: float
@@ -15,8 +16,6 @@ class MetricBundle:
     brier_25: float = float("nan")
     brier_50: float = float("nan")
     brier_75: float = float("nan")
-    calibration_slope_50: float = float("nan")
-    calibration_intercept_50: float = float("nan")
     net_benefit_50: float = float("nan")
     extra_metrics: dict[str, float] = field(default_factory=dict)
 
@@ -31,8 +30,6 @@ class MetricBundle:
             "brier_25": float(self.brier_25),
             "brier_50": float(self.brier_50),
             "brier_75": float(self.brier_75),
-            "calibration_slope_50": float(self.calibration_slope_50),
-            "calibration_intercept_50": float(self.calibration_intercept_50),
             "net_benefit_50": float(self.net_benefit_50),
         }
         for key, value in self.extra_metrics.items():
@@ -185,12 +182,6 @@ def compute_survival_metrics(
         test_event=test_event,
         horizons=horizons,
     )
-    calibration_slope, calibration_intercept = _calibration_line(
-        predicted=horizon_event_probs[:, 1],
-        observed=horizon_observed[:, 1],
-        known=horizon_known[:, 1],
-        sample_weight=horizon_weights[:, 1],
-    )
     net_benefit = _net_benefit(
         predicted=horizon_event_probs[:, 1],
         observed=horizon_observed[:, 1],
@@ -210,17 +201,14 @@ def compute_survival_metrics(
             known=horizon_known[:, idx],
             sample_weight=horizon_weights[:, idx],
         )
-        extra_metrics[f"calibration_slope_{label}"] = float(slope)
         extra_metrics[f"calibration_slope_abs_error_{label}"] = (
             float(abs(slope - 1.0)) if np.isfinite(slope) else float("nan")
         )
-        extra_metrics[f"calibration_intercept_{label}"] = float(intercept)
         extra_metrics[f"calibration_intercept_abs_error_{label}"] = (
             float(abs(intercept)) if np.isfinite(intercept) else float("nan")
         )
         threshold_scores: list[float] = []
         for threshold in decision_thresholds:
-            threshold_pct = int(round(float(threshold) * 100))
             nb = _net_benefit(
                 predicted=horizon_event_probs[:, idx],
                 observed=horizon_observed[:, idx],
@@ -228,11 +216,9 @@ def compute_survival_metrics(
                 sample_weight=horizon_weights[:, idx],
                 threshold=float(threshold),
             )
-            extra_metrics[f"net_benefit_{label}_t{threshold_pct}"] = float(nb)
             if np.isfinite(nb):
                 threshold_scores.append(float(nb))
         extra_metrics[f"net_benefit_{label}"] = float(np.mean(threshold_scores)) if threshold_scores else float("nan")
-        extra_metrics[f"decision_curve_aunb_{label}"] = extra_metrics[f"net_benefit_{label}"]
 
     return MetricBundle(
         uno_c=_safe_float(uno),
@@ -244,8 +230,6 @@ def compute_survival_metrics(
         brier_25=_safe_float(brier_at_horizons_t[0]),
         brier_50=_safe_float(brier_at_horizons_t[1]),
         brier_75=_safe_float(brier_at_horizons_t[2]),
-        calibration_slope_50=calibration_slope,
-        calibration_intercept_50=calibration_intercept,
         net_benefit_50=net_benefit,
         extra_metrics=extra_metrics,
     )

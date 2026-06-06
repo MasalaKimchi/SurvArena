@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Iterable
 
 import numpy as np
@@ -55,10 +56,10 @@ def metric_direction(metric: str) -> str:
         return "minimize"
     if metric in MAXIMIZE_METRICS:
         return "maximize"
-    if metric.startswith(("td_auc_", "net_benefit_", "decision_curve_aunb_")):
+    if re.fullmatch(r"td_auc_(25|50|75)", metric) or re.fullmatch(r"net_benefit_(25|50|75)", metric):
         return "maximize"
-    if metric.startswith("brier_"):
+    if re.fullmatch(r"brier_(25|50|75)", metric):
         return "minimize"
-    if metric.startswith(("calibration_slope_abs_error_", "calibration_intercept_abs_error_")):
+    if re.fullmatch(r"calibration_(slope|intercept)_abs_error_(25|50|75)", metric):
         return "minimize"
     raise ValueError(f"Unknown metric direction for '{metric}'.")
