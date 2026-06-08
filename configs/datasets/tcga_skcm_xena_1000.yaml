@@ -1,0 +1,18 @@
+dataset_id: tcga_skcm_xena_1000
+name: TCGA-SKCM RNA-seq survival (UCSC Xena, 1000 genes)
+task_type: right_censored_survival
+source: local_file
+source_url: https://xena.ucsc.edu/
+local_path: data/processed/cancer_survival_1000/tcga_skcm_xena.parquet
+citation: TCGA Skin Cutaneous Melanoma; UCSC Xena GDC hub; SurvBoard TCGA-SKCM
+event_col: event
+time_col: time
+id_col: sample_id
+group_col: null
+feature_types:
+  - numerical
+primary_metric: uno_c
+split_strategy: stratified_event
+recommended_split_strategy: repeated_nested_cv
+recommended_primary_metric: uno_c
+notes: Optional SurvBoard-aligned biomedical benchmark candidate prepared with top-variance 1000 STAR-count genes.
