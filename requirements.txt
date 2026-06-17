@@ -7,6 +7,8 @@
 #
 # Install from the project metadata in pyproject.toml so the pinned runtime
 # dependencies and optional extras stay defined in one place.
+# This file is an install shortcut, not a resolved lockfile. For manuscript or
+# archival runs, export the activated environment next to the result bundle.
 #
 # Recommended:
 #   python3.11 -m venv .venv

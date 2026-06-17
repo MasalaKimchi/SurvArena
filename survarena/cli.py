@@ -1,13 +1,12 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import asdict
-import json
 from pathlib import Path
 
 from survarena.api import SurvivalPredictor, compare_survival_models
 from survarena.benchmark.overview import benchmark_doctor, benchmark_plan, benchmark_report, load_benchmark_config
 from survarena.benchmark.runner import run_benchmark
+from survarena.commands.handlers import CliDependencies, run_cli_command
 from survarena.methods.foundation import foundation_runtime_catalog, foundation_runtime_status_for_method
 
 _PRESET_CHOICES = ("fast", "medium", "best", "all", "foundation")
@@ -40,21 +39,6 @@ def _parse_float_csv_list(value: str) -> list[float]:
         raise argparse.ArgumentTypeError("Expected a comma-separated list of floats.") from exc
 
 
-def _default_pilot_repeated_seeds(repeats: int) -> list[int]:
-    return [11 + 12 * repeat for repeat in range(repeats)]
-
-
-def _hpo_config_from_args(args: argparse.Namespace) -> dict[str, object]:
-    return {
-        "enabled": bool(args.hpo_trials and args.hpo_trials > 0),
-        "max_trials": int(args.hpo_trials or 0),
-        "timeout_seconds": args.hpo_timeout_seconds,
-        "sampler": "tpe",
-        "pruner": "median",
-        "n_startup_trials": 8,
-    }
-
-
 def _add_foundation_flag(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--foundation",
@@ -79,43 +63,6 @@ def _add_benchmark_common_args(parser: argparse.ArgumentParser) -> None:
     method_group.add_argument("--method", default=None, help="Optional single method override.")
     method_group.add_argument("--methods", type=_parse_csv_list, default=None, help="Optional comma-separated method ids.")
     parser.add_argument("--limit-seeds", type=int, default=None, help="Use first N seeds only.")
-
-
-def _print_json(payload: object) -> None:
-    print(json.dumps(payload, indent=2, sort_keys=True))
-
-
-def _benchmark_plan_kwargs(args: argparse.Namespace) -> dict[str, object]:
-    return {
-        "dataset_override": args.dataset,
-        "method_override": args.method,
-        "dataset_overrides": args.datasets,
-        "method_overrides": args.methods,
-        "limit_seeds": args.limit_seeds,
-    }
-
-
-def _benchmark_run_config_and_overrides(
-    benchmark_cfg: dict[str, object],
-    args: argparse.Namespace,
-) -> tuple[dict[str, object], str | None, str | None]:
-    selected_cfg = dict(benchmark_cfg)
-    dataset_override = args.dataset
-    method_override = args.method
-    if args.datasets is not None:
-        selected_cfg["datasets"] = args.datasets
-        dataset_override = None
-    if args.methods is not None:
-        selected_cfg["methods"] = args.methods
-        method_override = None
-    return selected_cfg, dataset_override, method_override
-
-
-def _resolve_optional_repo_path(repo_root: Path, value: str | None) -> Path | None:
-    if value is None:
-        return None
-    path = Path(value)
-    return path if path.is_absolute() else repo_root / path
 
 
 def parse_args() -> argparse.Namespace:
@@ -359,133 +306,26 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def _cli_dependencies() -> CliDependencies:
+    return CliDependencies(
+        survival_predictor_cls=SurvivalPredictor,
+        compare_survival_models=compare_survival_models,
+        foundation_runtime_catalog=foundation_runtime_catalog,
+        foundation_runtime_status_for_method=foundation_runtime_status_for_method,
+        load_benchmark_config=load_benchmark_config,
+        benchmark_plan=benchmark_plan,
+        benchmark_doctor=benchmark_doctor,
+        benchmark_report=benchmark_report,
+        run_benchmark=run_benchmark,
+    )
+
+
 def main() -> None:
-    args = parse_args()
-    if args.command == "fit":
-        predictor = SurvivalPredictor(
-            label_time=args.time_col,
-            label_event=args.event_col,
-            eval_metric=args.eval_metric,
-            presets=args.presets,
-            included_models=args.models,
-            excluded_models=args.exclude_models,
-            retain_top_k_models=None if args.retain_all_models else args.retain_top_k_models,
-            random_state=args.random_state,
-            save_path=args.save_path,
-            verbose=args.verbose,
-            enable_foundation_models=args.enable_foundation_models,
-        )
-        hyperparameter_tune_kwargs = None
-        if args.autogluon_num_trials is not None or args.tuning_timeout is not None:
-            hyperparameter_tune_kwargs = {}
-            if args.autogluon_num_trials is not None:
-                hyperparameter_tune_kwargs["num_trials"] = args.autogluon_num_trials
-            if args.tuning_timeout is not None:
-                hyperparameter_tune_kwargs["timeout"] = args.tuning_timeout
-        predictor.fit(
-            args.train,
-            tuning_data=args.tuning,
-            test_data=args.test,
-            dataset_name=args.dataset_name,
-            holdout_frac=args.holdout_frac,
-            time_limit=args.time_limit,
-            hyperparameter_tune_kwargs=hyperparameter_tune_kwargs,
-            refit_full=args.refit_full,
-            num_bag_folds=args.num_bag_folds,
-            num_bag_sets=args.num_bag_sets,
-        )
-        _print_json(predictor.fit_summary())
-        return
-
-    if args.command in {"compare", "pilot"}:
-        split_strategy = args.split_strategy if args.command == "compare" else "fixed_split"
-        outer_folds = args.outer_folds
-        outer_repeats = args.outer_repeats
-        seeds = args.seeds
-        benchmark_id = None
-        if args.command == "pilot":
-            benchmark_id = "user_pilot_fixed"
-            if args.repeated:
-                split_strategy = "repeated_nested_cv"
-                seeds = args.seeds or _default_pilot_repeated_seeds(args.outer_repeats)
-                benchmark_id = "user_pilot_cv"
-            else:
-                outer_repeats = 1
-                seeds = args.seeds or [11]
-
-        summary = compare_survival_models(
-            args.data,
-            time_col=args.time_col,
-            event_col=args.event_col,
-            dataset_name=args.dataset_name,
-            id_col=args.id_col,
-            drop_columns=args.drop_columns,
-            models=args.models,
-            excluded_models=args.exclude_models,
-            presets=args.presets,
-            enable_foundation_models=args.enable_foundation_models,
-            primary_metric=args.eval_metric,
-            split_strategy=split_strategy,
-            outer_folds=outer_folds,
-            outer_repeats=outer_repeats,
-            inner_folds=args.inner_folds,
-            seeds=seeds,
-            timeout_seconds=args.timeout_seconds,
-            hpo=_hpo_config_from_args(args),
-            decision_curve_thresholds=args.decision_thresholds,
-            output_dir=args.save_path,
-            benchmark_id=benchmark_id,
-            dry_run=args.dry_run,
-        )
-        _print_json(summary)
-        return
-
-    if args.command == "foundation-check":
-        if args.models is None:
-            statuses = list(foundation_runtime_catalog())
-        else:
-            statuses = [foundation_runtime_status_for_method(method_id) for method_id in args.models]
-        _print_json([asdict(status) for status in statuses])
-        return
-
-    if args.command == "benchmark":
-        repo_root = Path(__file__).resolve().parents[1]
-        if args.benchmark_command == "report":
-            _print_json(benchmark_report(Path(args.output_dir)))
-            return
-
-        benchmark_cfg = load_benchmark_config(repo_root, args.benchmark_config)
-        if args.benchmark_command == "plan":
-            _print_json(benchmark_plan(repo_root, benchmark_cfg, **_benchmark_plan_kwargs(args)))
-            return
-        if args.benchmark_command == "doctor":
-            _print_json(
-                benchmark_doctor(
-                    repo_root,
-                    benchmark_cfg,
-                    **_benchmark_plan_kwargs(args),
-                    check_imports=args.check_imports,
-                    load_datasets=args.load_datasets,
-                )
-            )
-            return
-        if args.benchmark_command == "run":
-            selected_cfg, dataset_override, method_override = _benchmark_run_config_and_overrides(benchmark_cfg, args)
-            run_benchmark(
-                repo_root=repo_root,
-                benchmark_cfg=selected_cfg,
-                dataset_override=dataset_override,
-                method_override=method_override,
-                limit_seeds=args.limit_seeds,
-                dry_run=args.dry_run,
-                output_dir=_resolve_optional_repo_path(repo_root, args.output_dir),
-                resume=bool(args.resume),
-                max_retries=max(int(args.max_retries), 0),
-                regenerate_splits=bool(args.regenerate_splits),
-            )
-            return
-
-    raise ValueError(f"Unsupported command '{args.command}'.")
+    run_cli_command(
+        parse_args(),
+        deps=_cli_dependencies(),
+        repo_root=Path(__file__).resolve().parents[1],
+    )
 
 
 if __name__ == "__main__":

@@ -18,7 +18,7 @@ The setup script:
 
 - creates `.venv`
 - installs SurvArena in editable mode with developer tooling and the default
-  manuscript TabPFN/TabICL/AutoGluon foundation dependencies
+  manuscript TabPFN and TabICL foundation dependencies
 - runs `scripts/check_environment.py`
 
 Useful overrides:
@@ -74,6 +74,23 @@ Optional tracking extras:
 python -m pip install -e ".[tracking]"
 ```
 
+## Reproducibility Notes
+
+`pyproject.toml` is the source of truth for supported dependency pins and
+optional extras. `requirements.txt` is only a convenience wrapper around the
+default editable contributor install.
+
+Do not treat `requirements.txt` as a lockfile. Before publishing or archiving a
+benchmark bundle, write an environment freeze next to the retained artifacts:
+
+```bash
+python -m pip freeze --all > results/<bundle>/environment-freeze.txt
+python -VV > results/<bundle>/python-version.txt
+```
+
+A committed constraints or lock file is useful once the project chooses one
+exact platform and extras combination for manuscript reproduction.
+
 ## What the Check Covers
 
 - virtual environment detection
@@ -114,3 +131,9 @@ manifest.
 
 Treat timestamped benchmark output folders as local run artifacts unless you are
 intentionally publishing curated results.
+
+To preview removable local caches and generated artifacts:
+
+```bash
+./scripts/clean_local_artifacts.sh
+```

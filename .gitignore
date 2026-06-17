@@ -1,5 +1,6 @@
 ## Virtual environments
 .venv/
+.venv*/
 venv/
 env/
 
@@ -43,6 +44,14 @@ pip-wheel-metadata/
 .env
 .env.*
 .codex/
+
+## GSD/planning scratch artifacts
+.planning/**/artifacts/
+.planning/**/outputs/
+.planning/**/scratch/
+.planning/**/*.log
+.planning/**/*.pid
+.planning/**/*.tmp
 
 ## Editor / OS clutter
 .vscode/

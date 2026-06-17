@@ -25,6 +25,11 @@ AGGREGATE_CSVS = {
     "manuscript_fold_results_success.csv",
     "metric_suite_index.csv",
 }
+LOCAL_RUN_ROOTS = (
+    "foundation_calibration_fix_smoke",
+    "mitra_feasibility",
+    "protocol_validation",
+)
 
 
 def _metric_from_name(path: Path, prefix: str) -> str:
@@ -107,6 +112,8 @@ def _archive_metric_csvs(elo_dir: Path) -> int:
                 target.unlink()
             shutil.move(str(path), target)
             moved += 1
+    if moved == 0 and not any(legacy_dir.iterdir()):
+        legacy_dir.rmdir()
     return moved
 
 
@@ -138,10 +145,91 @@ def compact_elo_dir(elo_dir: Path) -> dict[str, int]:
     }
 
 
+def _raw_dataset_model_candidates(root: Path) -> list[Path]:
+    candidates: list[Path] = []
+    for compact_fold_results in root.glob("manuscript_grade/*/elo/manuscript_fold_results_success.csv"):
+        dataset_model = compact_fold_results.parents[1] / "dataset_model"
+        if dataset_model.exists():
+            candidates.append(dataset_model)
+    return sorted(set(candidates))
+
+
+def _empty_dirs(root: Path) -> list[Path]:
+    return sorted(
+        (path for path in root.rglob("*") if path.is_dir() and not any(path.iterdir())),
+        key=lambda path: len(path.parts),
+        reverse=True,
+    )
+
+
+def local_prune_candidates(
+    root: Path,
+    *,
+    include_logs: bool = False,
+    include_local_runs: bool = False,
+    include_raw_dataset_model: bool = False,
+) -> list[Path]:
+    candidates: list[Path] = []
+    candidates.extend(root.rglob(".DS_Store"))
+    candidates.extend(root.rglob("*.pid"))
+    if include_logs:
+        candidates.extend(root.rglob("*.log"))
+        candidates.append(root / "manuscript_grade" / "logs")
+    if include_local_runs:
+        candidates.extend(root / name for name in LOCAL_RUN_ROOTS)
+    if include_raw_dataset_model:
+        candidates.extend(_raw_dataset_model_candidates(root))
+    candidates.extend(_empty_dirs(root))
+    existing = [path for path in candidates if path.exists()]
+    return sorted(set(existing), key=lambda path: (len(path.parts), str(path)))
+
+
+def prune_local_artifacts(
+    root: Path,
+    *,
+    apply: bool = False,
+    include_logs: bool = False,
+    include_local_runs: bool = False,
+    include_raw_dataset_model: bool = False,
+) -> int:
+    candidates = local_prune_candidates(
+        root,
+        include_logs=include_logs,
+        include_local_runs=include_local_runs,
+        include_raw_dataset_model=include_raw_dataset_model,
+    )
+    action = "removed" if apply else "would remove"
+    for path in candidates:
+        if apply:
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        print(f"{action} {path}")
+    return len(candidates)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Compact existing manuscript Elo result folders.")
     parser.add_argument("elo_dirs", nargs="*", type=Path, help="Specific Elo directories to compact.")
     parser.add_argument("--root", type=Path, default=Path("results"), help="Root to search when no Elo dirs are given.")
+    parser.add_argument(
+        "--prune-local-artifacts",
+        action="store_true",
+        help="Preview removable local result cruft after compaction. Use --apply-prune to delete.",
+    )
+    parser.add_argument("--apply-prune", action="store_true", help="Delete paths reported by --prune-local-artifacts.")
+    parser.add_argument("--include-logs", action="store_true", help="Include result logs in local-artifact pruning.")
+    parser.add_argument(
+        "--include-local-runs",
+        action="store_true",
+        help="Include known smoke/feasibility/protocol result roots that are not direct Elo inputs.",
+    )
+    parser.add_argument(
+        "--include-raw-dataset-model",
+        action="store_true",
+        help="Include raw dataset_model roots when a sibling compact Elo fold-results bundle exists.",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +242,15 @@ def main() -> None:
             f"{elo_dir}: aggregate_tables={summary['aggregate_tables']} "
             f"archived_csvs={summary['archived_csvs']} moved_figures={summary['moved_figures']}"
         )
+    if args.prune_local_artifacts:
+        count = prune_local_artifacts(
+            args.root,
+            apply=bool(args.apply_prune),
+            include_logs=bool(args.include_logs),
+            include_local_runs=bool(args.include_local_runs),
+            include_raw_dataset_model=bool(args.include_raw_dataset_model),
+        )
+        print(f"local_prune_candidates={count}")
 
 
 if __name__ == "__main__":

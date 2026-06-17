@@ -63,6 +63,13 @@ discrete-hazard foundation evidence is refreshed or provenance-mapped.
 | Genomics status audit | n/a | 110 audited pairs | 85 eligible, 25 ineligible | `results/manuscript_grade/genomics_no_hpo/genomics_dataset_method_status.csv` |
 | Clinical discrete-hazard foundation audit | 246 | 16 / 28 complete alias-run pairs | 15 / 15 for complete retained pairs | `results/manuscript_grade/clinical_discrete_hazard_foundation/` |
 
+For retained comparison evidence, prefer compact `elo/` bundles over raw
+`dataset_model/` trees. Raw per-dataset/model outputs are useful rebuild inputs
+and local provenance, but they are not required once
+`manuscript_fold_results_success.csv` and the aggregate Elo tables are retained.
+See [`manuscript_evidence.md`](manuscript_evidence.md#result-retention-policy)
+for the local cleanup policy and pruning commands.
+
 ## Source Files
 
 - Maintained project state: `PROJECT_STATE.md`

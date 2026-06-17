@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
 import os
 from pathlib import Path
 from time import perf_counter
@@ -24,6 +23,15 @@ from survarena.api._predictor_persistence import (
     load_predictor,
     persist_artifacts,
     save_predictor,
+)
+from survarena.api._predictor_results import (
+    PredictorModelResult,
+    append_budget_exhausted_results,
+    attach_result_fit_metadata,
+    build_leaderboard,
+    hpo_backend_for_method,
+    selection_sort_key,
+    training_backend_for_method,
 )
 from survarena.automl.bagging import BaggedModelMember, BaggedSurvivalEnsemble
 from survarena.automl.presets import resolve_preset
@@ -71,29 +79,6 @@ def _configure_plotting_cache() -> None:
 
 def _get_method_class(method_id: str) -> Any:
     return get_method_class(method_id)
-
-
-@dataclass(slots=True)
-class PredictorModelResult:
-    method_id: str
-    selection_score: float
-    validation_metrics: dict[str, float]
-    fit_time_sec: float
-    selection_evaluations: int
-    params: dict[str, Any]
-    training_backend: str = "native"
-    hpo_backend: str = "none"
-    autogluon_presets: Any | None = None
-    autogluon_best_model: str | None = None
-    autogluon_model_count: int = 0
-    autogluon_path: str | None = None
-    bagging_folds: int = 0
-    stack_levels: int = 0
-    time_limit_sec: float | None = None
-    retained_for_inference: bool = False
-    status: str = "success"
-    error: str | None = None
-    error_type: str | None = None
 
 
 class SurvivalPredictor:
@@ -578,49 +563,14 @@ class SurvivalPredictor:
         return summary
 
     def _build_leaderboard(self, results: list[PredictorModelResult]) -> pd.DataFrame:
-        rows: list[dict[str, Any]] = []
-        for result in results:
-            row: dict[str, Any] = {
-                "method_id": result.method_id,
-                "selection_metric": self.eval_metric,
-                "selection_score": result.selection_score,
-                "fit_time_sec": result.fit_time_sec,
-                "training_backend": result.training_backend,
-                "hpo_backend": result.hpo_backend,
-                "autogluon_presets": result.autogluon_presets,
-                "autogluon_best_model": result.autogluon_best_model,
-                "autogluon_model_count": result.autogluon_model_count,
-                "autogluon_path": result.autogluon_path,
-                "bagging_folds": result.bagging_folds,
-                "stack_levels": result.stack_levels,
-                "selection_evaluations": result.selection_evaluations,
-                "time_limit_sec": result.time_limit_sec,
-                "retained_for_inference": result.retained_for_inference,
-                "status": result.status,
-                "error": result.error,
-                "error_type": result.error_type,
-                "params": result.params,
-            }
-            row.update(result.validation_metrics)
-            row.update(self.model_test_metrics_.get(result.method_id, {}))
-            rows.append(row)
-
-        leaderboard = pd.DataFrame(rows)
-        leaderboard["_status_rank"] = leaderboard["status"].map({"success": 0, "failed": 1, "skipped": 2}).fillna(3)
-        leaderboard = leaderboard.sort_values(
-            by=["_status_rank", f"validation_{self.eval_metric}"],
-            ascending=[True, False],
-            na_position="last",
-        ).drop(columns=["_status_rank"])
-        leaderboard = leaderboard.reset_index(drop=True)
-        leaderboard.insert(0, "rank", np.arange(1, len(leaderboard) + 1, dtype=int))
-        return leaderboard
+        return build_leaderboard(
+            results,
+            eval_metric=self.eval_metric,
+            model_test_metrics=self.model_test_metrics_,
+        )
 
     def _selection_sort_key(self, result: PredictorModelResult) -> tuple[bool, float]:
-        score = float(result.selection_score)
-        if not np.isfinite(score):
-            return (False, 0.0)
-        return (True, score)
+        return selection_sort_key(result)
 
     def _fold_cache_metric_summary(
         self,
@@ -936,30 +886,17 @@ class SurvivalPredictor:
         results: list[PredictorModelResult],
         method_ids: list[str],
     ) -> None:
-        for method_id in method_ids:
-            results.append(
-                PredictorModelResult(
-                    method_id=method_id,
-                    selection_score=float("nan"),
-                    validation_metrics={},
-                    fit_time_sec=0.0,
-                    selection_evaluations=0,
-                    params={},
-                    training_backend=self._training_backend_for_method(method_id),
-                    time_limit_sec=0.0,
-                    status="skipped",
-                    error="Global fit time budget exhausted before this model could be selected.",
-                    error_type="TimeLimitExceeded",
-                )
-            )
+        append_budget_exhausted_results(
+            results=results,
+            method_ids=method_ids,
+            training_backend_for_method=self._training_backend_for_method,
+        )
 
     def _training_backend_for_method(self, method_id: str) -> str:
-        return "autogluon" if is_autogluon_method(method_id) else "native"
+        return training_backend_for_method(method_id, is_autogluon_method=is_autogluon_method)
 
     def _hpo_backend_for_method(self, method_id: str, params: dict[str, Any]) -> str:
-        if is_autogluon_method(method_id) and params.get("hyperparameter_tune_kwargs"):
-            return "autogluon"
-        return "none"
+        return hpo_backend_for_method(method_id, params, is_autogluon_method=is_autogluon_method)
 
     def _method_cfg_with_autogluon_controls(
         self,
@@ -985,13 +922,7 @@ class SurvivalPredictor:
         return resolved
 
     def _attach_result_fit_metadata(self, result: PredictorModelResult, model: Any) -> None:
-        metadata_getter = getattr(model, "autogluon_metadata", None)
-        if not callable(metadata_getter):
-            return
-        metadata = dict(metadata_getter())
-        result.autogluon_best_model = metadata.get("autogluon_best_model")
-        result.autogluon_model_count = int(metadata.get("autogluon_model_count") or 0)
-        result.autogluon_path = metadata.get("autogluon_path")
+        attach_result_fit_metadata(result, model)
 
     def _default_survival_times(self, time: np.ndarray, event: np.ndarray) -> np.ndarray:
         event_times = time[event.astype(bool)]

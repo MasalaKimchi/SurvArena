@@ -174,10 +174,19 @@ def _input_dirs(input_dir: Path | Sequence[Path]) -> list[Path]:
 def _load_raw_fold_results(input_dir: Path | Sequence[Path]) -> pd.DataFrame:
     paths: list[Path] = []
     for root in _input_dirs(input_dir):
+        if root.is_file():
+            paths.append(root)
+            continue
+        compact = root / "manuscript_fold_results_success.csv"
+        if compact.exists():
+            paths.append(compact)
         paths.extend(sorted(root.glob("*/*/*_fold_results.csv")))
     if not paths:
         roots = ", ".join(str(root) for root in _input_dirs(input_dir))
-        raise ValueError(f"No fold result CSVs found under {roots}.")
+        raise ValueError(
+            "No fold result CSVs found. Expected raw dataset/model '*/*/*_fold_results.csv' files "
+            f"or a compact 'manuscript_fold_results_success.csv' under {roots}."
+        )
     return _with_derived_comparable_metrics(pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False))
 
 
@@ -566,7 +575,10 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         action="append",
         default=None,
-        help="Dataset/model result root. Can be repeated. Defaults to the clinical no-HPO root.",
+        help=(
+            "Dataset/model result root, compact Elo directory, or fold-results CSV. "
+            "Can be repeated. Defaults to the clinical no-HPO raw result root."
+        ),
     )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(

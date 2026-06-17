@@ -34,6 +34,34 @@ python scripts/build_manuscript_elo.py
 
 Use `--metric <metric>` for a single-metric rebuild.
 
+## Result Retention Policy
+
+Treat compact `elo/` bundles as the canonical retained comparison evidence. For
+Elo comparison, the important retained files are the aggregate CSVs,
+`metric_suite_index.csv`, figures, and `manuscript_fold_results_success.csv`.
+
+Raw `dataset_model/` trees are rebuild inputs and local provenance. After a
+compact Elo bundle exists, Elo can be rebuilt from either the raw
+`dataset_model/*/*/*_fold_results.csv` files or the compact
+`elo/manuscript_fold_results_success.csv` file:
+
+```bash
+python scripts/build_manuscript_elo.py \
+  --input-dir results/manuscript_grade/clinical_no_hpo/elo
+```
+
+Local smoke runs, feasibility checks, logs, PID files, `.DS_Store` files, and
+empty result directories are not direct Elo inputs. Preview removable local
+result artifacts with:
+
+```bash
+python scripts/compact_existing_elo_results.py --prune-local-artifacts
+```
+
+Add explicit flags such as `--include-local-runs`, `--include-logs`, or
+`--include-raw-dataset-model` only when you are ready to discard that local
+provenance.
+
 ## Local Reference Machine
 
 The current evidence bundle was calibrated for CPU-default execution on the

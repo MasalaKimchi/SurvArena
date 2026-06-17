@@ -10,6 +10,7 @@ which document owns it.
 | Task | Read |
 | --- | --- |
 | Install SurvArena and verify imports | [`environment.md`](environment.md) |
+| Freeze an environment for archived benchmark evidence | [`environment.md`](environment.md#reproducibility-notes) |
 | Run a small user-dataset pilot | [`datasets.md`](datasets.md#user-dataset-pilot) |
 | Understand benchmark execution before fitting models | [`benchmarking_workflow.md`](benchmarking_workflow.md) |
 | Understand the retained benchmark contract | [`protocol.md`](protocol.md) |
