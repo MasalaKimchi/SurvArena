@@ -82,6 +82,14 @@ For a deeper protocol spot-check, run:
 ./scripts/validate_benchmark_protocol.sh
 ```
 
+Before treating local artifacts as publishable manuscript evidence, run:
+
+```bash
+python scripts/audit_manuscript_publishability.py --strict
+```
+
+The generated report is [`docs/manuscript_publishability.md`](docs/manuscript_publishability.md).
+
 ## Pilot Your Own Dataset
 
 Use `survarena pilot` for a small benchmark-style read before committing to a

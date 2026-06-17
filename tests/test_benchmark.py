@@ -191,19 +191,18 @@ def test_foundation_discrete_hazard_configs_resolve_and_dry_run() -> None:
     registered = set(registered_method_ids())
     smoke_cfg = read_yaml(Path("configs/benchmark/foundation_discrete_hazard_smoke.yaml"))
     manuscript_cfg = read_yaml(Path("configs/benchmark/manuscript_foundation_adapters_v1.yaml"))
-    expected = {
+    compatibility_ids = {
         "tabpfn_discrete_hazard_survival",
         "tabicl_discrete_hazard_survival",
         "tabm_discrete_hazard_survival",
         "realtabpfn_discrete_hazard_survival",
     }
+    canonical_ids = {"tabpfn_survival", "tabicl_survival", "tabm_survival", "realtabpfn_survival"}
 
-    assert expected.issubset(registered)
-    assert expected.intersection(smoke_cfg["methods"]) == {
-        "tabpfn_discrete_hazard_survival",
-        "tabicl_discrete_hazard_survival",
-    }
-    assert expected.issubset(manuscript_cfg["methods"])
+    assert compatibility_ids.issubset(registered)
+    assert set(smoke_cfg["methods"]) == {"coxph", "tabpfn_survival", "tabicl_survival"}
+    assert canonical_ids.issubset(manuscript_cfg["methods"])
+    assert not compatibility_ids.intersection(manuscript_cfg["methods"])
 
     result = subprocess.run(
         [

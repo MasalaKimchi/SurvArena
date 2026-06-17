@@ -29,7 +29,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         supports_finetune=False,
         supports_pretrained_weights=True,
         status="implemented",
-        notes="Censored-aware horizon classification adapter with monotone survival reconstruction.",
+        notes="Default censored-aware pooled discrete-time hazard survival adapter.",
         dependency_module="tabpfn",
         install_extra="foundation-tabpfn",
         max_rows_hint=10_000,
@@ -72,7 +72,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         supports_finetune=True,
         supports_pretrained_weights=True,
         status="implemented",
-        notes="Censored-aware direct TabICL horizon classification adapter with monotone survival reconstruction.",
+        notes="Default censored-aware pooled discrete-time hazard survival adapter.",
         dependency_module="tabicl",
         install_extra="foundation-tabarena",
         max_rows_hint=30_000,
@@ -100,7 +100,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         supports_finetune=True,
         supports_pretrained_weights=False,
         status="implemented",
-        notes="Censored-aware AutoGluon TABM horizon classification adapter with monotone survival reconstruction.",
+        notes="Default censored-aware AutoGluon TABM pooled discrete-time hazard survival adapter.",
         dependency_module="autogluon.tabular",
         install_extra="foundation-tabarena",
         max_rows_hint=100_000,
@@ -128,7 +128,7 @@ _FOUNDATION_MODEL_SPECS: tuple[FoundationModelSpec, ...] = (
         supports_finetune=False,
         supports_pretrained_weights=True,
         status="implemented",
-        notes="Censored-aware AutoGluon REALTABPFN-V2 horizon classification adapter with monotone survival reconstruction.",
+        notes="Default censored-aware AutoGluon REALTABPFN-V2 pooled discrete-time hazard survival adapter.",
         dependency_module="tabpfn",
         install_extra="foundation-tabarena",
         max_rows_hint=50_000,
@@ -158,14 +158,10 @@ def foundation_model_catalog() -> tuple[FoundationModelSpec, ...]:
 _WIRED_FOUNDATION_METHOD_IDS = frozenset(
     {
         "tabpfn_survival",
-        "tabpfn_discrete_hazard_survival",
         "mitra_survival_frozen",
         "tabicl_survival",
-        "tabicl_discrete_hazard_survival",
         "tabm_survival",
-        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
-        "realtabpfn_discrete_hazard_survival",
     }
 )
 

@@ -4,17 +4,23 @@ split_strategy: repeated_nested_cv
 outer_folds: 5
 outer_repeats: 3
 inner_folds: 3
-seeds: [11, 22, 33, 44, 55]
+seeds:
+- 11
+- 22
+- 33
+- 44
+- 55
 primary_metric: uno_c
 profile: manuscript
-comparison_modes: [no_hpo]
+comparison_modes:
+- no_hpo
 secondary_metrics:
-  - harrell_c
-  - ibs
-  - td_auc
-  - brier
-  - calibration
-  - net_benefit
+- harrell_c
+- ibs
+- td_auc
+- brier
+- calibration
+- net_benefit
 autogluon:
   enabled: true
   presets: null
@@ -36,67 +42,76 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 50000
     tabicl_survival:
       enabled: false
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 50000
     tabm_survival:
       enabled: false
       search_space: null
       default_params:
         time_limit: 120
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 50000
     realtabpfn_survival:
       enabled: false
       search_space: null
       default_params:
         time_limit: 120
-time_horizons_quantiles: [0.25, 0.5, 0.75]
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 9500
+time_horizons_quantiles:
+- 0.25
+- 0.5
+- 0.75
 exports:
   profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
-  - support
-  - metabric
-  - nwtco
-  - aids
-  - gbsg2
-  - flchain
-  - whas500
+- support
+- metabric
+- nwtco
+- aids
+- gbsg2
+- flchain
+- whas500
 methods:
-  - coxph
-  - coxnet
-  - weibull_aft
-  - lognormal_aft
-  - loglogistic_aft
-  - aalen_additive
-  - fast_survival_svm
-  - rsf
-  - extra_survival_trees
-  - gradient_boosting_survival
-  - componentwise_gradient_boosting
-  - xgboost_cox
-  - xgboost_aft
-  - catboost_cox
-  - catboost_survival_aft
-  - deepsurv
-  - deepsurv_moco
-  - logistic_hazard
-  - pmf
-  - mtlr
-  - deephit_single
-  - pchazard
-  - cox_time
-  - tabpfn_survival
-  - tabicl_survival
-  - tabm_survival
-  - realtabpfn_survival
-notes: >
-  Main-paper default/no-HPO benchmark across balanced native and foundation
-  survival model families. Foundation adapters use bounded default settings
-  only; Mitra is excluded from this CPU/RAM-bounded track because local
-  resource use can exceed the conventional model wall-clock budget.
+- coxph
+- coxnet
+- weibull_aft
+- lognormal_aft
+- loglogistic_aft
+- aalen_additive
+- fast_survival_svm
+- rsf
+- extra_survival_trees
+- gradient_boosting_survival
+- componentwise_gradient_boosting
+- xgboost_cox
+- xgboost_aft
+- catboost_cox
+- catboost_survival_aft
+- deepsurv
+- deepsurv_moco
+- logistic_hazard
+- pmf
+- mtlr
+- deephit_single
+- pchazard
+- cox_time
+- tabpfn_survival
+- tabicl_survival
+- tabm_survival
+- realtabpfn_survival
+notes: 'Main-paper default/no-HPO benchmark across balanced native and foundation survival model families. Foundation adapters use bounded default settings only; Mitra is excluded from this CPU/RAM-bounded track because local resource use can exceed the conventional model wall-clock budget.
+
+  '

@@ -1,0 +1,60 @@
+benchmark_id: manuscript_foundation_adapters_v1_realtabpfn_capped
+task_type: right_censored_survival
+split_strategy: repeated_nested_cv
+outer_folds: 5
+outer_repeats: 3
+inner_folds: 3
+seeds: [11, 22, 33, 44, 55]
+primary_metric: uno_c
+profile: manuscript
+comparison_modes: [no_hpo]
+secondary_metrics:
+  - harrell_c
+  - ibs
+  - td_auc
+  - brier
+  - calibration
+  - net_benefit
+autogluon:
+  enabled: true
+  presets: null
+  time_limit_seconds: 120
+  hyperparameter_tune_kwargs: null
+  num_bag_folds: 0
+  num_stack_levels: 0
+  refit_full: false
+hpo:
+  enabled: false
+  max_trials: 0
+  timeout_seconds: 120
+  sampler: random
+  pruner: none
+  n_startup_trials: 0
+  method_overrides:
+    realtabpfn_discrete_hazard_survival:
+      enabled: false
+      search_space: null
+      default_params:
+        time_limit: 120
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 9500
+time_horizons_quantiles: [0.25, 0.5, 0.75]
+exports:
+  profile: core_csv
+  manuscript_artifact_layout: compact
+datasets:
+  - support
+  - metabric
+  - nwtco
+  - aids
+  - gbsg2
+  - flchain
+  - whas500
+methods:
+  - realtabpfn_discrete_hazard_survival
+notes: >
+  Temporary evidence-collection config for RealTabPFN-V2 discrete hazard. The
+  stacked patient-interval frame is capped below AutoGluon's RealTabPFN-v2
+  ag.max_rows=10000 limit so clinical folds can produce metrics instead of
+  ineligible failure rows.

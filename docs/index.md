@@ -24,6 +24,7 @@ which document owns it.
 | Optional TCGA/UCSC Xena cancer cohorts | [`cancer_survival_datasets.md`](cancer_survival_datasets.md) |
 | Optional foundation-model adapters | [`foundation_models.md`](foundation_models.md) |
 | Manuscript evidence bundle and local machine notes | [`manuscript_evidence.md`](manuscript_evidence.md) |
+| Manuscript publishability gaps and completion criteria | [`manuscript_publishability.md`](manuscript_publishability.md) |
 | AutoGluon-style UX comparison | [`autogluon_comparison.md`](autogluon_comparison.md) |
 
 ## Contributors

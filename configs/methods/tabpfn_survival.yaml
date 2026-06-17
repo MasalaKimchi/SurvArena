@@ -1,38 +1,45 @@
 method_id: tabpfn_survival
 family: foundation
 library: tabpfn
-display_name: TabPFN Survival Horizon Frozen
+display_name: TabPFN Discrete Hazard Survival
 notes: >
-  Censored-aware TabPFN classifier adapter. It trains one frozen TabPFN
-  classifier per survival horizon using only rows with known event status at
-  that horizon and reconstructs monotone survival curves from cumulative event
-  probabilities.
+  Default pooled discrete-time hazard adapter for TabPFN. It trains one frozen
+  classifier on patient-interval rows and reconstructs survival by cumulative
+  products of predicted conditional hazards.
 search_space:
   n_estimators:
     type: categorical
     choices: [1, 4, 8]
-  fit_mode:
-    type: categorical
-    choices: [fit_preprocessors, fit_with_cache]
   model_version:
     type: categorical
     choices: [auto, v2, v2.5]
-  horizon_quantiles:
+  n_intervals:
     type: categorical
-    choices: ["0.25-0.5-0.75", "0.2-0.4-0.6-0.8"]
-  min_known_per_horizon:
+    choices: [3, 5, 10]
+  subject_weighting:
     type: categorical
-    choices: [20, 40]
+    choices: [normalized, none]
   aggregate_risk:
     type: categorical
-    choices: [mean_event_probability, last_event_probability]
+    choices: [cumulative_event_probability_at_last, mean_cumulative_event_probability]
+  time_feature_set:
+    type: categorical
+    choices: [minimal, km]
 default_params:
   n_estimators: 4
   fit_mode: fit_preprocessors
   model_version: v2.5
   checkpoint_path: null
-  horizon_quantiles: "0.25-0.5-0.75"
-  min_known_per_horizon: 20
-  aggregate_risk: mean_event_probability
+  time_grid: event_quantile
+  n_intervals: 5
+  horizon_quantiles: null
+  min_events_per_interval: 5
+  min_rows_per_interval: 20
+  max_stacked_rows: 50000
+  subject_weighting: normalized
+  censoring_weighting: none
+  aggregate_risk: cumulative_event_probability_at_last
+  time_feature_set: km
   device: auto
   seed: 0
+  predict_batch_size: null

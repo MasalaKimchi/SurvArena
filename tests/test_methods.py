@@ -668,7 +668,7 @@ def test_autogluon_foundation_event_risk_variants_force_single_backbone() -> Non
         assert model.foundation_metadata()["foundation_autogluon_hyperparameter_key"] == hyperparameter_key
 
 
-def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, tmp_path) -> None:
+def test_autogluon_foundation_canonical_id_uses_discrete_hazard(monkeypatch, tmp_path) -> None:
     fake_module = ModuleType("autogluon.tabular")
     fake_module.TabularPredictor = FakeTabularPredictor
     monkeypatch.setitem(sys.modules, "autogluon", ModuleType("autogluon"))
@@ -677,22 +677,23 @@ def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, t
         "survarena.methods.automl.mitra_survival.ensure_foundation_runtime_ready",
         lambda method_id: None,
     )
-    model = TabMSurvivalMethod(path=tmp_path / "tabm", time_limit=1, min_known_per_horizon=2)
+    model = TabMSurvivalMethod(path=tmp_path / "tabm", time_limit=1, min_rows_per_interval=2)
     train = pd.DataFrame({"x": [0.0, 1.0, 2.0, 3.0]})
     FakeTabularPredictor.fit_kwargs_history = []
     model.fit(train, np.asarray([1.0, 2.0, 3.0, 4.0]), np.asarray([1, 0, 1, 0]))
     evaluation = pd.DataFrame({"x": [4.0, 5.0]})
     times = np.asarray([1.0, 2.0, 3.0])
 
-    assert len(FakeTabularPredictor.fit_kwargs_history) == 3
+    assert len(FakeTabularPredictor.fit_kwargs_history) == 1
     target_col = "__survarena_event_target__"
-    horizon_targets = [
-        kwargs["train_data"][target_col].to_numpy(dtype=int).tolist()
-        for kwargs in FakeTabularPredictor.fit_kwargs_history
-    ]
-    assert horizon_targets == [[1, 0, 0, 0], [1, 0, 0], [1, 0, 0]]
-    assert model.foundation_metadata()["foundation_backbone_task"] == "censored_aware_horizon_classification"
-    assert model.foundation_metadata()["foundation_horizon_count"] == 3
+    train_frame = FakeTabularPredictor.fit_kwargs_history[0]["train_data"]
+    assert "__survarena_interval_index__" in train_frame.columns
+    assert int(train_frame[target_col].sum()) >= 1
+    assert len(train_frame) > len(train)
+    assert model.foundation_metadata()["foundation_backbone_task"] == (
+        "censored_aware_pooled_discrete_time_hazard_classification"
+    )
+    assert model.foundation_metadata()["foundation_interval_count"] == 5
 
     FakeTabularPredictor.predict_proba_calls = 0
     risk = model.predict_risk(evaluation)
@@ -703,8 +704,8 @@ def test_autogluon_foundation_prediction_bundle_reuses_event_risk(monkeypatch, t
 
     np.testing.assert_array_equal(predictions.risk, risk)
     np.testing.assert_array_equal(predictions.survival, survival)
-    assert separate_calls == 6
-    assert FakeTabularPredictor.predict_proba_calls == 3
+    assert separate_calls == 10
+    assert FakeTabularPredictor.predict_proba_calls == 5
 
 
 def test_autogluon_discrete_hazard_prediction_bundle_uses_single_stacked_predictor(monkeypatch, tmp_path) -> None:

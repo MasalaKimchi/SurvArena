@@ -7,11 +7,11 @@ import os
 from pathlib import Path
 import sys
 
-from survarena.methods.foundation.catalog import FoundationModelSpec, available_foundation_model_specs
+from survarena.methods.foundation.catalog import FoundationModelSpec, available_foundation_model_specs, foundation_model_catalog
 
 
 _HF_TOKEN_ENV_VARS = ("HF_TOKEN", "HUGGINGFACE_HUB_TOKEN")
-_FOUNDATION_SPEC_BY_ID = {spec.method_id: spec for spec in available_foundation_model_specs()}
+_FOUNDATION_SPEC_BY_ID = {spec.method_id: spec for spec in foundation_model_catalog()}
 
 
 @dataclass(frozen=True, slots=True)

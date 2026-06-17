@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Sequence
 from pathlib import Path
 import sys
 from typing import Any
@@ -164,14 +165,23 @@ def _default_metrics_for_frame(frame: pd.DataFrame) -> list[str]:
     return [metric for metric in DEFAULT_METRIC_SUITE if metric in available]
 
 
-def _load_raw_fold_results(input_dir: Path) -> pd.DataFrame:
-    paths = sorted(input_dir.glob("*/*/*_fold_results.csv"))
+def _input_dirs(input_dir: Path | Sequence[Path]) -> list[Path]:
+    if isinstance(input_dir, Path):
+        return [input_dir]
+    return list(input_dir)
+
+
+def _load_raw_fold_results(input_dir: Path | Sequence[Path]) -> pd.DataFrame:
+    paths: list[Path] = []
+    for root in _input_dirs(input_dir):
+        paths.extend(sorted(root.glob("*/*/*_fold_results.csv")))
     if not paths:
-        raise ValueError(f"No fold result CSVs found under {input_dir}.")
+        roots = ", ".join(str(root) for root in _input_dirs(input_dir))
+        raise ValueError(f"No fold result CSVs found under {roots}.")
     return _with_derived_comparable_metrics(pd.concat([pd.read_csv(path) for path in paths], ignore_index=True, sort=False))
 
 
-def _load_fold_results(input_dir: Path, *, metric: str) -> pd.DataFrame:
+def _load_fold_results(input_dir: Path | Sequence[Path], *, metric: str) -> pd.DataFrame:
     return _prepare_fold_results(_load_raw_fold_results(input_dir), metric=metric)
 
 
@@ -207,6 +217,59 @@ def _prepare_metric_suite_fold_results(frame: pd.DataFrame, *, metrics: list[str
     successful["benchmark_id"] = "manuscript_v1"
     successful["hpo_mode"] = "no_hpo"
     return successful
+
+
+def _complete_eligible_subset(
+    frame: pd.DataFrame,
+    *,
+    metrics: list[str],
+    expected_splits: int,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if expected_splits < 1:
+        raise ValueError(f"expected_splits must be >= 1. Received: {expected_splits}.")
+    required = {"dataset_id", "method_id", "split_id", "status", *metrics}
+    missing = required.difference(frame.columns)
+    if missing:
+        raise ValueError(f"Fold results are missing required columns for eligibility filtering: {sorted(missing)}")
+
+    normalized = frame.copy()
+    normalized["dataset_id_base"] = normalized["dataset_id"].map(_base_id)
+    normalized["split_id_base"] = normalized["split_id"].map(_base_id)
+    metric_complete = normalized[metrics].apply(pd.to_numeric, errors="coerce").notna().all(axis=1)
+    success_complete = normalized["status"].eq("success") & metric_complete
+
+    total = (
+        normalized.groupby(["dataset_id_base", "method_id"], as_index=False)
+        .agg(total_rows=("split_id_base", "size"), observed_splits=("split_id_base", "nunique"))
+        .rename(columns={"dataset_id_base": "dataset_id"})
+    )
+    complete = (
+        normalized[success_complete]
+        .groupby(["dataset_id_base", "method_id"], as_index=False)
+        .agg(metric_complete_success_rows=("split_id_base", "size"), metric_complete_success_splits=("split_id_base", "nunique"))
+        .rename(columns={"dataset_id_base": "dataset_id"})
+    )
+    summary = total.merge(complete, on=["dataset_id", "method_id"], how="left")
+    summary[["metric_complete_success_rows", "metric_complete_success_splits"]] = summary[
+        ["metric_complete_success_rows", "metric_complete_success_splits"]
+    ].fillna(0).astype(int)
+    summary["expected_splits"] = int(expected_splits)
+    summary["eligible"] = (summary["metric_complete_success_rows"] == expected_splits) & (
+        summary["metric_complete_success_splits"] == expected_splits
+    )
+    summary["ineligibility_reason"] = ""
+    summary.loc[summary["metric_complete_success_rows"].eq(0), "ineligibility_reason"] = "no_metric_complete_success_rows"
+    summary.loc[
+        summary["metric_complete_success_rows"].gt(0) & summary["metric_complete_success_splits"].lt(expected_splits),
+        "ineligibility_reason",
+    ] = "incomplete_successful_split_coverage"
+
+    eligible_pairs = set(
+        summary.loc[summary["eligible"], ["dataset_id", "method_id"]].itertuples(index=False, name=None)
+    )
+    pair_keys = list(zip(normalized["dataset_id_base"], normalized["method_id"], strict=False))
+    filtered = frame[[key in eligible_pairs for key in pair_keys]].copy()
+    return filtered, summary.sort_values(["eligible", "dataset_id", "method_id"], ascending=[True, True, True])
 
 
 def _validate_coverage(frame: pd.DataFrame, *, metric: str, strict: bool) -> pd.DataFrame:
@@ -277,7 +340,7 @@ def _write_plot(elo: pd.DataFrame, output_dir: Path, asset_path: Path | None, *,
 def build_outputs(
     *,
     repo_root: Path,
-    input_dir: Path,
+    input_dir: Path | Sequence[Path],
     output_dir: Path,
     asset_path: Path | None,
     metric: str,
@@ -294,7 +357,6 @@ def build_outputs(
         n_bootstrap=n_bootstrap,
         strict_coverage=strict_coverage,
         fold_results=fold_results,
-        include_metric_column=False,
     )
 
 
@@ -316,6 +378,7 @@ def _build_outputs_from_fold_results(
         n_bootstrap=n_bootstrap,
         strict_coverage=strict_coverage,
         fold_results=fold_results,
+        include_metric_column=False,
     )
     fold_results = tables["fold_results"]
 
@@ -407,17 +470,32 @@ def _metric_output_tables(
 def build_metric_suite_outputs(
     *,
     repo_root: Path,
-    input_dir: Path,
+    input_dir: Path | Sequence[Path],
     output_dir: Path,
     asset_dir: Path | None,
     metrics: list[str],
     n_bootstrap: int = 1000,
     strict_coverage: bool = False,
+    complete_eligible_only: bool = False,
+    expected_splits: int = 15,
 ) -> dict[str, Path]:
     if not metrics:
         raise ValueError("No comparable metrics were requested or found in fold results.")
     output_dir.mkdir(parents=True, exist_ok=True)
     raw_fold_results = _load_raw_fold_results(input_dir)
+    if complete_eligible_only:
+        raw_fold_results, eligibility = _complete_eligible_subset(
+            raw_fold_results,
+            metrics=metrics,
+            expected_splits=expected_splits,
+        )
+        eligibility_path = output_dir / "eligibility_summary.csv"
+        eligibility.to_csv(eligibility_path, index=False)
+        ineligible_path = output_dir / "ineligible_dataset_method_pairs.csv"
+        eligibility[~eligibility["eligible"]].to_csv(ineligible_path, index=False)
+    else:
+        eligibility_path = None
+        ineligible_path = None
     rows: list[dict[str, str]] = []
     outputs: dict[str, Path] = {}
     aggregate_tables: dict[str, list[pd.DataFrame]] = {
@@ -474,12 +552,22 @@ def build_metric_suite_outputs(
     index_path = output_dir / "metric_suite_index.csv"
     pd.DataFrame(rows).to_csv(index_path, index=False)
     outputs["metric_suite_index"] = index_path
+    if eligibility_path is not None:
+        outputs["eligibility"] = eligibility_path
+    if ineligible_path is not None:
+        outputs["ineligible"] = ineligible_path
     return outputs
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build manuscript no-HPO Elo outputs from matrix fold results.")
-    parser.add_argument("--input-dir", type=Path, default=DEFAULT_INPUT)
+    parser.add_argument(
+        "--input-dir",
+        type=Path,
+        action="append",
+        default=None,
+        help="Dataset/model result root. Can be repeated. Defaults to the clinical no-HPO root.",
+    )
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
     parser.add_argument(
         "--metric",
@@ -491,6 +579,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--asset-path", type=Path, default=None)
     parser.add_argument("--no-asset", action="store_true", help="Do not copy the PNG into docs/assets.")
     parser.add_argument("--strict-coverage", action="store_true", help="Fail if any dataset/method pair is incomplete.")
+    parser.add_argument(
+        "--complete-eligible-only",
+        action="store_true",
+        help="Drop dataset/method pairs without complete successful metric coverage before building Elo.",
+    )
+    parser.add_argument("--expected-splits", type=int, default=15, help="Expected successful splits per dataset/method pair.")
     parser.add_argument("--list-metrics", action="store_true", help="List comparable metrics found in fold results and exit.")
     return parser.parse_args()
 
@@ -498,14 +592,15 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    input_dir = args.input_dir if args.input_dir.is_absolute() else repo_root / args.input_dir
+    input_dirs = args.input_dir or [DEFAULT_INPUT]
+    input_dirs = [path if path.is_absolute() else repo_root / path for path in input_dirs]
     output_dir = args.output_dir if args.output_dir.is_absolute() else repo_root / args.output_dir
     if args.list_metrics:
-        metrics = _available_metrics(_load_raw_fold_results(input_dir))
+        metrics = _available_metrics(_load_raw_fold_results(input_dirs))
         for metric in metrics:
             print(f"{metric}\t{metric_direction(metric)}\t{_metric_label(metric)}")
         return
-    raw_fold_results = _load_raw_fold_results(input_dir)
+    raw_fold_results = _load_raw_fold_results(input_dirs)
     metrics = list(args.metric) if args.metric else _default_metrics_for_frame(raw_fold_results)
     if not metrics:
         raise ValueError("No comparable metrics found in fold results.")
@@ -525,7 +620,7 @@ def main() -> None:
             asset_path = None if asset_dir is None else asset_dir / f"elo_manuscript_no_hpo_{_metric_stem(metrics[0])}.png"
         outputs = build_outputs(
             repo_root=repo_root,
-            input_dir=input_dir,
+            input_dir=input_dirs,
             output_dir=output_dir,
             asset_path=asset_path,
             metric=metrics[0],
@@ -535,12 +630,14 @@ def main() -> None:
     else:
         outputs = build_metric_suite_outputs(
             repo_root=repo_root,
-            input_dir=input_dir,
+            input_dir=input_dirs,
             output_dir=output_dir,
             asset_dir=asset_dir,
             metrics=metrics,
             n_bootstrap=args.bootstrap,
             strict_coverage=args.strict_coverage,
+            complete_eligible_only=args.complete_eligible_only,
+            expected_splits=args.expected_splits,
         )
     for name, path in outputs.items():
         print(f"{name}={path}")

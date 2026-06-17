@@ -4,15 +4,19 @@ split_strategy: repeated_nested_cv
 outer_folds: 3
 outer_repeats: 3
 inner_folds: 2
-seeds: [11, 22, 33]
+seeds:
+- 11
+- 22
+- 33
 primary_metric: uno_c
 profile: manuscript
-comparison_modes: [no_hpo]
+comparison_modes:
+- no_hpo
 secondary_metrics:
-  - harrell_c
-  - ibs
-  - td_auc
-  - brier
+- harrell_c
+- ibs
+- td_auc
+- brier
 autogluon:
   enabled: true
   presets: null
@@ -34,13 +38,6 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 10
-    tabpfn_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
         n_intervals: 3
         min_rows_per_interval: 10
         max_stacked_rows: 5000
@@ -49,29 +46,22 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 10
-    tabicl_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
         n_intervals: 3
         min_rows_per_interval: 10
         max_stacked_rows: 5000
-time_horizons_quantiles: [0.25, 0.5, 0.75]
+time_horizons_quantiles:
+- 0.25
+- 0.5
+- 0.75
 exports:
   profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
-  - support
+- support
 methods:
-  - coxph
-  - tabpfn_survival
-  - tabpfn_discrete_hazard_survival
-  - tabicl_survival
-  - tabicl_discrete_hazard_survival
-notes: >
-  Small validation config for foundation horizon versus pooled discrete-time
-  hazard adapters. It is intended for dry-run and dependency-gated smoke
-  execution, not manuscript evidence.
+- coxph
+- tabpfn_survival
+- tabicl_survival
+notes: 'Small validation config for canonical pooled discrete-time hazard foundation adapters. It is intended for dry-run and dependency-gated smoke execution, not manuscript evidence.
+
+  '

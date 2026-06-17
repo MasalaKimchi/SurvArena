@@ -50,7 +50,7 @@ from survarena.evaluation.metrics import (
     compute_survival_metrics,
     horizons_from_train_event_times,
 )
-from survarena.methods.foundation.catalog import foundation_model_catalog
+from survarena.methods.foundation.catalog import available_foundation_model_specs
 from survarena.methods.foundation.readiness import foundation_runtime_status
 from survarena.methods.base import SurvivalPredictions
 from survarena.methods.preprocessing import finalize_preprocessed_features, method_preprocessor_kwargs
@@ -453,7 +453,7 @@ class SurvivalPredictor:
     def foundation_model_catalog(self) -> pd.DataFrame:
         implemented_method_ids = set(registered_method_ids())
         rows: list[dict[str, Any]] = []
-        for spec in foundation_model_catalog():
+        for spec in available_foundation_model_specs():
             runtime_status = foundation_runtime_status(spec)
             rows.append(
                 {

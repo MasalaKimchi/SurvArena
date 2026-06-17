@@ -42,7 +42,7 @@ _REGISTRY_TARGETS = {
         "TabPFNDiscreteHazardSurvivalMethod",
     ),
     "mitra_survival_frozen": ("survarena.methods.automl.mitra_survival", "MitraSurvivalFrozenMethod"),
-    "tabicl_survival": ("survarena.methods.foundation.direct_horizon", "TabICLHorizonSurvivalMethod"),
+    "tabicl_survival": ("survarena.methods.foundation.discrete_hazard", "TabICLSurvivalMethod"),
     "tabicl_discrete_hazard_survival": (
         "survarena.methods.foundation.discrete_hazard",
         "TabICLDiscreteHazardSurvivalMethod",

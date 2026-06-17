@@ -686,7 +686,6 @@ def _validation_diagnostic_metadata(
         return empty
 
     try:
-        from sklearn.metrics import roc_auc_score
         from sklearn.model_selection import StratifiedKFold
 
         from survarena.data.preprocess import TabularPreprocessor
@@ -737,71 +736,19 @@ def _validation_diagnostic_metadata(
             eval_risk_scores=test_risk,
         )
 
-        val_horizon_auc = _horizon_binary_auc(
-            diagnostic_model,
-            X_val,
-            np.asarray(time_train)[val_idx],
-            np.asarray(event_train)[val_idx],
-            roc_auc_score=roc_auc_score,
-        )
-        test_horizon_auc = _horizon_binary_auc(
-            diagnostic_model,
-            X_test_proc,
-            np.asarray(time_test),
-            np.asarray(event_test),
-            roc_auc_score=roc_auc_score,
-        )
         return {
             "validation_diagnostic_score": float(diagnostic_score),
             "validation_diagnostic_test_score": float(diagnostic_test_score),
             "validation_diagnostic_gap": float(diagnostic_score - diagnostic_test_score),
-            "validation_diagnostic_horizon_auc": val_horizon_auc,
-            "validation_diagnostic_test_horizon_auc": test_horizon_auc,
-            "validation_diagnostic_horizon_auc_gap": float(val_horizon_auc - test_horizon_auc)
-            if np.isfinite(val_horizon_auc) and np.isfinite(test_horizon_auc)
-            else np.nan,
+            "validation_diagnostic_horizon_auc": np.nan,
+            "validation_diagnostic_test_horizon_auc": np.nan,
+            "validation_diagnostic_horizon_auc_gap": np.nan,
         }
     except Exception as exc:  # noqa: BLE001
         return {
             **empty,
             "validation_diagnostic_error": f"{type(exc).__name__}: {exc}",
         }
-
-
-def _horizon_binary_auc(
-    model: Any,
-    X_eval: Any,
-    time_eval: Any,
-    event_eval: Any,
-    *,
-    roc_auc_score: Any,
-) -> float:
-    import numpy as np
-
-    probabilities_getter = getattr(model, "_horizon_event_probabilities", None)
-    labels_getter = getattr(model, "_horizon_known_labels", None)
-    horizon_times = getattr(model, "horizon_times_", None)
-    if not callable(probabilities_getter) or not callable(labels_getter) or horizon_times is None:
-        return float("nan")
-    probabilities = probabilities_getter(X_eval)
-    aucs: list[float] = []
-    for idx, horizon in enumerate(np.asarray(horizon_times, dtype=float)):
-        try:
-            known, labels = labels_getter(
-                time_train=np.asarray(time_eval, dtype=float),
-                event_train=np.asarray(event_eval, dtype=int),
-                horizon=float(horizon),
-            )
-        except TypeError:
-            known, labels = labels_getter(
-                time=np.asarray(time_eval, dtype=float),
-                event=np.asarray(event_eval, dtype=int),
-                horizon=float(horizon),
-            )
-        if len(np.unique(labels)) < 2:
-            continue
-        aucs.append(float(roc_auc_score(labels, probabilities[np.asarray(known, dtype=bool), idx])))
-    return float(np.mean(aucs)) if aucs else float("nan")
 
 
 def _method_cfg_with_autogluon_defaults(method_cfg: dict[str, Any], autogluon_cfg: dict[str, Any] | None) -> dict[str, Any]:

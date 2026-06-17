@@ -4,20 +4,26 @@ split_strategy: repeated_nested_cv
 outer_folds: 5
 outer_repeats: 3
 inner_folds: 3
-seeds: [11, 22, 33, 44, 55]
+seeds:
+- 11
+- 22
+- 33
+- 44
+- 55
 primary_metric: uno_c
 profile: manuscript
-comparison_modes: [no_hpo]
+comparison_modes:
+- no_hpo
 validation_diagnostics:
   enabled: true
   inner_folds: 3
 secondary_metrics:
-  - harrell_c
-  - ibs
-  - td_auc
-  - brier
-  - calibration
-  - net_benefit
+- harrell_c
+- ibs
+- td_auc
+- brier
+- calibration
+- net_benefit
 autogluon:
   enabled: true
   presets: null
@@ -39,21 +45,17 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
-    tabicl_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
         n_intervals: 5
         min_rows_per_interval: 20
+        max_stacked_rows: 50000
     tabm_survival:
       enabled: false
       search_space: null
       default_params:
         time_limit: 120
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 50000
         tabm_params:
           ag.max_memory_usage_ratio: 1.6
           lr: 0.001
@@ -62,36 +64,22 @@ hpo:
           tabm_k: 16
           d_block: 256
           patience: 8
-    tabm_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        time_limit: 120
-        tabm_params:
-          ag.max_memory_usage_ratio: 1.6
-          lr: 0.001
-          weight_decay: 0.001
-          dropout: 0.2
-          tabm_k: 16
-          d_block: 256
-          patience: 8
-time_horizons_quantiles: [0.25, 0.5, 0.75]
+time_horizons_quantiles:
+- 0.25
+- 0.5
+- 0.75
 exports:
   profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
-  - tcga_brca_xena_1000
-  - tcga_luad_xena_1000
-  - tcga_kirc_xena_1000
-  - tcga_skcm_xena_1000
-  - tcga_ov_xena_1000
+- tcga_brca_xena_1000
+- tcga_luad_xena_1000
+- tcga_kirc_xena_1000
+- tcga_skcm_xena_1000
+- tcga_ov_xena_1000
 methods:
-  - tabicl_survival
-  - tabicl_discrete_hazard_survival
-  - tabm_survival
-  - tabm_discrete_hazard_survival
-notes: >
-  One-seed manuscript-style genomics diagnostic using top-variance 1000-gene
-  TCGA Xena artifacts. Intended to test whether expanding from 500 to 1000
-  genes changes validation-test behavior or the relative ranking of legacy
-  horizon versus discrete-hazard foundation adapters.
+- tabicl_survival
+- tabm_survival
+notes: 'One-seed manuscript-style genomics diagnostic using top-variance 1000-gene TCGA Xena artifacts. Intended to test whether expanding from 500 to 1000 genes changes validation-test behavior or the relative ranking of pooled discrete-time hazard foundation adapters.
+
+  '

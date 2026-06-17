@@ -5,11 +5,11 @@ foundation models. The foundation adapters evaluate whether tabular foundation
 models designed primarily for classification can be adapted to right-censored
 time-to-event data under a transparent Python benchmark contract.
 
-## Legacy Horizon Adapter
+## Historical Horizon Adapter
 
-The legacy foundation adapters use censored-aware cumulative horizon
-classification. For each training-fold horizon `tau_k`, the adapter trains one
-binary classifier for `P(T <= tau_k | X)` using:
+Earlier foundation experiments used censored-aware cumulative horizon
+classification. For each training-fold horizon `tau_k`, those adapters trained
+one binary classifier for `P(T <= tau_k | X)` using:
 
 - positive rows: observed events with `Y_i <= tau_k`
 - negative rows: subjects with `Y_i > tau_k`
@@ -18,9 +18,9 @@ binary classifier for `P(T <= tau_k | X)` using:
 The per-horizon event probabilities are monotonicity-corrected before survival
 is reconstructed as `S(tau_k | X) = 1 - P(T <= tau_k | X)`.
 
-## Pooled Discrete-Time Hazard Adapter
+## Default Pooled Discrete-Time Hazard Adapter
 
-The pooled discrete-time hazard adapter uses one binary classifier over stacked
+The maintained foundation adapter uses one binary classifier over stacked
 patient-interval rows. With `Y_i = min(T_i, C_i)` and
 `delta_i = 1[T_i <= C_i]`, a training-fold-only event-quantile grid is built:
 

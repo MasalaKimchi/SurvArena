@@ -18,6 +18,7 @@ from survarena.methods.discrete_time import (
 )
 from survarena.methods.foundation.inference import positive_class_probability_with_backoff
 from survarena.methods.foundation.readiness import ensure_foundation_runtime_ready, rewrite_foundation_runtime_error
+from survarena.methods.foundation.tabpfn_backbone import build_tabpfn_classifier
 
 
 def _fit_supports_sample_weight(model: Any) -> bool:
@@ -253,9 +254,7 @@ class TabPFNDiscreteHazardSurvivalMethod(_PooledDiscreteTimeHazardSurvivalMethod
         return metadata
 
     def _build_backbone(self) -> Any:
-        from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
-
-        helper = TabPFNSurvivalMethod(
+        return build_tabpfn_classifier(
             n_estimators=int(self.params["n_estimators"]),
             fit_mode=str(self.params["fit_mode"]),
             model_version=str(self.params["model_version"]),
@@ -263,7 +262,6 @@ class TabPFNDiscreteHazardSurvivalMethod(_PooledDiscreteTimeHazardSurvivalMethod
             device=str(self.params["device"]),
             seed=self.params.get("seed"),
         )
-        return helper._build_backbone()
 
 
 class TabICLDiscreteHazardSurvivalMethod(_PooledDiscreteTimeHazardSurvivalMethod):
@@ -308,6 +306,12 @@ class TabICLDiscreteHazardSurvivalMethod(_PooledDiscreteTimeHazardSurvivalMethod
             random_state=self.params.get("seed"),
             verbose=False,
         )
+
+
+class TabICLSurvivalMethod(TabICLDiscreteHazardSurvivalMethod):
+    """Compatibility ID for the default TabICL discrete-hazard survival adapter."""
+
+    method_id = "tabicl_survival"
 
 
 TabPFNPooledHazardSurvivalMethod = TabPFNDiscreteHazardSurvivalMethod

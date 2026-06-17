@@ -6,7 +6,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from survarena.methods.foundation.tabpfn_survival import _kaplan_meier_survival_at
+from survarena.methods.foundation.tabpfn_backbone import _kaplan_meier_survival_at
 
 HAZARD_EPSILON = 1e-7
 DEFAULT_TIME_FEATURES = ("interval_index", "log_interval_end", "interval_width", "km_survival")

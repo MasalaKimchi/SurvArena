@@ -4,20 +4,26 @@ split_strategy: repeated_nested_cv
 outer_folds: 5
 outer_repeats: 3
 inner_folds: 3
-seeds: [11, 22, 33, 44, 55]
+seeds:
+- 11
+- 22
+- 33
+- 44
+- 55
 primary_metric: uno_c
 profile: manuscript
-comparison_modes: [no_hpo]
+comparison_modes:
+- no_hpo
 validation_diagnostics:
   enabled: true
   inner_folds: 3
 secondary_metrics:
-  - harrell_c
-  - ibs
-  - td_auc
-  - brier
-  - calibration
-  - net_benefit
+- harrell_c
+- ibs
+- td_auc
+- brier
+- calibration
+- net_benefit
 autogluon:
   enabled: true
   presets: null
@@ -39,49 +45,25 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
-    tabpfn_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
         n_intervals: 5
         min_rows_per_interval: 20
+        max_stacked_rows: 50000
     tabicl_survival:
       enabled: false
       search_space: null
       default_params:
         n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
-        min_known_per_horizon: 20
-    tabicl_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        n_estimators: 1
-        horizon_quantiles: "0.25-0.5-0.75"
         n_intervals: 5
         min_rows_per_interval: 20
+        max_stacked_rows: 50000
     tabm_survival:
       enabled: false
       search_space: null
       default_params:
         time_limit: 120
-        tabm_params:
-          ag.max_memory_usage_ratio: 1.6
-          lr: 0.001
-          weight_decay: 0.001
-          dropout: 0.2
-          tabm_k: 16
-          d_block: 256
-          patience: 8
-    tabm_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        time_limit: 120
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 50000
         tabm_params:
           ag.max_memory_usage_ratio: 1.6
           lr: 0.001
@@ -95,41 +77,35 @@ hpo:
       search_space: null
       default_params:
         time_limit: 120
-    realtabpfn_discrete_hazard_survival:
-      enabled: false
-      search_space: null
-      default_params:
-        time_limit: 120
+        n_intervals: 5
+        min_rows_per_interval: 20
+        max_stacked_rows: 9500
     shared_discrete_hazard:
       enabled: false
       search_space: null
       default_params:
-        time_bin_quantiles: "0.25-0.5-0.75"
+        time_bin_quantiles: 0.25-0.5-0.75
         max_epochs: 200
         patience: 20
-time_horizons_quantiles: [0.25, 0.5, 0.75]
+time_horizons_quantiles:
+- 0.25
+- 0.5
+- 0.75
 exports:
   profile: core_csv
   manuscript_artifact_layout: compact
 datasets:
-  - tcga_brca_xena
-  - tcga_luad_xena
-  - tcga_kirc_xena
-  - tcga_skcm_xena
-  - tcga_ov_xena
+- tcga_brca_xena
+- tcga_luad_xena
+- tcga_kirc_xena
+- tcga_skcm_xena
+- tcga_ov_xena
 methods:
-  - shared_discrete_hazard
-  - tabpfn_survival
-  - tabpfn_discrete_hazard_survival
-  - tabicl_survival
-  - tabicl_discrete_hazard_survival
-  - tabm_survival
-  - tabm_discrete_hazard_survival
-  - realtabpfn_survival
-  - realtabpfn_discrete_hazard_survival
-notes: >
-  Manuscript-grade genomics investigation comparing independent cumulative
-  horizon classifiers against shared discrete-time hazard and pooled
-  discrete-time hazard foundation adapters under the same split and metric
-  contract. This config is intended to test whether TFM failures on TCGA
-  genomics are due to the survival reduction rather than the backbone alone.
+- shared_discrete_hazard
+- tabpfn_survival
+- tabicl_survival
+- tabm_survival
+- realtabpfn_survival
+notes: 'Manuscript-grade genomics investigation comparing shared discrete-time hazard and pooled discrete-time hazard foundation adapters under the same split and metric contract. This config is intended to test whether TFM failures on TCGA genomics are due to the survival reduction rather than the backbone alone.
+
+  '

@@ -247,6 +247,56 @@ def test_manuscript_elo_metric_suite_writes_index_with_multiple_metrics(tmp_path
     assert not (tmp_path / "elo" / "elo_ratings_calibration_slope_abs_error_50.csv").exists()
 
 
+def test_manuscript_elo_can_merge_roots_and_filter_incomplete_pairs(tmp_path: Path) -> None:
+    def write_rows(root: Path, dataset_id: str, method_id: str, split_count: int, base_score: float) -> None:
+        fold_dir = root / dataset_id / method_id
+        fold_dir.mkdir(parents=True)
+        pd.DataFrame(
+            [
+                {
+                    "benchmark_id": "bench",
+                    "dataset_id": f"{dataset_id}__baseline",
+                    "method_id": method_id,
+                    "split_id": f"repeat_0_fold_{idx}__baseline",
+                    "seed": idx,
+                    "hpo_mode": "no_hpo",
+                    "status": "success",
+                    "uno_c": base_score + idx * 0.001,
+                    "runtime_sec": 1.0,
+                }
+                for idx in range(split_count)
+            ]
+        ).to_csv(fold_dir / f"{method_id}_fold_results.csv", index=False)
+
+    clinical = tmp_path / "clinical"
+    genomics = tmp_path / "genomics"
+    for root, dataset_id in [(clinical, "clinical_a"), (genomics, "genomics_a")]:
+        write_rows(root, dataset_id, "left", 15, 0.72)
+        write_rows(root, dataset_id, "right", 15, 0.68)
+        write_rows(root, dataset_id, "partial", 14, 0.80)
+
+    outputs = manuscript_elo.build_metric_suite_outputs(
+        repo_root=tmp_path,
+        input_dir=[clinical, genomics],
+        output_dir=tmp_path / "elo",
+        asset_dir=None,
+        metrics=["uno_c"],
+        n_bootstrap=0,
+        strict_coverage=True,
+        complete_eligible_only=True,
+        expected_splits=15,
+    )
+
+    folds = pd.read_csv(outputs["fold_results"])
+    assert set(folds["dataset_id"]) == {"clinical_a", "genomics_a"}
+    assert set(folds["method_id"]) == {"left", "right"}
+    assert len(folds) == 60
+
+    ineligible = pd.read_csv(outputs["ineligible"])
+    assert set(ineligible["method_id"]) == {"partial"}
+    assert set(ineligible["ineligibility_reason"]) == {"incomplete_successful_split_coverage"}
+
+
 def test_compute_survival_metrics_trims_survival_grid_to_ipcw_support() -> None:
     metrics = compute_survival_metrics(
         train_time=np.asarray([1.0, 2.0, 3.0, 10.0]),

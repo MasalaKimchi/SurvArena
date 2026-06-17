@@ -22,45 +22,49 @@ def test_foundation_model_catalog_exposes_current_and_planned_backbones() -> Non
     catalog = predictor.foundation_model_catalog()
 
     assert "tabpfn_survival" in catalog["method_id"].tolist()
-    assert "tabpfn_discrete_hazard_survival" in catalog["method_id"].tolist()
     assert "mitra_survival_frozen" in catalog["method_id"].tolist()
     assert "tabicl_survival" in catalog["method_id"].tolist()
-    assert "tabicl_discrete_hazard_survival" in catalog["method_id"].tolist()
     assert "tabm_survival" in catalog["method_id"].tolist()
-    assert "tabm_discrete_hazard_survival" in catalog["method_id"].tolist()
+    assert not set(catalog["method_id"]).intersection(
+        {
+            "tabpfn_discrete_hazard_survival",
+            "tabicl_discrete_hazard_survival",
+            "tabm_discrete_hazard_survival",
+            "realtabpfn_discrete_hazard_survival",
+        }
+    )
     assert "dependency_installed" in catalog.columns
     assert "runtime_ready" in catalog.columns
     assert "install_extra" in catalog.columns
     implemented = dict(zip(catalog["method_id"], catalog["implemented"], strict=False))
     assert implemented["tabpfn_survival"] is True
-    assert implemented["tabpfn_discrete_hazard_survival"] is True
     assert implemented["mitra_survival_frozen"] is True
     assert implemented["tabicl_survival"] is True
-    assert implemented["tabicl_discrete_hazard_survival"] is True
     assert implemented["tabm_survival"] is True
-    assert implemented["tabm_discrete_hazard_survival"] is True
 
 
-def test_tabpfn_method_config_uses_horizon_adapter_only() -> None:
+def test_tabpfn_method_config_uses_discrete_hazard_adapter() -> None:
     spec = next(item for item in available_foundation_model_specs() if item.method_id == "tabpfn_survival")
     method_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabpfn_survival.yaml")
 
     assert spec.supports_finetune is False
     assert method_cfg["default_params"]["model_version"] == "v2.5"
-    assert method_cfg["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert method_cfg["default_params"]["n_intervals"] == 5
+    assert method_cfg["default_params"]["max_stacked_rows"] == 50000
     assert "backbone_training" not in method_cfg["default_params"]
     assert "backbone_task" not in method_cfg["default_params"]
     assert "n_estimators_final_inference" not in method_cfg["default_params"]
 
 
-def test_direct_foundation_method_configs_use_horizon_adapters() -> None:
-    from survarena.methods.foundation.direct_horizon import TabICLHorizonSurvivalMethod
+def test_direct_foundation_method_configs_use_discrete_hazard_adapters() -> None:
+    from survarena.methods.foundation.discrete_hazard import TabICLSurvivalMethod
     from survarena.methods.registry import get_method_class
 
     tabicl_cfg = read_yaml(REPO_ROOT / "configs" / "methods" / "tabicl_survival.yaml")
 
-    assert get_method_class("tabicl_survival") is TabICLHorizonSurvivalMethod
-    assert tabicl_cfg["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert get_method_class("tabicl_survival") is TabICLSurvivalMethod
+    assert tabicl_cfg["default_params"]["n_intervals"] == 5
+    assert tabicl_cfg["default_params"]["max_stacked_rows"] == 50000
     assert tabicl_cfg["default_params"]["predict_batch_size"] is None
     assert "time_limit" not in tabicl_cfg["default_params"]
 
@@ -79,8 +83,9 @@ def test_manuscript_config_includes_foundation_track() -> None:
     assert "mitra_survival_frozen" not in benchmark_cfg["methods"]
     assert {"tabicl_survival", "tabm_survival", "realtabpfn_survival"}.issubset(benchmark_cfg["methods"])
     assert "mitra_survival_finetune" not in overrides
-    assert overrides["tabpfn_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
-    assert overrides["tabicl_survival"]["default_params"]["horizon_quantiles"] == "0.25-0.5-0.75"
+    assert overrides["tabpfn_survival"]["default_params"]["n_intervals"] == 5
+    assert overrides["tabicl_survival"]["default_params"]["n_intervals"] == 5
+    assert overrides["realtabpfn_survival"]["default_params"]["max_stacked_rows"] == 9500
     assert benchmark_cfg["profile"] == "manuscript"
     assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "nwtco", "aids", "gbsg2", "flchain", "whas500"}
     assert "Mitra is excluded" in benchmark_cfg["notes"]
@@ -198,19 +203,6 @@ def test_foundation_preset_adds_tabpfn_when_dependency_exists(monkeypatch) -> No
     assert "tabpfn_survival" in preset.method_ids
 
 
-def test_tabpfn_horizon_labels_exclude_unknown_censored_rows() -> None:
-    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
-
-    known, labels = TabPFNSurvivalMethod._horizon_known_labels(
-        time_train=np.asarray([2.0, 3.0, 5.0, 7.0, 9.0]),
-        event_train=np.asarray([0, 1, 0, 1, 0]),
-        horizon=5.0,
-    )
-
-    np.testing.assert_array_equal(known, np.asarray([False, True, False, True, True]))
-    np.testing.assert_array_equal(labels, np.asarray([1, 0, 0], dtype=np.int32))
-
-
 def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch) -> None:
     from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
 
@@ -244,7 +236,7 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
     monkeypatch.setitem(sys.modules, "tabpfn", fake_tabpfn)
     monkeypatch.setitem(sys.modules, "tabpfn.constants", fake_constants)
     monkeypatch.setattr(
-        "survarena.methods.foundation.tabpfn_survival.ensure_foundation_runtime_ready",
+        "survarena.methods.foundation.discrete_hazard.ensure_foundation_runtime_ready",
         lambda method_id, checkpoint_path=None: None,
     )
 
@@ -267,7 +259,7 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
     method = TabPFNSurvivalMethod(
         n_estimators=1,
         horizon_quantiles=[0.25, 0.5, 0.75],
-        min_known_per_horizon=1,
+        min_rows_per_interval=1,
         device="cpu",
         seed=13,
     )
@@ -275,14 +267,16 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
     risk = method.predict_risk(X[:4])
     survival = method.predict_survival(X[:4], np.asarray([1.0, 5.0, 8.0, 12.0]))
 
-    assert len(FakeBackbone.fit_labels) == 3
+    assert len(FakeBackbone.fit_labels) == 1
     assert risk.shape == (4,)
     assert survival.shape == (4, 4)
     assert np.isfinite(risk).all()
     assert np.isfinite(survival).all()
     assert ((survival >= 0.0) & (survival <= 1.0)).all()
     assert (np.diff(survival, axis=1) <= 1e-8).all()
-    assert method.foundation_metadata()["foundation_backbone_task"] == "censored_aware_horizon_classification"
+    assert method.foundation_metadata()["foundation_backbone_task"] == (
+        "censored_aware_pooled_discrete_time_hazard_classification"
+    )
 
 
 def test_tabpfn_survival_batches_prediction_with_fake_backbone() -> None:
@@ -332,78 +326,6 @@ def test_foundation_prediction_batching_backs_off_and_reuses_safe_size() -> None
     assert model.calls == [9, 4, 2, 2, 2, 2, 1, 2, 2, 1]
     np.testing.assert_array_equal(probabilities, np.full(9, 0.75))
     np.testing.assert_array_equal(second_probabilities, np.full(5, 0.75))
-
-
-def test_direct_horizon_foundation_adapters_fit_predict_with_fake_backbones(monkeypatch) -> None:
-    from survarena.methods.foundation.direct_horizon import TabICLHorizonSurvivalMethod
-
-    class FakeClassifier:
-        init_kwargs: list[dict[str, object]] = []
-        fit_count = 0
-        predict_count = 0
-
-        def __init__(self, **kwargs) -> None:
-            self.kwargs = dict(kwargs)
-            FakeClassifier.init_kwargs.append(self.kwargs)
-
-        def fit(self, X: np.ndarray, y: np.ndarray) -> "FakeClassifier":
-            self.classes_ = np.asarray([0, 1])
-            self.offset_ = float(np.mean(y))
-            FakeClassifier.fit_count += 1
-            return self
-
-        def predict_proba(self, X: np.ndarray, **kwargs) -> np.ndarray:
-            FakeClassifier.predict_count += 1
-            X_np = np.asarray(X, dtype=np.float32)
-            positive = np.clip(0.3 + 0.2 * X_np[:, 0] + self.offset_, 0.0, 1.0)
-            return np.column_stack([1.0 - positive, positive])
-
-    fake_tabicl = types.ModuleType("tabicl")
-    fake_tabicl.TabICLClassifier = FakeClassifier
-    monkeypatch.setitem(sys.modules, "tabicl", fake_tabicl)
-    monkeypatch.setattr(
-        "survarena.methods.foundation.direct_horizon.ensure_foundation_runtime_ready", lambda method_id: None
-    )
-
-    X = np.asarray(
-        [
-            [-1.0, 0.0],
-            [-0.5, 0.1],
-            [0.0, 0.2],
-            [0.3, 0.3],
-            [0.7, 0.4],
-            [1.0, 0.5],
-            [1.2, 0.6],
-            [1.5, 0.7],
-        ],
-        dtype=np.float32,
-    )
-    time = np.asarray([2.0, 3.0, 4.0, 6.0, 7.0, 9.0, 11.0, 13.0], dtype=np.float64)
-    event = np.asarray([1, 0, 1, 0, 1, 0, 1, 0], dtype=np.int32)
-
-    tabicl = TabICLHorizonSurvivalMethod(n_estimators=1, horizon_quantiles=[0.25, 0.5], min_known_per_horizon=1)
-
-    for method in [tabicl]:
-        method.fit(X, time, event)
-        FakeClassifier.predict_count = 0
-        risk = method.predict_risk(X[:3])
-        survival = method.predict_survival(X[:3], np.asarray([1.0, 5.0, 10.0]))
-        separate_predict_count = FakeClassifier.predict_count
-        FakeClassifier.predict_count = 0
-        predictions = method.predict_bundle(X[:3], np.asarray([1.0, 5.0, 10.0]))
-
-        assert risk.shape == (3,)
-        assert survival.shape == (3, 3)
-        assert np.isfinite(risk).all()
-        assert np.isfinite(survival).all()
-        assert (np.diff(survival, axis=1) <= 1e-8).all()
-        np.testing.assert_array_equal(predictions.risk, risk)
-        np.testing.assert_array_equal(predictions.survival, survival)
-        assert separate_predict_count == 4
-        assert FakeClassifier.predict_count == 2
-
-    assert FakeClassifier.fit_count == 2
-    assert tabicl.foundation_metadata()["foundation_backbone"] == "TabICL"
 
 
 def test_direct_discrete_hazard_foundation_adapter_fit_predicts_with_fake_backbone(monkeypatch) -> None:
@@ -591,14 +513,10 @@ def test_foundation_preset_requests_foundation_models_without_extra_flag() -> No
     assert preset.method_ids == (
         "coxph",
         "tabpfn_survival",
-        "tabpfn_discrete_hazard_survival",
         "mitra_survival_frozen",
         "tabicl_survival",
-        "tabicl_discrete_hazard_survival",
         "tabm_survival",
-        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
-        "realtabpfn_discrete_hazard_survival",
     )
 
 
@@ -650,14 +568,10 @@ def test_all_preset_runs_full_portfolio_and_auto_adds_foundation_models() -> Non
         "deepsurv",
         "deepsurv_moco",
         "tabpfn_survival",
-        "tabpfn_discrete_hazard_survival",
         "mitra_survival_frozen",
         "tabicl_survival",
-        "tabicl_discrete_hazard_survival",
         "tabm_survival",
-        "tabm_discrete_hazard_survival",
         "realtabpfn_survival",
-        "realtabpfn_discrete_hazard_survival",
     )
 
 
