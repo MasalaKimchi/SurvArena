@@ -962,9 +962,7 @@ def test_benchmark_run_emits_single_compact_multi_method_artifact_set(tmp_path: 
     expected_artifacts = {
         "multi_model_fold_results.csv",
         "multi_model_leaderboard.csv",
-        "multi_model_hpo_budget_summary.csv",
         "multi_model_run_diagnostics.csv",
-        "multi_model_runtime_failure_summary.csv",
         "experiment_navigator.json",
         "experiment_manifest.json",
         "README.md",
@@ -1306,7 +1304,7 @@ def test_runtime_failure_summary_exports_csv_only(tmp_path: Path) -> None:
     assert by_method.loc["coxph", "runtime_sec_mean"] == 1.2
 
 
-def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
+def test_run_diagnostics_embeds_runtime_failure_summary(tmp_path: Path) -> None:
     export_run_diagnostics(
         tmp_path,
         benchmark_id="bench",
@@ -1317,8 +1315,11 @@ def test_run_diagnostics_writes_runtime_failure_summary(tmp_path: Path) -> None:
         file_prefix="toy",
     )
 
+    diagnostics = pd.read_csv(tmp_path / "toy_run_diagnostics.csv")
     assert (tmp_path / "toy_run_diagnostics.csv").exists()
-    assert (tmp_path / "toy_runtime_failure_summary.csv").exists()
+    assert "runtime_failure_summary" in set(diagnostics["record_type"])
+    assert "hpo_budget_summary" in set(diagnostics["record_type"])
+    assert not (tmp_path / "toy_runtime_failure_summary.csv").exists()
     assert not (tmp_path / "toy_runtime_failure_summary.md").exists()
 
 

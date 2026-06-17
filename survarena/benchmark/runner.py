@@ -906,9 +906,7 @@ def _benchmark_artifact_names(model_name: str) -> dict[str, str]:
     return {
         "fold_results_csv": f"{model_name}_fold_results.csv",
         "leaderboard_csv": f"{model_name}_leaderboard.csv",
-        "hpo_budget_summary_csv": f"{model_name}_hpo_budget_summary.csv",
         "run_diagnostics_csv": f"{model_name}_run_diagnostics.csv",
-        "runtime_failure_summary_csv": f"{model_name}_runtime_failure_summary.csv",
     }
 
 
@@ -956,16 +954,6 @@ def _benchmark_readme_lines(
         f"- Model set: `{model_name}`",
         f"- Fold results: [{artifact_names['fold_results_csv']}]({artifact_names['fold_results_csv']})",
         f"- Leaderboard: [{artifact_names['leaderboard_csv']}]({artifact_names['leaderboard_csv']})",
-        (
-            "- HPO budget summary: "
-            f"[{artifact_names['hpo_budget_summary_csv']}]"
-            f"({artifact_names['hpo_budget_summary_csv']})"
-        ),
-        (
-            "- Runtime and failure summary CSV: "
-            f"[{artifact_names['runtime_failure_summary_csv']}]"
-            f"({artifact_names['runtime_failure_summary_csv']})"
-        ),
         f"- Run diagnostics: [{artifact_names['run_diagnostics_csv']}]({artifact_names['run_diagnostics_csv']})",
         "- Navigator: [experiment_navigator.json](experiment_navigator.json)",
         "",
@@ -1119,7 +1107,6 @@ def run_benchmark(
     from survarena.logging.export import (
         create_experiment_dir,
         export_fold_results,
-        export_hpo_budget_summary,
         export_leaderboard,
         export_run_diagnostics,
     )
@@ -1345,12 +1332,6 @@ def run_benchmark(
             repo_root,
             frame,
             primary_metric=primary_metric,
-            output_dir=experiment_dir,
-            file_prefix=model_name,
-        )
-        export_hpo_budget_summary(
-            repo_root,
-            frame,
             output_dir=experiment_dir,
             file_prefix=model_name,
         )

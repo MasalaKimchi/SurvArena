@@ -7,7 +7,7 @@ from typing import Any
 
 import pandas as pd
 
-from survarena.evaluation.statistics import failure_summary, metric_direction
+from survarena.evaluation.statistics import metric_direction
 from survarena.logging.export_shared import (
     BENCHMARK_METRIC_COLUMNS,
     CORE_METRIC_COLUMNS,
@@ -196,10 +196,14 @@ def export_hpo_budget_summary(
         fallback=benchmark_label(fold_results),
         stem="hpo_budget_summary",
     )
+    summary = _hpo_budget_summary_rows(fold_results)
+    summary.to_csv(csv_path, index=False)
+    return summary
+
+
+def _hpo_budget_summary_rows(fold_results: pd.DataFrame) -> pd.DataFrame:
     if fold_results.empty:
-        summary = pd.DataFrame()
-        summary.to_csv(csv_path, index=False)
-        return summary
+        return pd.DataFrame()
 
     frame = fold_results.copy()
     for col in ["requested_max_trials", "requested_timeout_seconds", "realized_trial_count", "hpo_config_target"]:
@@ -219,7 +223,8 @@ def export_hpo_budget_summary(
 
     group_cols = [col for col in ["benchmark_id", "dataset_id", "method_id", "hpo_mode"] if col in frame.columns]
     rows: list[dict[str, Any]] = []
-    for key, group in frame.groupby(group_cols, dropna=False):
+    groups = frame.groupby(group_cols, dropna=False) if group_cols else [((), frame)]
+    for key, group in groups:
         key_values = key if isinstance(key, tuple) else (key,)
         row = dict(zip(group_cols, key_values, strict=False))
         requested = group.get("requested_max_trials", pd.Series(dtype=float)).fillna(0)
@@ -249,7 +254,6 @@ def export_hpo_budget_summary(
     sort_cols = [col for col in ["benchmark_id", "dataset_id", "method_id", "hpo_mode"] if col in summary.columns]
     if sort_cols:
         summary.sort_values(sort_cols, inplace=True)
-    summary.to_csv(csv_path, index=False)
     return summary
 
 
@@ -522,14 +526,6 @@ def export_run_diagnostics(
     output_dir: Path | None = None,
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
-    export_runtime_failure_summary(
-        root,
-        benchmark_id=benchmark_id,
-        fold_results=fold_results,
-        run_records=run_records,
-        output_dir=output_dir,
-        file_prefix=file_prefix,
-    )
     rows: list[dict[str, object]] = []
     if not fold_results.empty:
         requested_failure_keys = group_keys_with_hpo_mode(
@@ -537,8 +533,6 @@ def export_run_diagnostics(
             ["benchmark_id", "dataset_id", "method_id"],
         )
         failure_keys = [key for key in requested_failure_keys if key in fold_results.columns]
-        for row in failure_summary(fold_results).to_dict(orient="records"):
-            rows.append({"record_type": "failure_summary", **row})
         if failure_keys and "status" in fold_results.columns:
             for row in (
                 fold_results.groupby(failure_keys, as_index=False)
@@ -555,6 +549,10 @@ def export_run_diagnostics(
                         "failure_rate": float((n_runs - n_success) / max(n_runs, 1)),
                     }
                 )
+        for row in _runtime_failure_rows(fold_results, run_records=run_records).to_dict(orient="records"):
+            rows.append({"record_type": "runtime_failure_summary", **row})
+        for row in _hpo_budget_summary_rows(fold_results).to_dict(orient="records"):
+            rows.append({"record_type": "hpo_budget_summary", **row})
     for row in dataset_curation_rows:
         rows.append({"record_type": "dataset_curation", "benchmark_id": benchmark_id, **row})
     for row in hpo_trial_rows:
