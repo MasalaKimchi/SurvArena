@@ -280,7 +280,7 @@ def test_tabpfn_survival_frozen_path_fit_predicts_with_fake_backbone(monkeypatch
 
 
 def test_tabpfn_survival_batches_prediction_with_fake_backbone() -> None:
-    from survarena.methods.foundation.tabpfn_survival import TabPFNSurvivalMethod
+    from survarena.methods.foundation.inference import positive_class_probability_with_backoff
 
     class FakeBackbone:
         calls: list[int] = []
@@ -294,7 +294,7 @@ def test_tabpfn_survival_batches_prediction_with_fake_backbone() -> None:
     model = FakeBackbone()
     X = np.zeros((5, 2), dtype=np.float32)
 
-    probabilities = TabPFNSurvivalMethod._positive_class_probability(model, X, batch_size=2)
+    probabilities = positive_class_probability_with_backoff(model, X, batch_size=2)
 
     assert model.calls == [2, 2, 1]
     assert probabilities.shape == (5,)

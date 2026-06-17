@@ -60,13 +60,6 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         self.baseline_event_times_: np.ndarray | None = None
         self.baseline_survival_: np.ndarray | None = None
 
-    def _resolve_device(self) -> torch.device:
-        return resolve_torch_training_device(str(self.params["device"]))
-
-    @staticmethod
-    def _set_torch_seed(seed: int) -> None:
-        set_torch_seed(seed)
-
     def _build_network(self, in_features: int) -> nn.Module:
         return build_mlp(
             in_features=in_features,
@@ -137,8 +130,8 @@ class DeepSurvMomentumMethod(BaseSurvivalMethod):
         time_val: np.ndarray | None = None,
         event_val: np.ndarray | None = None,
     ) -> "DeepSurvMomentumMethod":
-        self.device = self._resolve_device()
-        self._set_torch_seed(int(self.params["seed"]))
+        self.device = resolve_torch_training_device(str(self.params["device"]))
+        set_torch_seed(int(self.params["seed"]))
         X_train_t = torch.as_tensor(X_train, dtype=torch.float32, device=self.device)
         t_train_t = torch.as_tensor(time_train.astype(np.float32), dtype=torch.float32, device=self.device)
         e_train_t = torch.as_tensor(event_train.astype(bool), dtype=torch.bool, device=self.device)

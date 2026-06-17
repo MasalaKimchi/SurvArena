@@ -59,10 +59,6 @@ class SharedDiscreteHazardMethod(BaseSurvivalMethod):
         self.train_loss_trace_: list[float] = []
         self.val_loss_trace_: list[float] = []
 
-    @staticmethod
-    def _set_torch_seed(seed: int) -> None:
-        set_torch_seed(seed)
-
     def _build_network(self, in_features: int, out_features: int) -> nn.Module:
         return build_mlp(
             in_features=in_features,
@@ -98,7 +94,7 @@ class SharedDiscreteHazardMethod(BaseSurvivalMethod):
         event_val: np.ndarray | None = None,
     ) -> "SharedDiscreteHazardMethod":
         self.device_ = resolve_torch_training_device(str(self.params["device"]))
-        self._set_torch_seed(int(self.params["seed"]))
+        set_torch_seed(int(self.params["seed"]))
         time_train_np = np.asarray(time_train, dtype=np.float64)
         event_train_np = np.asarray(event_train, dtype=np.int32)
         self.time_bins_ = event_quantile_time_bins(

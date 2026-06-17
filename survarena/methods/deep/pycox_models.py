@@ -63,13 +63,6 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
         self.model: Any | None = None
         self.device: torch.device | None = None
 
-    def _resolve_device(self) -> torch.device:
-        return resolve_torch_training_device(str(self.params["device"]))
-
-    @staticmethod
-    def _set_torch_seed(seed: int) -> None:
-        set_torch_seed(seed)
-
     def _build_optimizer(self) -> object:
         opt_name = str(self.params["optimizer"]).lower()
         lr = float(self.params["lr"])
@@ -102,8 +95,8 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
         if int(np.asarray(event_train, dtype=np.int32).sum()) <= 0:
             raise ValueError(f"{type(self).__name__} requires at least one observed event in the training data.")
 
-        self.device = self._resolve_device()
-        self._set_torch_seed(int(self.params["seed"]))
+        self.device = resolve_torch_training_device(str(self.params["device"]))
+        set_torch_seed(int(self.params["seed"]))
         X_train_f32 = np.asarray(X_train, dtype=np.float32)
         target_train = self._fit_label_transform(time_train=np.asarray(time_train), event_train=np.asarray(event_train))
         self.model = self._build_model(in_features=X_train_f32.shape[1])

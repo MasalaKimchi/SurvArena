@@ -56,10 +56,6 @@ def _searchable_default_params(method_cfg: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in defaults.items() if key not in _RUNTIME_ONLY_METHOD_PARAMS}
 
 
-def _metric_direction_for_optimization(primary_metric: str) -> str:
-    return metric_direction(primary_metric)
-
-
 def _is_better_score(candidate: float, incumbent: float, *, maximize: bool) -> bool:
     if not candidate == candidate:
         return False
@@ -272,7 +268,7 @@ def select_hyperparameters(
             return default_result
 
         optuna.logging.set_verbosity(optuna.logging.WARNING)
-        maximize = _metric_direction_for_optimization(primary_metric) == "maximize"
+        maximize = metric_direction(primary_metric) == "maximize"
         sampler_name = str(resolved_hpo["sampler"])
         if sampler_name == "random":
             sampler = RandomSampler(seed=seed)
