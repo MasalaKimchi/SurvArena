@@ -11,6 +11,7 @@ import torchtuples as tt
 
 from survarena.methods.base import BaseSurvivalMethod
 from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
+from survarena.methods.deep.common import activation_cls, parse_hidden_layers, set_torch_seed
 from survarena.methods.survival_utils import risk_from_survival_frame, survival_frame_to_array
 
 
@@ -67,12 +68,7 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if hasattr(torch.backends, "cudnn"):
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+        set_torch_seed(seed)
 
     def _build_optimizer(self) -> object:
         opt_name = str(self.params["optimizer"]).lower()
@@ -83,8 +79,8 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
         return tt.optim.Adam(lr=lr, weight_decay=weight_decay)
 
     def _build_standard_mlp(self, *, in_features: int, out_features: int) -> nn.Module:
-        hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
-        activation = _activation_cls(str(self.params["activation"]))
+        hidden_layers = parse_hidden_layers(self.params["hidden_layers"])
+        activation = activation_cls(str(self.params["activation"]))
         return tt.practical.MLPVanilla(
             in_features,
             hidden_layers,
@@ -162,26 +158,6 @@ class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
         if self.model is None:
             raise RuntimeError(f"{type(self).__name__} must be fit before prediction.")
         return self.model.predict_surv_df(np.asarray(X, dtype=np.float32))
-
-
-def _parse_hidden_layers(value: Any) -> list[int]:
-    if isinstance(value, str):
-        parts = [part.strip() for part in value.split("-") if part.strip()]
-        return [int(part) for part in parts]
-    if isinstance(value, (list, tuple)):
-        return [int(v) for v in value]
-    raise ValueError(f"Unsupported hidden_layers value: {value!r}")
-
-
-def _activation_cls(name: str) -> type[nn.Module]:
-    mapping: dict[str, type[nn.Module]] = {
-        "relu": nn.ReLU,
-        "selu": nn.SELU,
-        "gelu": nn.GELU,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unsupported activation '{name}'. Choices: {sorted(mapping.keys())}")
-    return mapping[name]
 
 
 class _BasePyCoxDiscreteMethod(_BasePyCoxMethod, ABC):
@@ -279,8 +255,8 @@ class CoxTimeMethod(_BasePyCoxMethod):
         from pycox.models import CoxTime
         from pycox.models.cox_time import MLPVanillaCoxTime
 
-        hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
-        activation = _activation_cls(str(self.params["activation"]))
+        hidden_layers = parse_hidden_layers(self.params["hidden_layers"])
+        activation = activation_cls(str(self.params["activation"]))
         net = MLPVanillaCoxTime(
             in_features,
             hidden_layers,

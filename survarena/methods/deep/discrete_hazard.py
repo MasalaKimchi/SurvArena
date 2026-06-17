@@ -9,7 +9,7 @@ from torch import nn
 
 from survarena.methods.base import BaseSurvivalMethod, SurvivalPredictions
 from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
-from survarena.methods.deep.deepsurv import _activation_cls, _parse_hidden_layers
+from survarena.methods.deep.common import build_mlp, set_torch_seed
 from survarena.methods.discrete_time import (
     clean_hazards,
     event_quantile_time_bins,
@@ -61,30 +61,17 @@ class SharedDiscreteHazardMethod(BaseSurvivalMethod):
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if hasattr(torch.backends, "cudnn"):
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+        set_torch_seed(seed)
 
     def _build_network(self, in_features: int, out_features: int) -> nn.Module:
-        hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
-        activation = _activation_cls(str(self.params["activation"]))
-        dropout = float(self.params["dropout"])
-        use_batch_norm = bool(self.params["batch_norm"])
-        layers: list[nn.Module] = []
-        previous = int(in_features)
-        for width in hidden_layers:
-            layers.append(nn.Linear(previous, int(width)))
-            if use_batch_norm:
-                layers.append(nn.BatchNorm1d(int(width)))
-            layers.append(activation())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
-            previous = int(width)
-        layers.append(nn.Linear(previous, int(out_features)))
-        return nn.Sequential(*layers)
+        return build_mlp(
+            in_features=in_features,
+            out_features=out_features,
+            hidden_layers=self.params["hidden_layers"],
+            activation=str(self.params["activation"]),
+            dropout=float(self.params["dropout"]),
+            batch_norm=bool(self.params["batch_norm"]),
+        )
 
     @staticmethod
     def _masked_bce(logits: torch.Tensor, labels: torch.Tensor, known: torch.Tensor) -> torch.Tensor:

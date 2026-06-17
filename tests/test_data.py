@@ -66,6 +66,34 @@ def test_read_yaml_loads_mapping_payload(tmp_path: Path) -> None:
     assert loaded == {"dataset_id": "toy", "num_trials": 4}
 
 
+def test_read_yaml_supports_relative_extends_with_nested_overrides(tmp_path: Path) -> None:
+    parent = tmp_path / "parent.yaml"
+    child = tmp_path / "child.yaml"
+    parent.write_text(
+        "method_id: parent\n"
+        "default_params:\n"
+        "  lr: 0.01\n"
+        "  max_epochs: 100\n"
+        "search_space:\n"
+        "  lr:\n"
+        "    type: float\n",
+        encoding="utf-8",
+    )
+    child.write_text(
+        "extends: parent.yaml\n"
+        "method_id: child\n"
+        "default_params:\n"
+        "  max_epochs: 50\n",
+        encoding="utf-8",
+    )
+
+    loaded = read_yaml(child)
+
+    assert loaded["method_id"] == "child"
+    assert loaded["default_params"] == {"lr": 0.01, "max_epochs": 50}
+    assert loaded["search_space"] == {"lr": {"type": "float"}}
+
+
 # --- test_dataset_loaders.py ---
 
 

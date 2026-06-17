@@ -10,12 +10,17 @@ from survarena.automl.autogluon_backend import (
     predict_event_probability,
 )
 from survarena.methods.base import BaseSurvivalMethod, SurvivalPredictions
+from survarena.methods.discrete_hazard_shared import (
+    apply_discrete_hazard_defaults,
+    build_discrete_hazard_training_frame,
+    discrete_hazard_foundation_metadata,
+    discrete_hazard_predictions,
+    init_discrete_hazard_state,
+    predict_discrete_hazards,
+    should_use_discrete_hazard_fallback,
+)
 from survarena.methods.discrete_time import (
-    append_time_bin_features,
-    baseline_hazards_from_km,
     build_discrete_hazard_frame,
-    build_event_quantile_time_grid,
-    clean_hazards,
     risk_from_hazards,
     survival_from_hazards,
 )
@@ -194,30 +199,11 @@ class _AutoGluonDiscreteHazardSurvivalMethod(_AutoGluonFoundationSurvivalMethod)
     foundation_training = "default"
 
     def __init__(self, **params: Any) -> None:
-        params.setdefault("time_grid", "event_quantile")
-        params.setdefault("n_intervals", 5)
-        params.setdefault("horizon_quantiles", None)
-        params.setdefault("min_events_per_interval", 5)
-        params.setdefault("min_rows_per_interval", 20)
-        params.setdefault("max_stacked_rows", None)
-        params.setdefault("subject_weighting", "normalized")
-        params.setdefault("censoring_weighting", "none")
-        params.setdefault("aggregate_risk", "cumulative_event_probability_at_last")
-        params.setdefault("time_feature_set", "km")
+        apply_discrete_hazard_defaults(params)
         super().__init__(**params)
         self.predictor_: Any | None = None
         self.fit_metadata_: AutoGluonFitMetadata | None = None
-        self.time_grid_: np.ndarray | None = None
-        self.time_train_: np.ndarray | None = None
-        self.event_train_: np.ndarray | None = None
-        self.baseline_hazards_: np.ndarray | None = None
-        self.used_fallback_: bool = False
-        self.frame_metadata_: dict[str, Any] = {}
-        self.grid_metadata_: dict[str, Any] = {}
-        self.sample_weight_supported_: bool = False
-        self.sample_weight_applied_: bool = False
-        self.last_hazard_min_: float | None = None
-        self.last_hazard_max_: float | None = None
+        init_discrete_hazard_state(self)
 
     def fit(
         self,
@@ -232,34 +218,15 @@ class _AutoGluonDiscreteHazardSurvivalMethod(_AutoGluonFoundationSurvivalMethod)
         method_id = self.foundation_method_id or self.__class__.__name__
         try:
             ensure_foundation_runtime_ready(method_id)
-            self.time_train_ = np.asarray(time_train, dtype=np.float64)
-            self.event_train_ = np.asarray(event_train, dtype=np.int32)
-            grid = build_event_quantile_time_grid(
-                self.time_train_,
-                self.event_train_,
-                time_grid=str(params["time_grid"]),
-                n_intervals=int(params["n_intervals"]),
-                horizon_quantiles=params.get("horizon_quantiles"),
-                min_events_per_interval=int(params["min_events_per_interval"]),
+            frame = build_discrete_hazard_training_frame(
+                self,
+                X_train=X_train,
+                time_train=time_train,
+                event_train=event_train,
             )
-            self.time_grid_ = grid.endpoints
-            self.grid_metadata_ = dict(grid.metadata)
-            self.baseline_hazards_ = baseline_hazards_from_km(self.time_train_, self.event_train_, self.time_grid_)
-            frame = build_discrete_hazard_frame(
-                X=X_train,
-                time=self.time_train_,
-                event=self.event_train_,
-                time_grid=self.time_grid_,
-                time_feature_spec=str(params["time_feature_set"]),
-                subject_weighting=str(params["subject_weighting"]),
-                censoring_weighting=str(params["censoring_weighting"]),
-                max_stacked_rows=params.get("max_stacked_rows"),
-                seed=params.get("seed"),
-            )
-            self.frame_metadata_ = {**self.grid_metadata_, **frame.metadata}
             self.sample_weight_supported_ = False
             self.sample_weight_applied_ = False
-            if int(len(frame.y_stacked)) < int(params["min_rows_per_interval"]) or np.unique(frame.y_stacked).size < 2:
+            if should_use_discrete_hazard_fallback(self, frame):
                 self.predictor_ = None
                 self.fit_metadata_ = None
                 self.used_fallback_ = True
@@ -308,27 +275,13 @@ class _AutoGluonDiscreteHazardSurvivalMethod(_AutoGluonFoundationSurvivalMethod)
         if self.time_grid_ is None or self.baseline_hazards_ is None:
             raise RuntimeError(f"{self.__class__.__name__} must be fit before prediction.")
         row_count = _row_count(X)
-        if self.predictor_ is None:
-            hazards = np.tile(self.baseline_hazards_, (row_count, 1))
-            clean = clean_hazards(hazards)
-            self.last_hazard_min_ = float(np.min(clean)) if clean.size else None
-            self.last_hazard_max_ = float(np.max(clean)) if clean.size else None
-            return clean
-        columns: list[np.ndarray] = []
-        for idx in range(len(self.time_grid_)):
-            query = append_time_bin_features(
-                X,
-                np.full(row_count, idx, dtype=np.int32),
-                self.time_grid_,
-                time_train=self.time_train_,
-                event_train=self.event_train_,
-                time_feature_set=str(self.params["time_feature_set"]),
-            )
-            columns.append(predict_event_probability(self.predictor_, query))
-        clean = clean_hazards(np.column_stack(columns))
-        self.last_hazard_min_ = float(np.min(clean)) if clean.size else None
-        self.last_hazard_max_ = float(np.max(clean)) if clean.size else None
-        return clean
+        return predict_discrete_hazards(
+            self,
+            X=X,
+            row_count=row_count,
+            fitted_model=self.predictor_,
+            probability_fn=lambda query: predict_event_probability(self.predictor_, query),
+        )
 
     def predict_risk(self, X: Any) -> np.ndarray:
         return risk_from_hazards(self._hazards(X), aggregate_risk=str(self.params["aggregate_risk"]))
@@ -340,10 +293,7 @@ class _AutoGluonDiscreteHazardSurvivalMethod(_AutoGluonFoundationSurvivalMethod)
 
     def predict_bundle(self, X: Any, times: np.ndarray) -> SurvivalPredictions:
         hazards = self._hazards(X)
-        return SurvivalPredictions(
-            risk=risk_from_hazards(hazards, aggregate_risk=str(self.params["aggregate_risk"])),
-            survival=survival_from_hazards(hazards, self.time_grid_, times),  # type: ignore[arg-type]
-        )
+        return discrete_hazard_predictions(self, X, times, hazards)
 
     def autogluon_metadata(self) -> dict[str, Any]:
         if self.fit_metadata_ is None:
@@ -356,29 +306,16 @@ class _AutoGluonDiscreteHazardSurvivalMethod(_AutoGluonFoundationSurvivalMethod)
         }
 
     def foundation_metadata(self) -> dict[str, Any]:
-        metadata = super().foundation_metadata()
-        metadata["foundation_backbone_task"] = "censored_aware_pooled_discrete_time_hazard_classification"
-        metadata["foundation_time_grid"] = self.grid_metadata_.get("time_grid", self.params.get("time_grid"))
-        metadata["foundation_time_grid_endpoints"] = self.grid_metadata_.get("time_grid_endpoints", [])
-        metadata["foundation_requested_interval_count"] = int(self.params["n_intervals"])
-        metadata["foundation_interval_count"] = 0 if self.time_grid_ is None else int(len(self.time_grid_))
-        metadata["foundation_stacked_rows"] = int(self.frame_metadata_.get("stacked_rows", 0))
-        metadata["foundation_positive_rows"] = int(self.frame_metadata_.get("positive_rows", 0))
-        metadata["foundation_rows_per_interval"] = self.frame_metadata_.get("rows_per_interval", [])
-        metadata["foundation_positive_rows_per_interval"] = self.frame_metadata_.get("positive_rows_per_interval", [])
-        metadata["foundation_excluded_censored_in_interval_rows"] = int(
-            self.frame_metadata_.get("excluded_censored_in_interval_rows", 0)
+        metadata = discrete_hazard_foundation_metadata(
+            self,
+            backbone=self.foundation_backbone,
+            training=self.foundation_training,
         )
-        metadata["foundation_sample_weight_supported"] = bool(self.sample_weight_supported_)
-        metadata["foundation_sample_weight_requested"] = self.params.get("subject_weighting")
-        metadata["foundation_sample_weight_applied"] = bool(self.sample_weight_applied_)
-        metadata["foundation_censoring_weighting"] = self.params.get("censoring_weighting")
-        metadata["foundation_ipcw_status"] = self.frame_metadata_.get("ipcw_status", "not_implemented")
-        metadata["foundation_time_features"] = self.frame_metadata_.get("time_features", [])
-        metadata["foundation_discrete_hazard_fallback"] = bool(self.used_fallback_)
-        metadata["foundation_max_stacked_rows_applied"] = bool(self.frame_metadata_.get("max_stacked_rows_applied", False))
-        metadata["foundation_predicted_hazard_min"] = self.last_hazard_min_
-        metadata["foundation_predicted_hazard_max"] = self.last_hazard_max_
+        hyperparameters = dict(self.params.get("hyperparameters", {}) or {})
+        backbone_params = dict(hyperparameters.get(self.foundation_hyperparameter_key, {}) or {})
+        metadata["foundation_time_limit_sec"] = self.params.get("time_limit")
+        metadata["foundation_autogluon_hyperparameter_key"] = self.foundation_hyperparameter_key
+        metadata["foundation_autogluon_backbone_params"] = backbone_params
         return metadata
 
 

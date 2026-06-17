@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from copy import deepcopy
-from typing import Any
 
 import numpy as np
 import torch
@@ -10,26 +9,16 @@ from torchsurv.loss.cox import neg_partial_log_likelihood
 
 from survarena.methods.base import BaseSurvivalMethod
 from survarena.methods.deep.batching import batch_norm_safe_batch_size, resolve_torch_training_device
+from survarena.methods.deep.common import (
+    activation_cls as _activation_cls,
+    build_mlp,
+    parse_hidden_layers as _parse_hidden_layers,
+    predict_log_risk_survival,
+    set_torch_seed,
+)
+from survarena.methods.survival_utils import fit_breslow_baseline_survival
 
-
-def _parse_hidden_layers(value: Any) -> list[int]:
-    if isinstance(value, str):
-        parts = [p.strip() for p in value.split("-") if p.strip()]
-        return [int(p) for p in parts]
-    if isinstance(value, (list, tuple)):
-        return [int(v) for v in value]
-    raise ValueError(f"Unsupported hidden_layers value: {value!r}")
-
-
-def _activation_cls(name: str) -> type[nn.Module]:
-    mapping: dict[str, type[nn.Module]] = {
-        "relu": nn.ReLU,
-        "selu": nn.SELU,
-        "gelu": nn.GELU,
-    }
-    if name not in mapping:
-        raise ValueError(f"Unsupported activation '{name}'. Choices: {sorted(mapping.keys())}")
-    return mapping[name]
+__all__ = ["DeepSurvMethod", "_activation_cls", "_parse_hidden_layers"]
 
 
 class DeepSurvMethod(BaseSurvivalMethod):
@@ -72,31 +61,18 @@ class DeepSurvMethod(BaseSurvivalMethod):
 
     @staticmethod
     def _set_torch_seed(seed: int) -> None:
-        torch.manual_seed(seed)
-        if torch.cuda.is_available():
-            torch.cuda.manual_seed_all(seed)
-        if hasattr(torch.backends, "cudnn"):
-            torch.backends.cudnn.deterministic = True
-            torch.backends.cudnn.benchmark = False
+        set_torch_seed(seed)
 
     def _build_network(self, in_features: int) -> nn.Module:
-        hidden_layers = _parse_hidden_layers(self.params["hidden_layers"])
-        activation = _activation_cls(str(self.params["activation"]))
-        dropout = float(self.params["dropout"])
-        use_batch_norm = bool(self.params["batch_norm"])
-
-        layers: list[nn.Module] = []
-        prev = in_features
-        for width in hidden_layers:
-            layers.append(nn.Linear(prev, int(width)))
-            if use_batch_norm:
-                layers.append(nn.BatchNorm1d(int(width)))
-            layers.append(activation())
-            if dropout > 0.0:
-                layers.append(nn.Dropout(dropout))
-            prev = int(width)
-        layers.append(nn.Linear(prev, 1, bias=False))
-        return nn.Sequential(*layers)
+        return build_mlp(
+            in_features=in_features,
+            out_features=1,
+            hidden_layers=self.params["hidden_layers"],
+            activation=str(self.params["activation"]),
+            dropout=float(self.params["dropout"]),
+            batch_norm=bool(self.params["batch_norm"]),
+            output_bias=False,
+        )
 
     @staticmethod
     def _cox_partial_log_likelihood_loss(log_hazard: torch.Tensor, event: torch.Tensor, time: torch.Tensor) -> torch.Tensor:
@@ -115,24 +91,11 @@ class DeepSurvMethod(BaseSurvivalMethod):
         event_train: np.ndarray,
         train_log_risk: np.ndarray,
     ) -> None:
-        event_mask = event_train.astype(bool)
-        event_times = np.unique(time_train[event_mask])
-        if event_times.size == 0:
-            self.baseline_event_times_ = np.asarray([1.0], dtype=np.float64)
-            self.baseline_survival_ = np.asarray([1.0], dtype=np.float64)
-            return
-
-        exp_risk = np.exp(train_log_risk.astype(np.float64))
-        hazards: list[float] = []
-        for event_time in event_times:
-            d_j = float(np.sum((time_train == event_time) & event_mask))
-            r_j = float(np.sum(exp_risk[time_train >= event_time]))
-            hazards.append(d_j / max(r_j, 1e-12))
-
-        cumulative_hazard = np.cumsum(np.asarray(hazards, dtype=np.float64))
-        baseline_survival = np.exp(-cumulative_hazard)
-        self.baseline_event_times_ = event_times.astype(np.float64)
-        self.baseline_survival_ = baseline_survival.astype(np.float64)
+        self.baseline_event_times_, self.baseline_survival_ = fit_breslow_baseline_survival(
+            time_train=time_train,
+            event_train=event_train,
+            train_risk_scores=train_log_risk,
+        )
 
     def fit(
         self,
@@ -229,17 +192,9 @@ class DeepSurvMethod(BaseSurvivalMethod):
     def predict_survival(self, X: np.ndarray, times: np.ndarray) -> np.ndarray:
         if self.baseline_event_times_ is None or self.baseline_survival_ is None:
             raise RuntimeError("DeepSurvMethod must be fit before prediction.")
-        eval_times = np.asarray(times, dtype=np.float64).reshape(-1)
-        risk_scores = self.predict_risk(X)
-        rel_risk = np.exp(risk_scores)
-
-        last_surv = float(self.baseline_survival_[-1]) if self.baseline_survival_.size else 1.0
-        baseline_at_times = np.interp(
-            eval_times,
-            self.baseline_event_times_,
-            self.baseline_survival_,
-            left=1.0,
-            right=last_surv,
+        return predict_log_risk_survival(
+            risk_scores=self.predict_risk(X),
+            times=times,
+            baseline_event_times=self.baseline_event_times_,
+            baseline_survival=self.baseline_survival_,
         )
-        survival = np.power(np.clip(baseline_at_times, 1e-8, 1.0)[None, :], rel_risk[:, None])
-        return np.clip(survival, 1e-8, 1.0).astype(np.float64)

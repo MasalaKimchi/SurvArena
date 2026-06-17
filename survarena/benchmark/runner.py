@@ -358,6 +358,21 @@ def evaluate_split(
         hpo_backend = str(hpo_metadata.get("backend", "none"))
         if autogluon_backed and best_params.get("hyperparameter_tune_kwargs"):
             hpo_backend = "autogluon"
+        result_metadata = {
+            "training_backend": training_backend,
+            "hpo_backend": hpo_backend,
+            "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
+            "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
+            "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
+            "autogluon_path": autogluon_metadata.get("autogluon_path"),
+            "bagging_folds": best_params.get("num_bag_folds", 0) if autogluon_backed else 0,
+            "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
+            "hpo_status": hpo_metadata.get("status", "disabled"),
+            "hpo_trial_count": hpo_metadata.get("trial_count", 0),
+            **diagnostic_metadata,
+            **foundation_metadata,
+            **artifact_metadata,
+        }
 
         manifest = RunManifest(
             run_id=run_id,
@@ -391,22 +406,10 @@ def evaluate_split(
                 "fit_time_sec": fit_time_sec,
                 "infer_time_sec": infer_time_sec,
                 "peak_memory_mb": peak_memory_mb,
-                "training_backend": training_backend,
-                "hpo_backend": hpo_backend,
-                "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
-                "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
-                "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
-                "autogluon_path": autogluon_metadata.get("autogluon_path"),
-                "bagging_folds": best_params.get("num_bag_folds", 0) if autogluon_backed else 0,
-                "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
                 "tuning_timeout_seconds": timeout_seconds,
                 "status": "success",
                 "best_params": best_params,
-                "hpo_status": hpo_metadata.get("status", "disabled"),
-                "hpo_trial_count": hpo_metadata.get("trial_count", 0),
-                **diagnostic_metadata,
-                **foundation_metadata,
-                **artifact_metadata,
+                **result_metadata,
             },
             "backend_metadata": {
                 "autogluon_leaderboard": autogluon_metadata.get("autogluon_leaderboard", []),
@@ -432,25 +435,28 @@ def evaluate_split(
             "fit_time_sec": fit_time_sec,
             "infer_time_sec": infer_time_sec,
             "peak_memory_mb": peak_memory_mb,
-            "training_backend": training_backend,
-            "hpo_backend": hpo_backend,
-            "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
-            "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
-            "autogluon_model_count": autogluon_metadata.get("autogluon_model_count"),
-            "autogluon_path": autogluon_metadata.get("autogluon_path"),
-            "bagging_folds": best_params.get("num_bag_folds", 0) if autogluon_backed else 0,
-            "stack_levels": best_params.get("num_stack_levels", 0) if autogluon_backed else 0,
-            "hpo_status": hpo_metadata.get("status", "disabled"),
-            "hpo_trial_count": hpo_metadata.get("trial_count", 0),
-            **diagnostic_metadata,
-            **foundation_metadata,
-            **artifact_metadata,
+            **result_metadata,
             "status": "success",
         }
     except Exception as exc:  # noqa: BLE001
         tb_str = traceback.format_exc()
         elapsed_before_failure = perf_counter() - started_at
         peak_memory_mb = peak_process_memory_mb()
+        failure_type = type(exc).__name__
+        failure_message = str(exc)
+        run_identity = {
+            "run_id": run_id,
+            "dataset_id": dataset_id,
+            "method_id": method_id,
+            "seed": split.seed,
+            "split_id": split.split_id,
+            "primary_metric": primary_metric,
+        }
+        artifact_failure_fields = {
+            "model_artifact_status": "not_saved",
+            "model_artifact_path": None,
+            "prediction_artifact_path": None,
+        }
         manifest = RunManifest(
             run_id=run_id,
             benchmark_id=benchmark_id,
@@ -466,25 +472,18 @@ def evaluate_split(
             benchmark_config_hash=benchmark_cfg_hash,
             method_config_hash=method_cfg_hash,
             split_indices_hash=split_indices_hash,
-            notes=str(exc),
+            notes=failure_message,
         )
         run_payload = {
             "manifest": manifest.to_dict(),
             "metrics": {
-                "run_id": run_id,
-                "dataset_id": dataset_id,
-                "method_id": method_id,
-                "seed": split.seed,
-                "split_id": split.split_id,
-                "primary_metric": primary_metric,
+                **run_identity,
                 "status": "failed",
-                "failure_type": type(exc).__name__,
-                "exception_message": str(exc),
+                "failure_type": failure_type,
+                "exception_message": failure_message,
                 "elapsed_time_before_failure": elapsed_before_failure,
                 "peak_memory_mb": peak_memory_mb,
-                "model_artifact_status": "not_saved",
-                "model_artifact_path": None,
-                "prediction_artifact_path": None,
+                **artifact_failure_fields,
             },
             "failure": {
                 "traceback": tb_str,
@@ -493,11 +492,7 @@ def evaluate_split(
         return {
             "run_payload": run_payload,
             "benchmark_id": benchmark_id,
-            "dataset_id": dataset_id,
-            "method_id": method_id,
-            "split_id": split.split_id,
-            "seed": split.seed,
-            "primary_metric": primary_metric,
+            **{key: value for key, value in run_identity.items() if key != "run_id"},
             "validation_score": np.nan,
             "uno_c": np.nan,
             "harrell_c": np.nan,
@@ -528,11 +523,9 @@ def evaluate_split(
             "validation_diagnostic_test_horizon_auc": np.nan,
             "validation_diagnostic_horizon_auc_gap": np.nan,
             "status": "failed",
-            "failure_type": type(exc).__name__,
-            "exception_message": str(exc),
-            "model_artifact_status": "not_saved",
-            "model_artifact_path": None,
-            "prediction_artifact_path": None,
+            "failure_type": failure_type,
+            "exception_message": failure_message,
+            **artifact_failure_fields,
         }
 
 
@@ -1038,6 +1031,19 @@ def _build_dataset_run_units(
         feature_columns=list(dataset.X.columns),
         seed_pool=seeds,
     )
+    track_units: list[dict[str, Any]] = []
+    for split in filtered_splits:
+        for track in robustness_tracks:
+            track_units.append(
+                {
+                    "split": split,
+                    "track_id": track.track_id,
+                    "track_dataset_id": f"{dataset_id}__{track.track_id}",
+                    "track_split_id": f"{split.split_id}__{track.track_id}",
+                    "X": apply_robustness_track(dataset.X, track=track, split=split, seed=split.seed),
+                    "event": apply_label_noise(dataset.event, track=track, split=split, seed=split.seed),
+                }
+            )
 
     run_units: list[BenchmarkRunUnit] = []
     for method_id in methods:
@@ -1047,51 +1053,50 @@ def _build_dataset_run_units(
             method_id=method_id,
             method_override=method_override,
         )
-        for split in filtered_splits:
-            for track in robustness_tracks:
-                track_dataset_id = f"{dataset_id}__{track.track_id}"
-                track_split_id = f"{split.split_id}__{track.track_id}"
-                X_track = apply_robustness_track(dataset.X, track=track, split=split, seed=split.seed)
-                event_track = apply_label_noise(dataset.event, track=track, split=split, seed=split.seed)
-                parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
-                for hpo_mode in comparison_modes:
-                    key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
-                    if key in completed_keys:
-                        continue
-                    mode_hpo_cfg = _mode_hpo_cfg_with_method_overrides(
-                        hpo_cfg,
+        for track_unit in track_units:
+            split = track_unit["split"]
+            track_dataset_id = str(track_unit["track_dataset_id"])
+            track_split_id = str(track_unit["track_split_id"])
+            track_id = str(track_unit["track_id"])
+            parity_key = f"{track_dataset_id}|{track_split_id}|{int(split.seed)}|{method_id}"
+            for hpo_mode in comparison_modes:
+                key = (track_dataset_id, method_id, track_split_id, int(split.seed), hpo_mode)
+                if key in completed_keys:
+                    continue
+                mode_hpo_cfg = _mode_hpo_cfg_with_method_overrides(
+                    hpo_cfg,
+                    method_id=method_id,
+                    hpo_enabled=hpo_mode == "hpo",
+                    method_override=method_override,
+                )
+                run_units.append(
+                    BenchmarkRunUnit(
+                        benchmark_id=benchmark_id,
+                        track_dataset_id=track_dataset_id,
                         method_id=method_id,
-                        hpo_enabled=hpo_mode == "hpo",
-                        method_override=method_override,
+                        track_split_id=track_split_id,
+                        track_id=track_id,
+                        hpo_mode=hpo_mode,
+                        parity_key=parity_key,
+                        split=split,
+                        X=track_unit["X"],
+                        time=dataset.time,
+                        event=track_unit["event"],
+                        method_cfg=method_cfg,
+                        inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
+                        timeout_seconds=timeout_seconds,
+                        primary_metric=primary_metric,
+                        horizons_quantiles=horizons_q,  # type: ignore[arg-type]
+                        decision_thresholds=decision_thresholds,
+                        benchmark_cfg_hash=benchmark_cfg_hash,
+                        autogluon_cfg=autogluon_cfg,
+                        mode_hpo_cfg=mode_hpo_cfg,
+                        max_retries=int(max_retries),
+                        model_artifact_dir=model_artifact_dir,
+                        save_model_artifacts=bool(save_model_artifacts),
+                        validation_diagnostics=validation_diagnostics,
                     )
-                    run_units.append(
-                        BenchmarkRunUnit(
-                            benchmark_id=benchmark_id,
-                            track_dataset_id=track_dataset_id,
-                            method_id=method_id,
-                            track_split_id=track_split_id,
-                            track_id=track.track_id,
-                            hpo_mode=hpo_mode,
-                            parity_key=parity_key,
-                            split=split,
-                            X=X_track,
-                            time=dataset.time,
-                            event=event_track,
-                            method_cfg=method_cfg,
-                            inner_folds=int(benchmark_cfg.get("inner_folds", 3)),
-                            timeout_seconds=timeout_seconds,
-                            primary_metric=primary_metric,
-                            horizons_quantiles=horizons_q,  # type: ignore[arg-type]
-                            decision_thresholds=decision_thresholds,
-                            benchmark_cfg_hash=benchmark_cfg_hash,
-                            autogluon_cfg=autogluon_cfg,
-                            mode_hpo_cfg=mode_hpo_cfg,
-                            max_retries=int(max_retries),
-                            model_artifact_dir=model_artifact_dir,
-                            save_model_artifacts=bool(save_model_artifacts),
-                            validation_diagnostics=validation_diagnostics,
-                        )
-                    )
+                )
     timings["evaluation_prep"] += perf_counter() - phase_started_at
     return curation_row, run_units, timings
 

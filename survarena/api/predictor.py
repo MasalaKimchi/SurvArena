@@ -26,7 +26,7 @@ from survarena.api._predictor_persistence import (
     save_predictor,
 )
 from survarena.automl.bagging import BaggedModelMember, BaggedSurvivalEnsemble
-from survarena.automl.presets import PresetConfig, resolve_preset
+from survarena.automl.presets import resolve_preset
 from survarena.automl.validation import (
     bagging_row_summary,
     build_bagging_folds,
@@ -124,84 +124,51 @@ class SurvivalPredictor:
         self.verbose = bool(verbose)
         self.enable_foundation_models = bool(enable_foundation_models)
 
-        self.dataset_: SurvivalDataset | None = None
-        self.test_dataset_: SurvivalDataset | None = None
-        self.preset_config_: PresetConfig | None = None
-        self.leaderboard_: pd.DataFrame | None = None
-        self.model_results_: list[PredictorModelResult] = []
-        self.best_method_id_: str | None = None
-        self.best_params_: dict[str, Any] | None = None
-        self.best_model_: Any = None
-        self.best_preprocessor_: TabularPreprocessor | None = None
-        self.survival_times_: np.ndarray | None = None
-        self.test_metrics_: dict[str, float] | None = None
-        self.artifact_dir_: Path | None = None
-        self.fitted_models_: dict[str, Any] = {}
-        self.model_preprocessors_: dict[str, TabularPreprocessor | None] = {}
-        self.model_survival_times_: dict[str, np.ndarray] = {}
-        self.model_test_metrics_: dict[str, dict[str, float]] = {}
-        self._ensure_runtime_state_defaults()
+        self._apply_fit_state_defaults(overwrite=True)
 
     def _ensure_runtime_state_defaults(self) -> None:
         if not hasattr(self, "retain_top_k_models"):
-            self.retain_top_k_models: int | None = 1
-        if not hasattr(self, "validation_strategy_"):
-            self.validation_strategy_: str | None = None
-        if not hasattr(self, "validation_holdout_frac_"):
-            self.validation_holdout_frac_: float | None = None
-        if not hasattr(self, "validation_rows_"):
-            self.validation_rows_: int | None = None
-        if not hasattr(self, "selection_train_rows_"):
-            self.selection_train_rows_: int | None = None
-        if not hasattr(self, "fit_time_limit_sec_"):
-            self.fit_time_limit_sec_: float | None = None
-        if not hasattr(self, "selection_time_budget_sec_"):
-            self.selection_time_budget_sec_: float | None = None
-        if not hasattr(self, "fit_elapsed_sec_"):
-            self.fit_elapsed_sec_: float | None = None
-        if not hasattr(self, "refit_full_"):
-            self.refit_full_: bool = True
-        if not hasattr(self, "final_train_rows_"):
-            self.final_train_rows_: int | None = None
-        if not hasattr(self, "hyperparameter_tune_kwargs_"):
-            self.hyperparameter_tune_kwargs_: dict[str, Any] | None = None
-        if not hasattr(self, "refit_dataset_"):
-            self.refit_dataset_: SurvivalDataset | None = None
-        if not hasattr(self, "num_bag_folds_"):
-            self.num_bag_folds_: int = 0
-        if not hasattr(self, "num_bag_sets_"):
-            self.num_bag_sets_: int = 1
+            self.retain_top_k_models = 1
+        self._apply_fit_state_defaults(overwrite=False)
 
     def _reset_fit_state(self) -> None:
-        self.dataset_ = None
-        self.test_dataset_ = None
-        self.preset_config_ = None
-        self.leaderboard_ = None
-        self.model_results_ = []
-        self.best_method_id_ = None
-        self.best_params_ = None
-        self.best_model_ = None
-        self.best_preprocessor_ = None
-        self.survival_times_ = None
-        self.test_metrics_ = None
-        self.artifact_dir_ = None
-        self.fitted_models_ = {}
-        self.model_preprocessors_ = {}
-        self.model_survival_times_ = {}
-        self.model_test_metrics_ = {}
-        self.validation_strategy_ = None
-        self.validation_holdout_frac_ = None
-        self.validation_rows_ = None
-        self.selection_train_rows_ = None
-        self.fit_time_limit_sec_ = None
-        self.selection_time_budget_sec_ = None
-        self.fit_elapsed_sec_ = None
-        self.refit_full_ = True
-        self.final_train_rows_ = None
-        self.hyperparameter_tune_kwargs_ = None
-        self.refit_dataset_ = None
-        self.num_bag_folds_ = 0
-        self.num_bag_sets_ = 1
+        self._apply_fit_state_defaults(overwrite=True)
+
+    def _apply_fit_state_defaults(self, *, overwrite: bool) -> None:
+        defaults: dict[str, Any] = {
+            "dataset_": None,
+            "test_dataset_": None,
+            "preset_config_": None,
+            "leaderboard_": None,
+            "model_results_": [],
+            "best_method_id_": None,
+            "best_params_": None,
+            "best_model_": None,
+            "best_preprocessor_": None,
+            "survival_times_": None,
+            "test_metrics_": None,
+            "artifact_dir_": None,
+            "fitted_models_": {},
+            "model_preprocessors_": {},
+            "model_survival_times_": {},
+            "model_test_metrics_": {},
+            "validation_strategy_": None,
+            "validation_holdout_frac_": None,
+            "validation_rows_": None,
+            "selection_train_rows_": None,
+            "fit_time_limit_sec_": None,
+            "selection_time_budget_sec_": None,
+            "fit_elapsed_sec_": None,
+            "refit_full_": True,
+            "final_train_rows_": None,
+            "hyperparameter_tune_kwargs_": None,
+            "refit_dataset_": None,
+            "num_bag_folds_": 0,
+            "num_bag_sets_": 1,
+        }
+        for name, value in defaults.items():
+            if overwrite or not hasattr(self, name):
+                setattr(self, name, value)
 
     def fit(
         self,
@@ -730,24 +697,12 @@ class SurvivalPredictor:
         return frame, model_id, self.model_survival_times_[model_id]
 
     def _predict_model_risk(self, model_id: str, frame: pd.DataFrame) -> np.ndarray:
-        model = self.fitted_models_[model_id]
-        if isinstance(model, BaggedSurvivalEnsemble):
-            return model.predict_risk(frame)
-        preprocessor = self.model_preprocessors_[model_id]
-        if preprocessor is None:
-            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
-        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
-        return np.asarray(model.predict_risk(transformed), dtype=float)
+        model, features = self._prediction_model_and_features(model_id, frame)
+        return np.asarray(model.predict_risk(features), dtype=float)
 
     def _predict_model_survival(self, model_id: str, frame: pd.DataFrame, survival_times: np.ndarray) -> np.ndarray:
-        model = self.fitted_models_[model_id]
-        if isinstance(model, BaggedSurvivalEnsemble):
-            return model.predict_survival(frame, survival_times)
-        preprocessor = self.model_preprocessors_[model_id]
-        if preprocessor is None:
-            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
-        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
-        return np.asarray(model.predict_survival(transformed, survival_times), dtype=float)
+        model, features = self._prediction_model_and_features(model_id, frame)
+        return np.asarray(model.predict_survival(features, survival_times), dtype=float)
 
     def _predict_model_bundle(
         self,
@@ -755,18 +710,21 @@ class SurvivalPredictor:
         frame: pd.DataFrame,
         survival_times: np.ndarray,
     ) -> SurvivalPredictions:
-        model = self.fitted_models_[model_id]
-        if isinstance(model, BaggedSurvivalEnsemble):
-            return model.predict_bundle(frame, survival_times)
-        preprocessor = self.model_preprocessors_[model_id]
-        if preprocessor is None:
-            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
-        transformed = finalize_preprocessed_features(model_id, preprocessor.transform(frame))
-        predictions = model.predict_bundle(transformed, survival_times)
+        model, features = self._prediction_model_and_features(model_id, frame)
+        predictions = model.predict_bundle(features, survival_times)
         return SurvivalPredictions(
             risk=np.asarray(predictions.risk, dtype=float),
             survival=np.asarray(predictions.survival, dtype=float),
         )
+
+    def _prediction_model_and_features(self, model_id: str, frame: pd.DataFrame) -> tuple[Any, Any]:
+        model = self.fitted_models_[model_id]
+        if isinstance(model, BaggedSurvivalEnsemble):
+            return model, frame
+        preprocessor = self.model_preprocessors_[model_id]
+        if preprocessor is None:
+            raise RuntimeError(f"Preprocessor is unavailable for model '{model_id}'.")
+        return model, finalize_preprocessed_features(model_id, preprocessor.transform(frame))
 
     def _read_features(self, data: pd.DataFrame | str | Path) -> pd.DataFrame:
         frame = read_tabular_data(data)
