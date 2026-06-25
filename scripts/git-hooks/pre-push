@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+"$repo_root/scripts/update_code_knowledge.sh" pre-push "$@"

@@ -83,12 +83,30 @@ def test_manuscript_config_includes_foundation_track() -> None:
     assert "mitra_survival_frozen" not in benchmark_cfg["methods"]
     assert {"tabicl_survival", "tabm_survival", "realtabpfn_survival"}.issubset(benchmark_cfg["methods"])
     assert "mitra_survival_finetune" not in overrides
+    assert overrides["tabpfn_survival"]["default_params"]["device"] == "cpu"
+    assert overrides["tabpfn_survival"]["default_params"]["predict_batch_size"] == 256
+    assert overrides["tabpfn_survival"]["default_params"]["max_stacked_rows"] == 500
     assert overrides["tabpfn_survival"]["default_params"]["n_intervals"] == 5
+    assert overrides["tabicl_survival"]["default_params"]["device"] == "cpu"
     assert overrides["tabicl_survival"]["default_params"]["n_intervals"] == 5
-    assert overrides["realtabpfn_survival"]["default_params"]["max_stacked_rows"] == 9500
+    assert overrides["realtabpfn_survival"]["default_params"]["max_stacked_rows"] == 100
     assert benchmark_cfg["profile"] == "manuscript"
     assert set(benchmark_cfg["datasets"]) == {"support", "metabric", "nwtco", "aids", "gbsg2", "flchain", "whas500"}
     assert "Mitra is excluded" in benchmark_cfg["notes"]
+
+
+def test_genomics_manuscript_config_uses_stricter_foundation_runtime_bounds() -> None:
+    benchmark_cfg = read_yaml(REPO_ROOT / "configs" / "benchmark" / "manuscript_genomics_v1.yaml")
+    overrides = benchmark_cfg["hpo"]["method_overrides"]
+
+    assert overrides["tabpfn_survival"]["default_params"]["device"] == "cpu"
+    assert overrides["tabpfn_survival"]["default_params"]["predict_batch_size"] == 256
+    assert overrides["tabpfn_survival"]["default_params"]["n_intervals"] == 3
+    assert overrides["tabpfn_survival"]["default_params"]["max_stacked_rows"] == 100
+    assert overrides["tabicl_survival"]["default_params"]["device"] == "cpu"
+    assert overrides["tabm_survival"]["default_params"]["time_limit"] == 30
+    assert overrides["realtabpfn_survival"]["default_params"]["time_limit"] == 1
+    assert overrides["realtabpfn_survival"]["default_params"]["max_stacked_rows"] == 100
 
 
 def test_manuscript_hpo_config_uses_explicit_hpo_track() -> None:

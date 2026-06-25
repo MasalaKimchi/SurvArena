@@ -1,6 +1,6 @@
 # Manuscript-Grade Run Status
 
-Last reviewed against local configs and retained result artifacts: 2026-06-14.
+Last reviewed against local configs and retained result artifacts: 2026-06-19.
 
 This page summarizes which manuscript-grade benchmark tracks have completed
 evidence and which model/dataset combinations are implemented or configured but
@@ -27,19 +27,18 @@ discrete-hazard foundation evidence is refreshed or provenance-mapped.
 
 | Track | Config | Datasets | Methods | Mode | Retained status | Evidence notes |
 | --- | --- | ---: | ---: | --- | --- | --- |
-| Clinical no-HPO | `configs/benchmark/manuscript_v1.yaml` | 7 | 27 | `no_hpo` | Complete | 2,835 successful fold rows: 7 datasets x 27 methods x 15 splits. |
+| Clinical no-HPO current default | `configs/benchmark/manuscript_v1.yaml` | 7 | 27 | `no_hpo` | Complete | 2,835 successful fold rows: 7 datasets x 27 methods x 15 splits, including canonical bounded discrete-hazard foundation adapters. |
 | Clinical HPO | `configs/benchmark/manuscript_hpo_v1.yaml` | 7 | 27 | `hpo` | Configured | Same clinical dataset/model matrix; no retained complete HPO bundle found under `results/manuscript_grade/`. |
 | Clinical foundation subset | `configs/benchmark/manuscript_autogluon_foundation_v1.yaml` | 7 | 3 | `no_hpo` | Configured | Covers discrete-hazard `tabicl_survival`, `tabm_survival`, and `realtabpfn_survival`; retained historical evidence predates the default switch. |
-| Genomics no-HPO | `configs/benchmark/manuscript_genomics_v1.yaml` | 5 | 27 | `no_hpo` | Partial | Retained success bundle has 1,260 fold rows: 4 TCGA datasets x 21 eligible methods x 15 splits. |
+| Genomics no-HPO current default | `configs/benchmark/manuscript_genomics_v1.yaml` | 5 | 27 | `no_hpo` | Complete attempt coverage | All 135 cells were attempted: 105 complete, 7 partial, and 23 all-fold failures, yielding 1,619 successful fold rows. |
 | Genomics foundation subset | `configs/benchmark/manuscript_genomics_autogluon_foundation_v1.yaml` | 5 | 3 | `no_hpo` | Partial | Historical status artifacts predate the discrete-hazard default switch; no complete retained subset bundle. |
 
 ## Dataset x Model-Family Status
 
 | Dataset group | Dataset ids | Classical / linear | Trees / boosting | Deep survival | Foundation adapters | Mitra survival |
 | --- | --- | --- | --- | --- | --- | --- |
-| Clinical benchmark | `support`, `metabric`, `nwtco`, `aids`, `gbsg2`, `flchain`, `whas500` | Complete | Complete | Complete | Historical complete evidence; needs refresh for the discrete-hazard default | Excluded from maintained no-HPO manuscript run |
-| TCGA genomics retained evidence | `tcga_kirc_xena`, `tcga_luad_xena`, `tcga_ov_xena`, `tcga_skcm_xena` | Partial: 21 eligible methods per dataset; AFT/`coxnet` failures excluded from retained success bundle | Complete for eligible tree/boosting methods | Complete for eligible deep methods | Historical partial evidence; needs refresh for the discrete-hazard default | Implemented, attempted, ineligible |
-| TCGA BRCA genomics | `tcga_brca_xena` | Configured | Configured | Configured | Historical partial status artifacts only | Implemented, not retained as successful evidence |
+| Clinical benchmark | `support`, `metabric`, `nwtco`, `aids`, `gbsg2`, `flchain`, `whas500` | Complete | Complete | Complete | Complete under bounded current defaults | Excluded from maintained no-HPO manuscript run |
+| TCGA genomics current default | `tcga_brca_xena`, `tcga_kirc_xena`, `tcga_luad_xena`, `tcga_ov_xena`, `tcga_skcm_xena` | Attempted; Coxnet/AFT failures reduce eligibility | Complete for eligible tree/boosting methods | Complete for eligible deep methods | Attempted on every cohort; RealTabPFN failed all folds and TabM was mixed | Implemented, outside the maintained matrix |
 
 ## Method-Family Detail
 
@@ -51,15 +50,15 @@ discrete-hazard foundation evidence is refreshed or provenance-mapped.
 | Ensemble trees | `rsf`, `extra_survival_trees` | Complete | Complete for retained TCGA success datasets | Present in the 4-dataset TCGA retained success bundle. |
 | Gradient boosting backends | `xgboost_cox`, `xgboost_aft`, `catboost_cox`, `catboost_survival_aft` | Complete | Complete for retained TCGA success datasets | Present in the 4-dataset TCGA retained success bundle. |
 | PyCox / neural survival | `deepsurv`, `deepsurv_moco`, `logistic_hazard`, `pmf`, `mtlr`, `deephit_single`, `pchazard`, `cox_time` | Complete | Complete for retained TCGA success datasets | Present in the 4-dataset TCGA retained success bundle. |
-| Foundation discrete-hazard adapters | `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `realtabpfn_survival` | Configured; historical complete evidence predates default switch | Historical partial / not retained | Canonical foundation IDs now resolve to pooled discrete-time hazard adapters. Historical retained artifacts should not be treated as refreshed discrete-hazard evidence. |
+| Foundation discrete-hazard adapters | `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, `realtabpfn_survival` | Complete under bounded current defaults | Attempted on all cohorts; TabPFN/TabICL complete, TabM mixed, RealTabPFN failed | Canonical IDs resolve to pooled discrete-time hazard adapters. The current-default artifacts record the CPU and context limits used for manuscript execution. |
 | Mitra event-risk adapter | `mitra_survival_frozen` | Implemented, excluded | Implemented, attempted, ineligible | Registered and documented, but excluded from maintained clinical no-HPO because local CPU/RAM use can exceed the conventional model wall-clock budget. Genomics status artifacts show failed/ineligible attempts. |
 
 ## Completion Snapshot
 
 | Evidence bundle | Retained success rows | Dataset/method pairs | Split coverage | Primary artifact |
 | --- | ---: | ---: | --- | --- |
-| Clinical no-HPO | 2,835 | 189 | 15 / 15 for every dataset-method pair | `results/manuscript_grade/clinical_no_hpo/elo/manuscript_fold_results_success.csv` |
-| Genomics no-HPO | 1,260 | 84 | 15 / 15 for retained successful pairs | `results/manuscript_grade/genomics_no_hpo/elo/manuscript_fold_results_success.csv` |
+| Clinical no-HPO current default | 2,835 | 189 complete | 15 / 15 for every dataset-method pair | `results/manuscript_grade/clinical_no_hpo_current_default/` |
+| Genomics no-HPO current default | 1,619 | 105 complete, 7 partial, 23 failed | All 135 pairs attempted | `results/manuscript_grade/genomics_no_hpo_current_default/` |
 | Genomics status audit | n/a | 110 audited pairs | 85 eligible, 25 ineligible | `results/manuscript_grade/genomics_no_hpo/genomics_dataset_method_status.csv` |
 | Clinical discrete-hazard foundation audit | 246 | 16 / 28 complete alias-run pairs | 15 / 15 for complete retained pairs | `results/manuscript_grade/clinical_discrete_hazard_foundation/` |
 

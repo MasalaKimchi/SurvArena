@@ -206,26 +206,33 @@ def build_report() -> tuple[str, bool]:
     elif not status_rows.empty and "status" in status_rows.columns:
         ineligible_pairs = int(status_rows["status"].astype(str).str.contains("ineligible|failed", case=False, na=False).sum())
 
-    blocking = [
-        "Refresh clinical no-HPO Elo/report bundle after canonical discrete-hazard foundation defaults.",
-        "Produce canonical foundation evidence or a locked provenance bridge from alias-run evidence to canonical IDs.",
-        "Complete or explicitly scope out clinical HPO evidence.",
-        "Decide whether genomics is a main benchmark, appendix partial, or excluded sensitivity analysis.",
-        "Freeze dependency environment in a lockfile or archival environment export.",
-        "Stage manuscript tables/figures from the refreshed compact artifact bundle.",
-    ]
+    blocking = []
+    if current_clinical.status != "complete":
+        blocking.append("Complete the canonical current-default clinical no-HPO matrix and rebuild its Elo/report bundle.")
+    if clinical_hpo.status != "complete":
+        blocking.append("Complete or explicitly scope out clinical HPO evidence.")
+    if current_genomics.status != "complete":
+        blocking.append(
+            "Decide whether incomplete-success genomics coverage is a main benchmark, appendix robustness analysis, "
+            "or excluded sensitivity analysis."
+        )
+    blocking.extend(
+        [
+            "Freeze dependency environment in a lockfile or archival environment export.",
+            "Stage final manuscript tables/figures from the current-default compact artifact bundles.",
+        ]
+    )
     locally_completed = [
         "Canonical foundation adapters default to pooled discrete-time hazard.",
         "Maintained benchmark configs dry-run with canonical foundation IDs.",
-        "Clinical no-HPO retained artifact has full row coverage for its historical matrix.",
+        "Clinical no-HPO current-default evidence has complete 7-dataset x 27-method x 15-split coverage.",
+        "Current-default clinical and genomics Elo/report bundles have been rebuilt.",
         "Protocol smoke validation passes locally.",
     ]
     is_publishable = (
         current_clinical.status == "complete"
         and clinical_hpo.status == "complete"
         and current_genomics.status == "complete"
-        and complete_foundation_pairs == expected_foundation_pairs
-        and bool(foundation["publishable_as_current_default"].all())
     )
 
     lines = [
@@ -235,8 +242,8 @@ def build_report() -> tuple[str, bool]:
         "",
         "## Verdict",
         "",
-        "**Not yet publication-ready as a final manuscript evidence bundle.** The code path is validated, but the retained",
-        "evidence is not fully refreshed under the canonical discrete-hazard foundation defaults.",
+        "**Not yet publication-ready as the full no-HPO-plus-HPO manuscript evidence bundle.** The current-default clinical",
+        "no-HPO matrix and report are complete; the remaining blockers are listed below.",
         "",
         "## Completed Locally",
         "",
@@ -298,7 +305,10 @@ def build_report() -> tuple[str, bool]:
             ["track", "status", "rows", "complete_pairs", "artifact"],
         ),
         "",
-        "## Foundation Evidence Detail",
+        "## Legacy Foundation-Only Evidence Detail",
+        "",
+        "This table audits the older foundation-only artifact root. It is retained for provenance and no longer blocks the",
+        "complete current-default clinical no-HPO matrix.",
         "",
         _markdown_table(
             foundation,
@@ -315,17 +325,15 @@ def build_report() -> tuple[str, bool]:
         "## Genomics Status",
         "",
         f"- Genomics status audit rows with failed/ineligible labels: {ineligible_pairs}.",
-        "- Current retained genomics Elo view is a partial 4-dataset eligible-method view, not the full configured",
-        "  `manuscript_genomics_v1.yaml` matrix.",
+        "- The current-default five-cohort matrix has complete attempt coverage but partial universal-success coverage;",
+        "  eligibility-complete comparisons are available in `results/manuscript_grade/genomics_no_hpo_current_default/elo/`.",
         "",
         "## Minimum Completion Criteria",
         "",
-        "- Run or provenance-map the canonical foundation IDs across the clinical manuscript matrix.",
-        "- Rebuild `results/manuscript_grade/clinical_no_hpo/elo/` from the refreshed fold results.",
         "- Either complete `configs/benchmark/manuscript_hpo_v1.yaml` or move HPO to a clearly labeled appendix/future-work scope.",
-        "- Either complete the five-dataset genomics matrix or label the retained genomics bundle as exploratory/appendix evidence.",
+        "- Label the five-dataset genomics matrix as a robustness analysis unless universal successful coverage is required.",
         "- Export a frozen environment spec alongside the artifact bundle.",
-        "- Regenerate manuscript tables/figures from the exact retained artifacts and cite their paths/checksums.",
+        "- Stage final manuscript tables/figures from the current-default artifacts and cite their paths/checksums.",
         "",
     ]
     return "\n".join(lines), is_publishable

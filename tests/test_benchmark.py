@@ -174,7 +174,9 @@ def test_profile_contract_configs_use_canonical_tier_intent() -> None:
     assert hpo_cfg["methods"] == manuscript_cfg["methods"]
     assert genomics_cfg["profile"] == manuscript_cfg["profile"]
     assert genomics_cfg["comparison_modes"] == manuscript_cfg["comparison_modes"]
-    assert genomics_cfg["hpo"] == manuscript_cfg["hpo"]
+    for key in ["enabled", "max_trials", "timeout_seconds", "sampler", "pruner", "n_startup_trials"]:
+        assert genomics_cfg["hpo"][key] == manuscript_cfg["hpo"][key]
+    assert set(genomics_cfg["hpo"]["method_overrides"]) == set(manuscript_cfg["hpo"]["method_overrides"])
     assert genomics_cfg["methods"] == manuscript_cfg["methods"]
     assert genomics_cfg["datasets"] == [
         "tcga_brca_xena",

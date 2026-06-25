@@ -42,33 +42,37 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
-        n_intervals: 5
+        device: cpu
+        predict_batch_size: 256
+        n_intervals: 3
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 100
     tabicl_survival:
       enabled: false
       search_space: null
       default_params:
         n_estimators: 1
-        n_intervals: 5
+        device: cpu
+        predict_batch_size: 256
+        n_intervals: 3
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 100
     tabm_survival:
       enabled: false
       search_space: null
       default_params:
-        time_limit: 120
-        n_intervals: 5
+        time_limit: 30
+        n_intervals: 3
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 100
     realtabpfn_survival:
       enabled: false
       search_space: null
       default_params:
-        time_limit: 120
-        n_intervals: 5
+        time_limit: 1
+        n_intervals: 3
         min_rows_per_interval: 20
-        max_stacked_rows: 9500
+        max_stacked_rows: 100
 time_horizons_quantiles:
 - 0.25
 - 0.5
@@ -110,6 +114,6 @@ methods:
 - tabicl_survival
 - tabm_survival
 - realtabpfn_survival
-notes: 'Genomics manuscript no-HPO benchmark across the same model families, split protocol, seeds, and bounded foundation-model settings as manuscript_v1. The dataset track contains five SurvBoard-aligned TCGA cohorts selected for benchmark prevalence, public Xena availability, event coverage, and cancer-type diversity. Duplicate cohort variants such as METABRIC cBioPortal are intentionally excluded.
+notes: 'Genomics manuscript no-HPO benchmark across the same model families and split protocol as manuscript_v1, with a stricter CPU-bounded foundation policy: 3 intervals, 100 stacked rows, batched direct foundation prediction, a 30-second TabM fit budget, and a 1-second RealTabPFN fit budget. The dataset track contains five SurvBoard-aligned TCGA cohorts selected for benchmark prevalence, public Xena availability, event coverage, and cancer-type diversity. Duplicate cohort variants such as METABRIC cBioPortal are intentionally excluded.
 
   '

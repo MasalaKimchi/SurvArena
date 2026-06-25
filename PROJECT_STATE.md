@@ -20,19 +20,26 @@ Those paths should not be cited as maintained evidence or used as defaults.
 
 ## Current Evidence
 
-The retained clinical manuscript no-HPO evidence bundle is complete for the
-pre-discrete-hazard 27-method matrix: 2,835 successful fold rows across 7
-datasets, 27 methods, and 15 splits per dataset/method pair. New manuscript
-foundation runs should refresh this evidence with the canonical discrete-hazard
-foundation adapters.
+The current-default clinical manuscript no-HPO matrix is complete: 2,835
+successful fold rows across 7 datasets, 27 methods, and 15 splits per
+dataset/method pair. The canonical discrete-hazard foundation adapters are
+included under the bounded CPU manuscript settings recorded in
+`configs/benchmark/manuscript_v1.yaml`.
 
-The stricter publication-readiness gate lives in
+The current-default genomics no-HPO matrix has complete attempt coverage across
+all 135 dataset-method cells. Of those, 105 cells have 15 / 15 successful folds,
+7 are partially successful, and 23 have attempted failure evidence for all 15
+folds. The 1,619 successful fold rows support eligibility-complete comparisons
+while the failed cells remain part of the practitioner-facing reliability
+evidence.
+
+The broader publication-readiness gate lives in
 `docs/manuscript_publishability.md` and can be regenerated with
 `python scripts/audit_manuscript_publishability.py`. The current audit verdict
-is not publication-ready as a final manuscript bundle because clinical HPO is
-missing, genomics remains partial, and canonical discrete-hazard foundation
-evidence is incomplete or requires a locked provenance bridge from alias-run
-artifacts.
+remains false for the full no-HPO-plus-HPO manuscript program because clinical
+HPO is missing and genomics does not have universal successful coverage. That
+does not invalidate the completed no-HPO attempt matrix or its
+eligibility-filtered statistical report.
 
 The retained Elo/reporting bundle now contains metric-specific Elo ladders,
 paired win-rate tables, rank summaries, coverage summaries, method summaries,

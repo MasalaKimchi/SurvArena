@@ -42,33 +42,37 @@ hpo:
       search_space: null
       default_params:
         n_estimators: 1
+        device: cpu
+        predict_batch_size: 256
         n_intervals: 5
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 500
     tabicl_survival:
       enabled: false
       search_space: null
       default_params:
         n_estimators: 1
+        device: cpu
+        predict_batch_size: 256
         n_intervals: 5
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 500
     tabm_survival:
       enabled: false
       search_space: null
       default_params:
-        time_limit: 120
+        time_limit: 30
         n_intervals: 5
         min_rows_per_interval: 20
-        max_stacked_rows: 50000
+        max_stacked_rows: 500
     realtabpfn_survival:
       enabled: false
       search_space: null
       default_params:
-        time_limit: 120
-        n_intervals: 5
+        time_limit: 1
+        n_intervals: 3
         min_rows_per_interval: 20
-        max_stacked_rows: 9500
+        max_stacked_rows: 100
 time_horizons_quantiles:
 - 0.25
 - 0.5
@@ -112,6 +116,6 @@ methods:
 - tabicl_survival
 - tabm_survival
 - realtabpfn_survival
-notes: 'Main-paper default/no-HPO benchmark across balanced native and foundation survival model families. Foundation adapters use bounded default settings only; Mitra is excluded from this CPU/RAM-bounded track because local resource use can exceed the conventional model wall-clock budget.
+notes: 'Main-paper default/no-HPO benchmark across balanced native and foundation survival model families. Foundation adapters use bounded default settings only: direct TabPFN and TabICL execution is pinned to CPU with 500 stacked rows and batched prediction, TabM uses a 30-second fit budget, and RealTabPFN uses a 100-row context with a 1-second fit budget. Mitra is excluded from this CPU/RAM-bounded track because local resource use can exceed the conventional model wall-clock budget.
 
   '
