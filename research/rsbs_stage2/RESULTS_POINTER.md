@@ -1,0 +1,1 @@
+The full executed Stage 2 benchmark, figures, notebooks, and split-level CSVs are retained in the accompanying research bundle. This branch contains the reusable implementation and protocol rather than generated benchmark artifacts.
