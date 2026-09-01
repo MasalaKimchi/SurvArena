@@ -55,6 +55,7 @@ The benchmark now validates every prediction bundle before scoring, fixes reques
 | 1 | `f9937f9` | Implement fail-closed prediction validation |
 | 2 | `eb224b1` | Correct IPCW support, fixed horizons, D-calibration, and independent references |
 | 3 | `ff860a5` | Enforce validation, fixed horizons, capabilities, and provenance in the runner |
+| Review | `6147695`, `4279703` | Close tied-horizon/support-digest edges and fail post-hoc output closed |
 
 ## Verification
 
@@ -69,7 +70,7 @@ The benchmark now validates every prediction bundle before scoring, fixes reques
 
 ### [Rule 3 - Scope preservation] Isolate new contract/reference fixtures
 
-- New runner and metric fixtures live in `tests/test_metric_contracts.py` so broad uncommitted user additions in `tests/test_benchmark.py` and `tests/test_evaluation.py` remain unstaged. Only the obsolete clipped-horizon assertion was partially staged from the existing evaluation file.
+- New runner and metric fixtures live in `tests/test_metric_contracts.py` so broad uncommitted user additions in `tests/test_benchmark.py` remain unstaged. The obsolete clipped-horizon assertion and a directly related Elo-bootstrap regression were adopted from `tests/test_evaluation.py`.
 
 ### [Rule 2 - Capability bridge] Add a lightweight adapter flag without expanding the core capability dataclass
 

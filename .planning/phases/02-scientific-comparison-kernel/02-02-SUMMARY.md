@@ -56,9 +56,9 @@ Pairwise tests, uncertainty intervals, and multiple-method summaries now use dat
 
 - `tests/test_evaluation.py` contains unrelated uncommitted user work, so the new acceptance fixtures remain in `tests/test_scientific_comparison.py` and the existing suite is still executed as a compatibility gate.
 
-### [Rule 2 - Backward-compatible assumption reporting] Retain a descriptive CD for small K/N
+### [Rule 2 - Review convergence] Tighten post-hoc output after compatibility testing
 
-- Existing consumers expect a numeric critical-difference field. The implementation retains that descriptive value but sets `posthoc_eligible=false` and an explicit `assumption_status`, preventing it from being interpreted as a valid post-hoc claim.
+- Initial execution retained a descriptive critical-difference value with `posthoc_eligible=false`. Adversarial review found that too easy to misuse, so the final contract emits `NaN` unless the complete-block and Friedman gates both pass.
 
 **Total deviations:** 2 scope/compatibility deviations. **Impact:** Planned statistical validity is preserved without staging unrelated work or breaking descriptive consumers.
 
