@@ -362,7 +362,7 @@ def test_time_dependent_auc_uses_horizon_specific_event_probabilities() -> None:
     assert aligned["brier_50"] < reversed_metrics["brier_50"]
 
 
-def test_compute_survival_metrics_handles_duplicate_clipped_horizons() -> None:
+def test_compute_survival_metrics_marks_unsupported_horizons_without_clipping() -> None:
     metrics = compute_survival_metrics(
         train_time=np.asarray([1.0, 2.0, 3.0, 10.0]),
         train_event=np.asarray([1, 1, 1, 0]),
@@ -379,9 +379,12 @@ def test_compute_survival_metrics_handles_duplicate_clipped_horizons() -> None:
         horizons=(4.0, 5.0, 6.0),
     ).to_dict()
 
-    assert math.isfinite(metrics["td_auc_25"])
-    assert metrics["td_auc_25"] == metrics["td_auc_50"] == metrics["td_auc_75"]
-    assert metrics["horizon_used_25"] == metrics["horizon_used_50"] == metrics["horizon_used_75"]
+    assert math.isnan(metrics["td_auc_25"])
+    assert math.isnan(metrics["td_auc_50"])
+    assert math.isnan(metrics["td_auc_75"])
+    assert [metrics[f"horizon_requested_{label}"] for label in ("25", "50", "75")] == [4.0, 5.0, 6.0]
+    assert all(math.isnan(metrics[f"horizon_used_{label}"]) for label in ("25", "50", "75"))
+    assert all(metrics[f"horizon_reason_{label}"] == "outside_ipcw_support" for label in ("25", "50", "75"))
 
 
 # --- test_statistics.py ---
