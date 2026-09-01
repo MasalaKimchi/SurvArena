@@ -69,6 +69,7 @@ ci_and_reproducibility
 | Optional foundation-model adapters | [`foundation_models.md`](foundation_models.md) |
 | Manuscript evidence bundle and local machine notes | [`manuscript_evidence.md`](manuscript_evidence.md) |
 | Manuscript publishability gaps and completion criteria | [`manuscript_publishability.md`](manuscript_publishability.md) |
+| Benchmark maturity verdict and improvement register | [Benchmark readiness register](benchmark_readiness.md) |
 | AutoGluon-style UX comparison | [`autogluon_comparison.md`](autogluon_comparison.md) |
 | CI checks and reproducibility boundaries | [`ci_and_reproducibility.md`](ci_and_reproducibility.md) |
 
