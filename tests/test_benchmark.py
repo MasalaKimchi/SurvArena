@@ -577,25 +577,29 @@ def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, 
     )
     monkeypatch.setattr(runner, "get_method_class", lambda _method_id: PickleableBenchmarkMethod)
 
-    record = runner.evaluate_split(
-        benchmark_id="artifact_test",
-        dataset_id="toy_dataset",
-        method_id="coxph",
-        split=split,
-        X=frame,
-        time=time,
-        event=event,
-        method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
-        inner_folds=2,
-        timeout_seconds=None,
-        primary_metric="uno_c",
-        horizons_quantiles=(0.25, 0.5, 0.75),
-        decision_thresholds=(0.2,),
-        benchmark_cfg_hash="cfg-hash",
-        hpo_cfg={"enabled": False},
-        model_artifact_dir=tmp_path / "model_artifacts",
-        save_model_artifacts=True,
-    )
+    def _evaluate():
+        return runner.evaluate_split(
+            benchmark_id="artifact_test",
+            dataset_id="toy_dataset",
+            method_id="coxph",
+            split=split,
+            X=frame,
+            time=time,
+            event=event,
+            method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
+            inner_folds=2,
+            timeout_seconds=None,
+            primary_metric="uno_c",
+            horizons_quantiles=(0.25, 0.5, 0.75),
+            decision_thresholds=(0.2,),
+            benchmark_cfg_hash="cfg-hash",
+            hpo_cfg={"enabled": False},
+            hpo_mode="no_hpo",
+            model_artifact_dir=tmp_path / "model_artifacts",
+            save_model_artifacts=True,
+        )
+
+    record = _evaluate()
 
     assert record["status"] == "success"
     assert record["model_artifact_status"] == "saved"
@@ -605,6 +609,7 @@ def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, 
     assert model_path.exists()
     assert prediction_path.exists()
     assert manifest_path.exists()
+    assert "no_hpo" in model_path.parts
 
     with gzip.open(model_path, "rb") as handle:
         payload = pickle.load(handle)
@@ -618,40 +623,62 @@ def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, 
     assert predictions["survival_probs"].shape[0] == 4
     assert predictions["test_time"].tolist() == time[split.test_idx].tolist()
 
+    monkeypatch.setattr(
+        runner,
+        "_save_model_artifacts",
+        lambda **_kwargs: {
+            "artifact_schema_version": "survarena_run_artifacts_v1",
+            "artifact_manifest_path": str(manifest_path),
+            "model_artifact_status": "failed",
+            "model_artifact_path": None,
+            "prediction_artifact_path": str(prediction_path),
+            "artifact_error": "TypeError: cannot pickle model state",
+        },
+    )
+    artifact_failure_record = _evaluate()
+    assert artifact_failure_record["status"] == "success"
+    assert artifact_failure_record["model_artifact_status"] == "failed"
+    np.testing.assert_equal(artifact_failure_record["uno_c"], record["uno_c"])
 
-def test_model_artifact_request_fails_if_fitted_state_is_not_pickleable(tmp_path: Path) -> None:
+
+def test_model_artifact_failure_preserves_predictions_and_structured_status(tmp_path: Path) -> None:
     class UnpickleableModel:
         def __getstate__(self):
             raise TypeError("cannot pickle model state")
 
     artifact_dir = tmp_path / "model_artifacts"
-    with pytest.raises(RuntimeError, match="Model artifact persistence failed"):
-        runner._save_model_artifacts(
-            artifact_dir=artifact_dir,
-            benchmark_id="artifact_test",
-            dataset_id="toy_dataset",
-            method_id="unpickleable",
-            split_id="split_0",
-            seed=7,
-            model=UnpickleableModel(),
-            preprocessor=None,
-            best_params={},
-            eval_times=np.asarray([1.0, 2.0]),
-            horizons=np.asarray([1.0, 2.0, 3.0]),
-            train_idx=np.asarray([0, 1]),
-            test_idx=np.asarray([2]),
-            train_time=np.asarray([1.0, 2.0]),
-            train_event=np.asarray([1, 0]),
-            test_time=np.asarray([3.0]),
-            test_event=np.asarray([1]),
-            risk_scores=np.asarray([0.5]),
-            survival_probs=np.asarray([[0.8, 0.6]]),
-        )
+    metadata = runner._save_model_artifacts(
+        artifact_dir=artifact_dir,
+        benchmark_id="artifact_test",
+        dataset_id="toy_dataset",
+        method_id="unpickleable",
+        split_id="split_0",
+        seed=7,
+        hpo_mode="no_hpo",
+        model=UnpickleableModel(),
+        preprocessor=None,
+        best_params={},
+        eval_times=np.asarray([1.0, 2.0]),
+        horizons=np.asarray([1.0, 2.0, 3.0]),
+        train_idx=np.asarray([0, 1]),
+        test_idx=np.asarray([2]),
+        train_time=np.asarray([1.0, 2.0]),
+        train_event=np.asarray([1, 0]),
+        test_time=np.asarray([3.0]),
+        test_event=np.asarray([1]),
+        risk_scores=np.asarray([0.5]),
+        survival_probs=np.asarray([[0.8, 0.6]]),
+    )
 
     manifest = json.loads(next(artifact_dir.rglob("artifact_manifest.json")).read_text(encoding="utf-8"))
-    assert manifest["model_artifact_status"] == "prediction_only"
+    assert manifest["model_artifact_status"] == "failed"
     assert Path(manifest["prediction_artifact_path"]).exists()
     assert manifest["model_artifact_path"] is None
+    assert manifest["artifact_error"] == "TypeError: cannot pickle model state"
+    assert metadata["model_artifact_status"] == "failed"
+    assert metadata["model_artifact_path"] is None
+    assert Path(metadata["prediction_artifact_path"]).exists()
+    assert "no_hpo" in Path(metadata["artifact_manifest_path"]).parts
 
 
 def _install_common_monkeypatches(monkeypatch, call_counter: dict[str, int], *, status: str = "success") -> None:
@@ -729,12 +756,56 @@ def test_exec04_resume_preserves_successful_outputs(tmp_path: Path, monkeypatch)
 
     calls = {"count": 0}
     _install_common_monkeypatches(monkeypatch, calls)
+    executed_modes: list[str] = []
+
+    def _capture_mode(**kwargs):
+        calls["count"] += 1
+        executed_modes.append(str(kwargs["hpo_mode"]))
+        return _resume_record()
+
+    monkeypatch.setattr(runner, "evaluate_split", _capture_mode)
 
     runner.run_benchmark(
         repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0
     )
 
-    assert calls["count"] == 0
+    assert calls["count"] == 1
+    assert executed_modes == ["hpo"]
+
+
+def test_resume_with_explicit_hpo_row_only_runs_no_hpo_arm(tmp_path: Path, monkeypatch) -> None:
+    fold_results = pd.DataFrame(
+        [
+            {
+                "dataset_id": "toy_dataset__base",
+                "method_id": "coxph",
+                "split_id": "fixed_split_0__base",
+                "seed": 11,
+                "hpo_mode": "hpo",
+                "status": "success",
+                "uno_c": 0.77,
+            }
+        ]
+    )
+    fold_results.to_csv(tmp_path / "coxph_fold_results.csv", index=False)
+
+    calls = {"count": 0}
+    _install_common_monkeypatches(monkeypatch, calls)
+    executed_modes: list[str] = []
+
+    def _capture_mode(**kwargs):
+        calls["count"] += 1
+        executed_modes.append(str(kwargs["hpo_mode"]))
+        return _resume_record()
+
+    monkeypatch.setattr(runner, "evaluate_split", _capture_mode)
+
+    runner.run_benchmark(
+        repo_root=tmp_path, benchmark_cfg=_resume_benchmark_cfg(), output_dir=tmp_path, resume=True, max_retries=0
+    )
+
+    assert calls["count"] == 1
+    assert executed_modes == ["no_hpo"]
 
 
 def test_resume_export_merges_existing_and_new_fold_rows(tmp_path: Path) -> None:
