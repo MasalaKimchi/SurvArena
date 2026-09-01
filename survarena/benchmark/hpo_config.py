@@ -65,24 +65,42 @@ def method_cfg_with_autogluon_defaults(
     autogluon_cfg: dict[str, Any] | None,
     *,
     is_autogluon_method: Callable[[str], bool],
+    hpo_mode: str | None = None,
 ) -> dict[str, Any]:
     if not is_autogluon_method(str(method_cfg.get("method_id"))):
         return method_cfg
     merged = dict(method_cfg)
     defaults = dict(method_cfg.get("default_params", {}))
     if autogluon_cfg:
-        defaults.update(
-            {
-                "presets": autogluon_cfg.get("presets", defaults.get("presets", "medium")),
-                "time_limit": autogluon_cfg.get("time_limit_seconds", defaults.get("time_limit")),
-                "hyperparameter_tune_kwargs": autogluon_cfg.get(
-                    "hyperparameter_tune_kwargs",
-                    defaults.get("hyperparameter_tune_kwargs"),
-                ),
-                "num_bag_folds": autogluon_cfg.get("num_bag_folds", defaults.get("num_bag_folds", 0)),
-                "num_stack_levels": autogluon_cfg.get("num_stack_levels", defaults.get("num_stack_levels", 0)),
-                "refit_full": autogluon_cfg.get("refit_full", defaults.get("refit_full", False)),
-            }
-        )
+        if hpo_mode == "no_hpo":
+            # H2: in the no-HPO arm an AutoGluon-backed method must run as a SINGLE
+            # config so the "no_hpo" comparison is genuinely no-HPO and parity-fair
+            # with native methods: no bagging, no stacking, no internal
+            # hyperparameter tuning, and no injected wall-clock budget that native
+            # methods don't receive.
+            defaults.update(
+                {
+                    "presets": autogluon_cfg.get("presets", defaults.get("presets", "medium")),
+                    "time_limit": None,
+                    "hyperparameter_tune_kwargs": None,
+                    "num_bag_folds": 0,
+                    "num_stack_levels": 0,
+                    "refit_full": autogluon_cfg.get("refit_full", defaults.get("refit_full", False)),
+                }
+            )
+        else:
+            defaults.update(
+                {
+                    "presets": autogluon_cfg.get("presets", defaults.get("presets", "medium")),
+                    "time_limit": autogluon_cfg.get("time_limit_seconds", defaults.get("time_limit")),
+                    "hyperparameter_tune_kwargs": autogluon_cfg.get(
+                        "hyperparameter_tune_kwargs",
+                        defaults.get("hyperparameter_tune_kwargs"),
+                    ),
+                    "num_bag_folds": autogluon_cfg.get("num_bag_folds", defaults.get("num_bag_folds", 0)),
+                    "num_stack_levels": autogluon_cfg.get("num_stack_levels", defaults.get("num_stack_levels", 0)),
+                    "refit_full": autogluon_cfg.get("refit_full", defaults.get("refit_full", False)),
+                }
+            )
     merged["default_params"] = defaults
     return merged

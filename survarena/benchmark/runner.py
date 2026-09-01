@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import gzip
 import json
 import pickle
@@ -27,6 +27,10 @@ from survarena.benchmark.tuning import prepare_inner_cv_cache, resolve_runtime_m
 from survarena.logging.export import MANUSCRIPT_METRIC_COLUMNS
 from survarena.config import read_yaml
 from survarena.methods.registry import get_method_class, is_autogluon_method, registered_method_ids
+
+
+class TimeLimitExceeded(TimeoutError):
+    """Raised when a native fit exceeds its configured wall-clock budget (M11)."""
 
 
 _CANONICAL_PROFILES = ("manuscript",)
@@ -162,6 +166,7 @@ def evaluate_split(
     model_artifact_dir: Path | None = None,
     save_model_artifacts: bool = False,
     validation_diagnostics: dict[str, Any] | None = None,
+    hpo_mode: str | None = None,
 ) -> dict[str, Any]:
     import numpy as np
 
@@ -212,7 +217,9 @@ def evaluate_split(
         )
 
         with timer() as tune_timer:
-            method_cfg_for_selection = _method_cfg_with_autogluon_defaults(method_cfg, autogluon_cfg)
+            method_cfg_for_selection = _method_cfg_with_autogluon_defaults(
+                method_cfg, autogluon_cfg, hpo_mode=hpo_mode
+            )
             selection_result = select_hyperparameters(
                 method_id=method_id,
                 method_cfg=method_cfg_for_selection,
@@ -228,8 +235,70 @@ def evaluate_split(
         hpo_metadata = dict(selection_result.get("hpo_metadata", {}))
         hpo_trials = list(selection_result.get("hpo_trials", []))
 
+        # H1: carve a stratified (by event indicator) validation holdout from the
+        # training rows so the FINAL test-producing fit receives a validation fold
+        # and can early-stop, mirroring the tuning path. The preprocessor is fit on
+        # the reduced-train portion ONLY (no leakage) and used to transform the
+        # reduced-train, validation, and test features consistently.
+        #
+        # Phase-0 fairness gate: only carve this holdout for methods whose fit()
+        # actually consumes the validation fold (consumes_validation=True, e.g.
+        # early-stopping deep nets / boosting / AutoGluon tuning). Methods that
+        # ignore the val args are fit on the FULL training set instead of silently
+        # wasting ~15% of it. Read as a class attribute (no instantiation needed);
+        # default False if a (non-BaseSurvivalMethod) class omits the flag.
+        wants_validation = bool(getattr(get_method_class(method_id), "consumes_validation", False))
+        e_train_arr = np.asarray(e_train).astype(int)
+        n_train_rows = int(len(e_train_arr))
+        n_train_events = int(e_train_arr.sum())
+        n_train_censored = int(n_train_rows - n_train_events)
+        val_fraction = 0.15
+        expected_val_rows = int(round(n_train_rows * val_fraction))
+        val_holdout: tuple[Any, Any] | None = None
+        # Guard degenerate cases: only carve a holdout when the training set is
+        # large enough to retain >=2 events (and >=2 censored) on BOTH sides.
+        if (
+            wants_validation
+            and n_train_rows >= 20
+            and n_train_events >= 4
+            and n_train_censored >= 4
+            and expected_val_rows >= 2
+        ):
+            from sklearn.model_selection import train_test_split
+
+            try:
+                train_positions = np.arange(n_train_rows)
+                sub_pos, val_pos = train_test_split(
+                    train_positions,
+                    test_size=val_fraction,
+                    stratify=e_train_arr,
+                    random_state=int(split.seed),
+                )
+                sub_events = int(e_train_arr[sub_pos].sum())
+                val_events = int(e_train_arr[val_pos].sum())
+                sub_censored = int(len(sub_pos) - sub_events)
+                val_censored = int(len(val_pos) - val_events)
+                if sub_events >= 2 and val_events >= 2 and sub_censored >= 2 and val_censored >= 2:
+                    val_holdout = (sub_pos, val_pos)
+            except ValueError:
+                # Stratification infeasible for this fold; fall back to the no-val fit.
+                val_holdout = None
+
+        final_fit_validation = val_holdout is not None
         pre = TabularPreprocessor(**method_preprocessor_kwargs(method_id))
-        X_train_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
+        if final_fit_validation:
+            sub_pos, val_pos = val_holdout
+            t_train_arr = np.asarray(t_train)
+            X_fit_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train.iloc[sub_pos]))
+            X_val_proc = finalize_preprocessed_features(method_id, pre.transform(X_train.iloc[val_pos]))
+            t_fit = t_train_arr[sub_pos]
+            e_fit = e_train_arr[sub_pos]
+            t_val = t_train_arr[val_pos]
+            e_val = e_train_arr[val_pos]
+        else:
+            X_fit_proc = finalize_preprocessed_features(method_id, pre.fit_transform(X_train))
+            t_fit = t_train
+            e_fit = e_train
         X_test_proc = finalize_preprocessed_features(method_id, pre.transform(X_test))
         diagnostic_metadata = _validation_diagnostic_metadata(
             method_id=method_id,
@@ -246,8 +315,39 @@ def evaluate_split(
         )
 
         model = get_method_class(method_id)(**resolve_runtime_method_params(best_params, seed=split.seed))
+
+        def _fit_final_model() -> None:
+            # Mirror the tuning path's 6-positional fit signature so adapters that
+            # support early stopping receive the validation fold; methods that
+            # ignore the validation args simply drop them.
+            if final_fit_validation:
+                model.fit(X_fit_proc, t_fit, e_fit, X_val_proc, t_val, e_val)
+            else:
+                model.fit(X_fit_proc, t_fit, e_fit)
+
         with timer() as fit_timer:
-            model.fit(X_train_proc, t_train, e_train)
+            if timeout_seconds:
+                # M11: enforce a wall-clock budget on the native final fit so a
+                # hanging fit becomes a TimeLimitExceeded failure row instead of
+                # stalling the whole benchmark. The fit runs in a worker thread
+                # joined with a timeout. We deliberately avoid a `with` block: its
+                # shutdown(wait=True) on exit would re-join (and thus wait out) the
+                # runaway fit. NOTE: CPython cannot force-kill a running thread, so
+                # a timed-out fit keeps running in the background until it returns;
+                # true isolation would require a subprocess.
+                fit_executor = ThreadPoolExecutor(max_workers=1)
+                fit_future = fit_executor.submit(_fit_final_model)
+                try:
+                    fit_future.result(timeout=float(timeout_seconds))
+                except FuturesTimeoutError as exc:
+                    fit_executor.shutdown(wait=False, cancel_futures=True)
+                    raise TimeLimitExceeded(
+                        f"Native fit for '{method_id}' exceeded the "
+                        f"{float(timeout_seconds):.1f}s wall-clock budget."
+                    ) from exc
+                fit_executor.shutdown(wait=False)
+            else:
+                _fit_final_model()
         fit_time_sec = fit_timer.elapsed
 
         eval_times = np.linspace(
@@ -282,6 +382,7 @@ def evaluate_split(
                 method_id=method_id,
                 split_id=split.split_id,
                 seed=int(split.seed),
+                hpo_mode=hpo_mode or "default",
                 model=model,
                 preprocessor=pre,
                 best_params=best_params,
@@ -306,8 +407,18 @@ def evaluate_split(
         hpo_backend = str(hpo_metadata.get("backend", "none"))
         if autogluon_backed and best_params.get("hyperparameter_tune_kwargs"):
             hpo_backend = "autogluon"
+        # Shared contract: a degenerate/trivial-predictor fit (flagged on the model
+        # via `used_fallback_`, or via the `foundation_discrete_hazard_fallback`
+        # metadata flag) stays status="success" (eligible attempt) but is NOT
+        # comparison-eligible. Downstream filters read these two fields.
+        used_fallback = bool(getattr(model, "used_fallback_", False)) or bool(
+            foundation_metadata.get("foundation_discrete_hazard_fallback", False)
+        )
         result_metadata = {
             "training_backend": training_backend,
+            "final_fit_validation": final_fit_validation,
+            "comparison_ineligible": used_fallback,
+            "ineligible_reason": "degenerate_fallback" if used_fallback else "",
             "hpo_backend": hpo_backend,
             "autogluon_presets": best_params.get("presets") if autogluon_backed else None,
             "autogluon_best_model": autogluon_metadata.get("autogluon_best_model"),
@@ -490,6 +601,7 @@ def _save_model_artifacts(
     method_id: str,
     split_id: str,
     seed: int,
+    hpo_mode: str,
     model: Any,
     preprocessor: Any,
     best_params: dict[str, Any],
@@ -506,10 +618,13 @@ def _save_model_artifacts(
 ) -> dict[str, Any]:
     import numpy as np
 
+    # H7(b): include hpo_mode in the run_dir path so the no_hpo and hpo comparison
+    # arms never overwrite each other's model_state/predictions/manifest artifacts.
     run_dir = (
         artifact_dir
         / _safe_artifact_component(dataset_id)
         / _safe_artifact_component(method_id)
+        / _safe_artifact_component(hpo_mode)
         / f"{_safe_artifact_component(split_id)}_seed{int(seed)}"
     )
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -565,14 +680,15 @@ def _save_model_artifacts(
         "method_id": method_id,
         "split_id": split_id,
         "seed": int(seed),
-        "model_artifact_status": "saved" if model_saved else "prediction_only",
+        # H7(a): persistence failure is an artifact-level problem, not a scientific
+        # failure. Record it as "failed" here but do NOT raise — the caller keeps
+        # status="success" and its already-computed metrics.
+        "model_artifact_status": "saved" if model_saved else "failed",
         "model_artifact_path": str(model_path) if model_saved else None,
         "prediction_artifact_path": str(prediction_path),
         "artifact_error": artifact_error,
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
-    if not model_saved:
-        raise RuntimeError(f"Model artifact persistence failed for {method_id}: {artifact_error}")
 
     return {
         "artifact_schema_version": manifest["schema_version"],
@@ -692,11 +808,17 @@ def _validation_diagnostic_metadata(
         }
 
 
-def _method_cfg_with_autogluon_defaults(method_cfg: dict[str, Any], autogluon_cfg: dict[str, Any] | None) -> dict[str, Any]:
+def _method_cfg_with_autogluon_defaults(
+    method_cfg: dict[str, Any],
+    autogluon_cfg: dict[str, Any] | None,
+    *,
+    hpo_mode: str | None = None,
+) -> dict[str, Any]:
     return _method_cfg_with_autogluon_defaults_base(
         method_cfg,
         autogluon_cfg,
         is_autogluon_method=is_autogluon_method,
+        hpo_mode=hpo_mode,
     )
 
 
@@ -705,6 +827,15 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
     run_payloads: list[dict[str, Any]] = []
     hpo_trial_rows: list[dict[str, Any]] = []
     log_lines: list[str] = []
+
+    # H8: retries must not double-count. We overwrite the "final" attempt state on
+    # every attempt and export exactly ONE record/payload/trial-set per unit key
+    # after the loop (the successful attempt if any, else the last failed attempt),
+    # instead of appending every attempt's rows as they happen.
+    final_record: dict[str, Any] | None = None
+    final_run_payload: dict[str, Any] | None = None
+    final_hpo_trials: list[dict[str, Any]] = []
+    final_log_line: str | None = None
 
     attempt = 0
     while True:
@@ -728,6 +859,7 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
             model_artifact_dir=unit.model_artifact_dir,
             save_model_artifacts=unit.save_model_artifacts,
             validation_diagnostics=unit.validation_diagnostics,
+            hpo_mode=unit.hpo_mode,
         )
         run_payload = record.pop("run_payload")
         run_payload["dataset_id"] = unit.track_dataset_id
@@ -757,8 +889,9 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
         run_payload["metrics"]["hpo_config_target"] = hpo_metadata.get("hpo_config_target")
         run_payload["metrics"]["hpo_cap_reason"] = hpo_metadata.get("hpo_cap_reason")
         run_payload["metrics"]["hpo_capped"] = hpo_metadata.get("hpo_capped", False)
+        attempt_hpo_trials: list[dict[str, Any]] = []
         for trial in list(run_payload.get("hpo_trials", [])):
-            hpo_trial_rows.append(
+            attempt_hpo_trials.append(
                 {
                     "benchmark_id": unit.benchmark_id,
                     "dataset_id": unit.track_dataset_id,
@@ -772,7 +905,6 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
                     **trial,
                 }
             )
-        run_payloads.append(run_payload)
         record["dataset_id"] = unit.track_dataset_id
         record["split_id"] = unit.track_split_id
         record["hpo_mode"] = unit.hpo_mode
@@ -789,15 +921,26 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
         record["hpo_config_target"] = hpo_metadata.get("hpo_config_target")
         record["hpo_cap_reason"] = hpo_metadata.get("hpo_cap_reason")
         record["hpo_capped"] = hpo_metadata.get("hpo_capped", False)
-        records.append(record)
+        # Retain only this (latest) attempt as the unit's final state.
+        final_record = record
+        final_run_payload = run_payload
+        final_hpo_trials = attempt_hpo_trials
+        final_log_line = (
+            f"[{record['status']}] [{unit.hpo_mode}] "
+            f"{unit.track_dataset_id}/{unit.method_id}/{unit.track_split_id}/seed{unit.split.seed} "
+            f"{unit.primary_metric}={record.get(unit.primary_metric)}"
+        )
         if record["status"] == "success" or attempt >= unit.max_retries:
-            log_lines.append(
-                f"[{record['status']}] [{unit.hpo_mode}] "
-                f"{unit.track_dataset_id}/{unit.method_id}/{unit.track_split_id}/seed{unit.split.seed} "
-                f"{unit.primary_metric}={record.get(unit.primary_metric)}"
-            )
             break
         attempt += 1
+
+    # Emit exactly one record/payload/trial-set/log-line per unit key.
+    if final_record is not None and final_run_payload is not None:
+        records.append(final_record)
+        run_payloads.append(final_run_payload)
+        hpo_trial_rows.extend(final_hpo_trials)
+    if final_log_line is not None:
+        log_lines.append(final_log_line)
 
     return BenchmarkRunUnitResult(
         records=records,
@@ -810,7 +953,13 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
 def _execute_run_units(units: list[BenchmarkRunUnit], *, n_jobs: int) -> list[BenchmarkRunUnitResult]:
     if n_jobs == 1 or len(units) <= 1:
         return [_evaluate_run_unit(unit) for unit in units]
-    with ThreadPoolExecutor(max_workers=n_jobs) as executor:
+    # H3: each run unit calls set_global_seed(split.seed), which mutates the
+    # process-global numpy/torch/random state. Under threads, concurrent units
+    # interleave those global mutations and race, so stochastic fits become
+    # non-reproducible. BenchmarkRunUnit and _evaluate_run_unit are picklable, so
+    # we execute across PROCESSES: each unit gets its own interpreter with an
+    # isolated global RNG, restoring determinism while still running in parallel.
+    with ProcessPoolExecutor(max_workers=n_jobs) as executor:
         return list(executor.map(_evaluate_run_unit, units))
 
 
@@ -929,6 +1078,11 @@ def _build_dataset_run_units(
     curation_row = _dataset_curation_row(dataset_id, dataset)
 
     phase_started_at = perf_counter()
+    # H6/M5: pass subject groups (when the dataset declares a group_col) so splits
+    # are group-disjoint, plus X/time so the split cache is invalidated when the
+    # underlying feature/time values change (not just the event vector).
+    group_col = getattr(dataset.metadata, "group_col", None)
+    split_groups = dataset.X[group_col].to_numpy() if group_col and group_col in dataset.X.columns else None
     splits = load_or_create_splits(
         root=repo_root,
         task_id=f"{dataset_id}_{benchmark_id}",
@@ -939,6 +1093,9 @@ def _build_dataset_run_units(
         outer_folds=int(benchmark_cfg.get("outer_folds", 5)),
         outer_repeats=outer_repeats,
         regenerate_on_mismatch=bool(regenerate_splits),
+        groups=split_groups,
+        X=dataset.X,
+        time=dataset.time,
     )
     timings["split_prep"] += perf_counter() - phase_started_at
 
@@ -1046,6 +1203,15 @@ def run_benchmark(
 
     validate_benchmark_profile_contract(benchmark_cfg)
 
+    # L: fail fast with a clear message when a required top-level key is absent,
+    # rather than surfacing a raw KeyError deep inside the run.
+    required_top_level_keys = ("benchmark_id", "datasets", "methods")
+    missing_top_level = [key for key in required_top_level_keys if key not in benchmark_cfg]
+    if missing_top_level:
+        raise ValueError(
+            "Missing required benchmark config key(s): " + ", ".join(missing_top_level) + "."
+        )
+
     benchmark_id = benchmark_cfg["benchmark_id"]
     primary_metric = str(benchmark_cfg.get("primary_metric", "harrell_c"))
     profile = str(benchmark_cfg.get("profile", "custom")).lower()
@@ -1054,6 +1220,10 @@ def run_benchmark(
 
     seeds = list(benchmark_cfg["seeds"])
     if limit_seeds is not None:
+        # L: a negative/zero limit_seeds would silently drop seeds from the end via
+        # slicing; require an explicit positive integer instead.
+        if not isinstance(limit_seeds, int) or isinstance(limit_seeds, bool) or limit_seeds < 1:
+            raise ValueError(f"limit_seeds must be None or a positive integer. Received: {limit_seeds!r}.")
         seeds = seeds[:limit_seeds]
     if not seeds:
         raise ValueError("Seed list cannot be empty.")
