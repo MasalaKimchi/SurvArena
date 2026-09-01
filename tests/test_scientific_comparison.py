@@ -198,7 +198,7 @@ def test_bootstrap_metric_ci_weights_dataset_means_equally() -> None:
 
     assert float(result["mean"]) == pytest.approx(0.6)
     assert int(result["n_datasets"]) == 2
-    assert int(result["n_cells"]) == 11
+    assert int(result["n_cells"]) == 12
 
 
 def test_critical_difference_uses_only_complete_rectangular_dataset_block() -> None:
