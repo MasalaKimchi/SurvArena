@@ -9,10 +9,10 @@
 
 ### Truthful Baseline
 
-- [ ] **BASE-01**: A contributor can run the declared lint, type, unit, integration, and core end-to-end checks with zero failures in the supported development environment.
-- [ ] **BASE-02**: A maintainer can run the strict manuscript/release audit using only declared project dependencies and receive an actionable pass/fail report rather than an import/rendering crash.
-- [ ] **BASE-03**: A user encountering a legacy split cache receives an explicit compatibility report and can deliberately migrate or regenerate it without silent split changes.
-- [ ] **BASE-04**: A reader can distinguish current verified behavior, historical invalidated evidence, and remaining release blockers from the maintained project/status documentation.
+- [x] **BASE-01**: A contributor can run the declared lint, type, unit, integration, and core end-to-end checks with zero failures in the supported development environment.
+- [x] **BASE-02**: A maintainer can run the strict manuscript/release audit using only declared project dependencies and receive an actionable pass/fail report rather than an import/rendering crash.
+- [x] **BASE-03**: A user encountering a legacy split cache receives an explicit compatibility report and can deliberately migrate or regenerate it without silent split changes.
+- [x] **BASE-04**: A reader can distinguish current verified behavior, historical invalidated evidence, and remaining release blockers from the maintained project/status documentation.
 
 ### Statistical Comparison
 
@@ -105,10 +105,10 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BASE-01 | Phase 1 | Pending |
-| BASE-02 | Phase 1 | Pending |
-| BASE-03 | Phase 1 | Pending |
-| BASE-04 | Phase 1 | Pending |
+| BASE-01 | Phase 1 | Complete |
+| BASE-02 | Phase 1 | Complete |
+| BASE-03 | Phase 1 | Complete |
+| BASE-04 | Phase 1 | Complete |
 | STAT-01 | Phase 2 | Pending |
 | STAT-02 | Phase 2 | Pending |
 | STAT-03 | Phase 2 | Pending |
@@ -155,10 +155,11 @@
 | REPR-06 | Phase 6 | Pending |
 
 **Coverage:**
+
 - v2.0 requirements: 48 total
 - Mapped to phases: 48
 - Unmapped: 0 ✓
 
 ---
 *Requirements defined: 2026-08-31*
-*Last updated: 2026-08-31 after v2.0 milestone definition*
+*Last updated: 2026-09-01 after Phase 1 verification*
