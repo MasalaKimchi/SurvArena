@@ -1,22 +1,26 @@
-# SurvArena contributor environment
+# SurvArena contributor environment compatibility path
 #
 # Python:
 #   - preferred: CPython 3.11
 #   - supported by scripts/setup_env.sh: CPython 3.10, 3.11, and 3.12
-#   - package metadata: requires-python >=3.10
+#   - package metadata: requires-python >=3.10,<3.13
 #
-# Install from the project metadata in pyproject.toml so the pinned runtime
-# dependencies and optional extras stay defined in one place.
-# This file is an install shortcut, not a resolved lockfile. For manuscript or
-# archival runs, export the activated environment next to the result bundle.
+# The primary contributor and CI path uses uv with the committed uv.lock:
+#   uv sync --locked
+#   uv run --no-sync python -m pytest
 #
-# Recommended:
+# This file preserves the pip compatibility install target. It installs from
+# pyproject.toml and is not a resolved or lock-equivalent environment. Citable
+# benchmark releases use the separately governed canonical Linux/amd64
+# environment rather than either developer-machine workflow.
+#
+# Pip compatibility setup:
 #   python3.11 -m venv .venv
 #   source .venv/bin/activate
 #   python -m pip install --upgrade pip
 #   python -m pip install -r requirements.txt
 #
-# Equivalent scripted setup:
+# Equivalent compatibility script:
 #   PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 #
 # The default contributor environment includes the foundation dependencies used

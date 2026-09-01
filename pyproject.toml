@@ -7,7 +7,7 @@ name = "survarena"
 version = "0.1.0"
 description = "GitHub-first benchmark framework for tabular survival analysis."
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.10,<3.13"
 license = { text = "MIT" }
 authors = [{ name = "SurvArena Contributors" }]
 dependencies = [
@@ -61,6 +61,33 @@ dev = [
     "mypy==2.3.1",
     "pytest>=8.3,<9",
     "ruff>=0.15,<0.16",
+    "tomli>=2.4.1,<3; python_version < '3.11'",
+]
+
+[dependency-groups]
+quality = [
+    "mypy==2.3.1",
+    "ruff>=0.15,<0.16",
+]
+test = [
+    "pytest>=8.3,<9",
+    "tomli>=2.4.1,<3; python_version < '3.11'",
+]
+import-smoke = [
+    "numpy==1.26.4",
+    "pandas==2.2.2",
+    "scipy==1.13.1",
+    "scikit-learn==1.6.1",
+    "PyYAML==6.0.2",
+    "pyarrow==20.0.0",
+]
+docs = [
+    "Sphinx>=8.2.3,<9",
+    "myst-parser>=5.1,<6",
+]
+dev = [
+    { include-group = "quality" },
+    { include-group = "test" },
 ]
 
 [project.scripts]
@@ -73,7 +100,9 @@ package-dir = { "" = "." }
 include = ["survarena*"]
 
 [tool.pytest.ini_options]
+addopts = ["-ra", "--strict-config", "--strict-markers"]
 testpaths = ["tests"]
+xfail_strict = true
 
 [tool.mypy]
 python_version = "3.10"
@@ -89,3 +118,9 @@ warn_unused_configs = true
 line-length = 120
 target-version = "py310"
 src = ["survarena", "tests", "scripts"]
+
+[tool.uv]
+required-version = "==0.12.8"
+
+[tool.uv.dependency-groups]
+docs = { requires-python = ">=3.11" }

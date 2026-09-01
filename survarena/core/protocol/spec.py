@@ -61,7 +61,10 @@ ALLOWED_COMPARISON_MODES = frozenset({"no_hpo", "hpo"})
 # The single-event right-censored task this benchmark is scoped to (plan §0).
 EXPECTED_TASK_TYPE = "right_censored_survival"
 
-_EMPTY_MAP: Mapping[str, Any] = MappingProxyType({})
+
+def _empty_map() -> Mapping[str, Any]:
+    return MappingProxyType({})
+
 
 # Known top-level keys per (sub-)spec. Anything outside these sets is preserved
 # in the matching ``raw_extra`` field instead of crashing the parser.
@@ -155,8 +158,8 @@ class MethodOverride:
 
     enabled: bool = False
     search_space: Any = None
-    default_params: Mapping[str, Any] = _EMPTY_MAP
-    raw_extra: Mapping[str, Any] = _EMPTY_MAP
+    default_params: Mapping[str, Any] = field(default_factory=_empty_map)
+    raw_extra: Mapping[str, Any] = field(default_factory=_empty_map)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None) -> MethodOverride:
@@ -190,7 +193,7 @@ class AutoGluonSpec:
     num_bag_folds: int = 0
     num_stack_levels: int = 0
     refit_full: bool = False
-    raw_extra: Mapping[str, Any] = _EMPTY_MAP
+    raw_extra: Mapping[str, Any] = field(default_factory=_empty_map)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None) -> AutoGluonSpec:
@@ -231,8 +234,8 @@ class HpoSpec:
     sampler: str = ""
     pruner: str = ""
     n_startup_trials: int = 0
-    method_overrides: Mapping[str, MethodOverride] = _EMPTY_MAP
-    raw_extra: Mapping[str, Any] = _EMPTY_MAP
+    method_overrides: Mapping[str, MethodOverride] = field(default_factory=_empty_map)
+    raw_extra: Mapping[str, Any] = field(default_factory=_empty_map)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None) -> HpoSpec:
@@ -278,7 +281,7 @@ class ExportsSpec:
 
     profile: str = ""
     manuscript_artifact_layout: str = ""
-    raw_extra: Mapping[str, Any] = _EMPTY_MAP
+    raw_extra: Mapping[str, Any] = field(default_factory=_empty_map)
 
     @classmethod
     def from_mapping(cls, data: Mapping[str, Any] | None) -> ExportsSpec:
@@ -333,7 +336,7 @@ class ProtocolSpec:
     methods: tuple[str, ...] = ()
     notes: str = ""
     protocol_version: str = PROTOCOL_VERSION
-    raw_extra: Mapping[str, Any] = _EMPTY_MAP
+    raw_extra: Mapping[str, Any] = field(default_factory=_empty_map)
     #: Human-readable problems detected while *parsing* the mapping -- e.g. a
     #: malformed sub-block that was leniently coerced to empty (fix F). Surfaced
     #: by :meth:`validate` so ``require_valid``/strict parse reject them; it is
