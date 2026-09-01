@@ -18,9 +18,9 @@
 
 - [x] **STAT-01**: A user receives pairwise win rates computed only from exactly matched dataset, split, seed, and comparison-arm cells.
 - [x] **STAT-02**: A user receives method ranks on a method-within-dataset or method-within-matched-split scale, never a pooled fold-times-method scale.
-- [ ] **STAT-03**: Cross-dataset pairwise significance tests use one paired aggregate effect per dataset and report the dataset count as the inferential sample size.
+- [x] **STAT-03**: Cross-dataset pairwise significance tests use one paired aggregate effect per dataset and report the dataset count as the inferential sample size.
 - [x] **STAT-04**: Every headline comparison declares and enforces a complete common-support dataset block before methods are ranked or tested.
-- [ ] **STAT-05**: Friedman/Nemenyi or replacement post-hoc analysis is only applied when its block assumptions hold; incomplete blocks fail closed or use a documented appropriate method.
+- [x] **STAT-05**: Friedman/Nemenyi or replacement post-hoc analysis is only applied when its block assumptions hold; incomplete blocks fail closed or use a documented appropriate method.
 - [x] **STAT-06**: A user can inspect attempt coverage, success, invalid prediction, fallback, timeout, and failure rates separately from conditional performance.
 - [x] **STAT-07**: Dataset-level effect estimates and uncertainty give equal declared weight to benchmark datasets unless an alternative weighting policy is explicitly versioned.
 
@@ -111,9 +111,9 @@
 | BASE-04 | Phase 1 | Complete |
 | STAT-01 | Phase 2 | Complete |
 | STAT-02 | Phase 2 | Complete |
-| STAT-03 | Phase 2 | Pending |
+| STAT-03 | Phase 2 | Complete |
 | STAT-04 | Phase 2 | Complete |
-| STAT-05 | Phase 2 | Pending |
+| STAT-05 | Phase 2 | Complete |
 | STAT-06 | Phase 2 | Complete |
 | STAT-07 | Phase 2 | Complete |
 | METR-01 | Phase 2 | Pending |
