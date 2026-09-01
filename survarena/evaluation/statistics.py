@@ -1,5 +1,11 @@
 from __future__ import annotations
 
+from survarena.evaluation._comparison import (
+    ComparisonPopulation,
+    build_comparison_population,
+    coverage_summary,
+    dataset_method_scores,
+)
 from survarena.evaluation._metric_stats import (
     MAXIMIZE_METRICS,
     MINIMIZE_METRICS,
@@ -25,10 +31,14 @@ __all__ = [
     "_holm_correction",
     "_paired_rating_rows",
     "_rating_from_score",
+    "ComparisonPopulation",
     "add_dataset_ranks",
     "aggregate_rank_summary",
+    "build_comparison_population",
     "bootstrap_metric_ci",
+    "coverage_summary",
     "critical_difference_summary",
+    "dataset_method_scores",
     "elo_ratings",
     "failure_summary",
     "metric_direction",
