@@ -1,59 +1,49 @@
 # SurvArena Project State
 
-SurvArena is being narrowed to a manuscript-grade benchmark toolkit for
-right-censored tabular survival analysis. The retained benchmark contract is a
-single config-driven evidence path:
+**Status date:** 2026-08-31
 
-- config: `configs/benchmark/manuscript_v1.yaml`
-- datasets: `support`, `metabric`, `nwtco`, `aids`, `gbsg2`, `flchain`, `whas500`
-- methods: the native manuscript portfolio plus discrete-hazard foundation
-  adapters `tabpfn_survival`, `tabicl_survival`, `tabm_survival`, and
-  `realtabpfn_survival`
-- mode: `no_hpo`
-- geometry: 5 folds x 3 repeats per dataset/method pair
-- artifact policy: compact CSV outputs and one retained manuscript Elo/report
-  evidence bundle under `results/manuscript_grade/clinical_no_hpo/elo/`
+**Software milestone:** `v2.0 Verified Benchmark Kernel`
 
-Retired benchmark surfaces include smoke, standard, local-HPO, cloud-HPO,
-foundation-only, KKBox, XGBSE, and separate foundation Elo configs.
-Those paths should not be cited as maintained evidence or used as defaults.
+**First citable protocol target:** `survbench-1.0-rc1`
 
-## Current Evidence
+**Roadmap:** [`.planning/ROADMAP.md`](.planning/ROADMAP.md)
 
-The current-default clinical manuscript no-HPO matrix is complete: 2,835
-successful fold rows across 7 datasets, 27 methods, and 15 splits per
-dataset/method pair. The canonical discrete-hazard foundation adapters are
-included under the bounded CPU manuscript settings recorded in
-`configs/benchmark/manuscript_v1.yaml`.
+SurvArena is a Python benchmark toolkit for single-event, right-censored tabular survival analysis. The v2 objective is one fair, statistically defensible, provenance-complete benchmark run whose compact canonical result collection can regenerate every comparison and report.
 
-The current-default genomics no-HPO matrix has complete attempt coverage across
-all 135 dataset-method cells. Of those, 105 cells have 15 / 15 successful folds,
-7 are partially successful, and 23 have attempted failure evidence for all 15
-folds. The 1,619 successful fold rows support eligibility-complete comparisons
-while the failed cells remain part of the practitioner-facing reliability
-evidence.
+## Current Verified Behavior
 
-The broader publication-readiness gate lives in
-`docs/manuscript_publishability.md` and can be regenerated with
-`python scripts/audit_manuscript_publishability.py`. The current audit verdict
-remains false for the full no-HPO-plus-HPO manuscript program because clinical
-HPO is missing and genomics does not have universal successful coverage. That
-does not invalidate the completed no-HPO attempt matrix or its
-eligibility-filtered statistical report.
+The 2026-08-31 local development environment has executed the full package test suite, Ruff, an explicit incremental mypy scope, and package byte-compilation. The strict manuscript audit now executes without the optional `tabulate` dependency and returns an actionable blocker verdict rather than crashing. Split-cache mismatches remain fail-closed and report field differences, the manifest path, and the explicit `--regenerate-splits` recovery flag.
 
-The retained Elo/reporting bundle now contains metric-specific Elo ladders,
-paired win-rate tables, rank summaries, coverage summaries, method summaries,
-figures, and `metric_suite_index.csv`. Calibration reporting uses absolute-error
-metrics; raw slope/intercept diagnostics and old decision-curve aliases are no
-longer retained in exported metric bundles.
+Phase 1 establishes code-health and semantic-smoke evidence only. It does not validate the manuscript's statistical conclusions or make historical result matrices citable.
 
-## Remaining Work
+## Evidence Validity
 
-- keep the metric-suite Elo bundle synchronized with any new manuscript result
-  artifacts
-- run `python scripts/audit_manuscript_publishability.py --strict` before
-  treating local artifacts as publication-ready
-- rerun calibration-sensitive foundation checks after adapter changes
-- keep code-review-graph updated after cleanup passes
-- avoid reintroducing parallel benchmark YAMLs unless the protocol itself
-  changes enough to justify a new maintained track
+Retained result roots may demonstrate structural coverage, but all clinical/genomics no-HPO, HPO, foundation, Elo, table, and figure artifacts generated before the current behavior-changing fixes are **invalidated as current release evidence**. They must not support leaderboard or manuscript claims for `survbench-1.0-rc1`.
+
+The invalidating changes include training/refit semantics, arm parity, group-aware splitting, split fingerprints, metric eligibility, calibration handling, ranking/significance logic, and failure filtering. Regeneration is deliberately deferred until the scientific comparison kernel, execution boundaries, typed protocol, and canonical result store are verified; regenerating earlier would produce another expensive transitional matrix.
+
+Run the release audit with:
+
+```bash
+python scripts/audit_manuscript_publishability.py --strict
+```
+
+Exit code 2 is currently expected and means named release-evidence blockers remain. A traceback is a code failure.
+
+## Remaining v2 Work
+
+1. **Scientific comparison kernel:** exact matched-cell pairing, dataset-level inference, complete common support, metric reference/edge tests, and prediction eligibility.
+2. **Execution and data safety:** killable process trees, separated budgets/RNG domains, group-safe inner validation, run-scoped telemetry, and adapter capability conformance.
+3. **Authoritative protocol and results:** make strict typed recipes and one conflict-rejecting SQLite collection the live runner path.
+4. **Representative protocol pilot:** freeze 12–18 curated tasks and a balanced 12–16 method roster, then validate default/tuned/ensemble semantics on sentinels.
+5. **Release reproduction:** hashed dependency lock, digest-pinned Linux/amd64 image, clean wheel/container gates, regenerated evidence, and independent reproduction.
+
+## What Is Not Yet Proven
+
+- Hosted CI has been defined but no successful remote run is claimed here.
+- The current Dockerfile and dependency resolution are not a locked canonical environment.
+- Pairwise win rates and cross-dataset inference still require Phase 2 corrections.
+- Typed `ProtocolSpec`/`ResultStore` infrastructure is not yet the authoritative execution path.
+- No retained leaderboard, Elo rating, statistical table, or manuscript figure is current citable evidence.
+
+See [the verification status](docs/test_status.md) for exact executed commands and [CI/reproducibility](docs/ci_and_reproducibility.md) for configured-versus-observed automation.
