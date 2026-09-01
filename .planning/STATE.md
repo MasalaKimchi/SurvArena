@@ -2,13 +2,13 @@
 gsd_state_version: 1.0
 milestone: v2.0
 milestone_name: Verified Benchmark Kernel
-status: planning
+status: executing
 last_updated: "2026-09-01T04:16:52.825Z"
 last_activity: 2026-09-01
 progress:
   total_phases: 6
   completed_phases: 1
-  total_plans: 3
+  total_plans: 6
   completed_plans: 3
   percent: 17
 ---
@@ -17,9 +17,9 @@ progress:
 
 ## Current Position
 
-Phase: 2 (Scientific Comparison Kernel) — READY TO PLAN
-Plan: Not started
-Status: Ready to plan
+Phase: 2 (Scientific Comparison Kernel) — EXECUTING
+Plan: 1 of 3
+Status: Ready to execute
 Last activity: 2026-09-01
 
 ## Project Reference
@@ -40,9 +40,9 @@ See: `.planning/PROJECT.md` (updated 2026-08-31)
 
 ### Blockers
 
-- Existing comparison/ranking logic is not yet safe for citable claims: matched-cell pairing, dataset-level inference, common support, failure eligibility, and independent metric references remain unverified.
+- Existing comparison/ranking logic is not yet safe for citable claims until Plans 02-01 through 02-03 pass verification.
 
 ### Todos
 
-- Plan Phase 2 from constructed pairing/ranking counterexamples and independent survival-metric reference fixtures.
+- Execute Plans 02-01 through 02-03 and verify constructed pairing/ranking counterexamples plus independent survival-metric references.
 - Keep retained pre-fix benchmark matrices invalidated until Phases 2–6 complete.
