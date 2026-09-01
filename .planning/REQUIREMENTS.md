@@ -26,11 +26,11 @@
 
 ### Metric and Prediction Verification
 
-- [ ] **METR-01**: Harrell C, Uno C, Brier/IBS, and cumulative/dynamic AUC pass deterministic differential tests against an independent reference implementation across normal and edge-case fixtures.
-- [ ] **METR-02**: Every dataset release declares fixed evaluation horizons/windows and an IPCW support policy based on estimable censoring support; used support is recorded per result.
-- [ ] **METR-03**: Risk and survival predictions are rejected or marked ineligible when shape, finiteness, time grid, orientation, probability bounds, or survival monotonicity contracts fail.
-- [ ] **METR-04**: Any calibration metric included in the release has an independent reference/golden test and explicitly supports censored observations; D-calibration is available for full-distribution-capable methods.
-- [ ] **METR-05**: A method is only scored on metrics supported by its declared prediction capabilities; single-horizon or fallback outputs cannot silently enter full-distribution headline metrics.
+- [x] **METR-01**: Harrell C, Uno C, Brier/IBS, and cumulative/dynamic AUC pass deterministic differential tests against an independent reference implementation across normal and edge-case fixtures.
+- [x] **METR-02**: Every dataset release declares fixed evaluation horizons/windows and an IPCW support policy based on estimable censoring support; used support is recorded per result.
+- [x] **METR-03**: Risk and survival predictions are rejected or marked ineligible when shape, finiteness, time grid, orientation, probability bounds, or survival monotonicity contracts fail.
+- [x] **METR-04**: Any calibration metric included in the release has an independent reference/golden test and explicitly supports censored observations; D-calibration is available for full-distribution-capable methods.
+- [x] **METR-05**: A method is only scored on metrics supported by its declared prediction capabilities; single-horizon or fallback outputs cannot silently enter full-distribution headline metrics.
 
 ### Execution and Data Safety
 
@@ -116,11 +116,11 @@
 | STAT-05 | Phase 2 | Complete |
 | STAT-06 | Phase 2 | Complete |
 | STAT-07 | Phase 2 | Complete |
-| METR-01 | Phase 2 | Pending |
-| METR-02 | Phase 2 | Pending |
-| METR-03 | Phase 2 | Pending |
-| METR-04 | Phase 2 | Pending |
-| METR-05 | Phase 2 | Pending |
+| METR-01 | Phase 2 | Complete |
+| METR-02 | Phase 2 | Complete |
+| METR-03 | Phase 2 | Complete |
+| METR-04 | Phase 2 | Complete |
+| METR-05 | Phase 2 | Complete |
 | EXEC-01 | Phase 3 | Pending |
 | EXEC-02 | Phase 3 | Pending |
 | EXEC-03 | Phase 3 | Pending |

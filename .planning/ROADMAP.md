@@ -11,7 +11,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 ## Phases
 
 - [x] **Phase 1: Truthful Green Baseline** — Restore executable, honest development and release gates. (completed 2026-09-01)
-- [ ] **Phase 2: Scientific Comparison Kernel** — Make pairing, ranks, support, inference, metrics, and prediction eligibility scientifically defensible.
+- [x] **Phase 2: Scientific Comparison Kernel** — Make pairing, ranks, support, inference, metrics, and prediction eligibility scientifically defensible. (completed 2026-09-01)
 - [ ] **Phase 3: Execution and Data Safety** — Enforce group-safe validation and killable, resource-bounded, deterministic run units.
 - [ ] **Phase 4: Authoritative Protocol and Results** — Route the live runner through strict typed contracts and one immutable provenance-complete collection.
 - [ ] **Phase 5: Representative Protocol Pilot** — Freeze the curated core suite/roster and validate default, tuned, and ensemble protocol semantics on sentinel runs.
@@ -56,7 +56,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 4. Metric edge fixtures agree with independent references within declared tolerances and every result records its evaluation window/IPCW support.
 5. Invalid or unsupported prediction bundles are rejected before scoring and cannot enter full-distribution headline tables.
 
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans executed
 
 - Wave 1 — `02-01`: Establish exact comparison cells, complete common support, dataset ranks/wins, reliability, and equal-weight ratings.
 - Wave 2 — `02-02`: Make pairwise and multiple-method inference dataset-level, complete-block, and equally weighted.
@@ -153,7 +153,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Truthful Green Baseline | v2.0 | 3/3 | Complete    | 2026-09-01 |
-| 2. Scientific Comparison Kernel | v2.0 | 2/3 | In Progress|  |
+| 2. Scientific Comparison Kernel | v2.0 | 3/3 | Complete | 2026-09-01 |
 | 3. Execution and Data Safety | v2.0 | 0/TBD | Not started | - |
 | 4. Authoritative Protocol and Results | v2.0 | 0/TBD | Not started | - |
 | 5. Representative Protocol Pilot | v2.0 | 0/TBD | Not started | - |
