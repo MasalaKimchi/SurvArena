@@ -28,12 +28,13 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** BASE-01, BASE-02, BASE-03, BASE-04
 
 **Success Criteria:**
+
 1. A contributor can run the declared lint, static-type, test, and core smoke commands with no failures.
 2. The strict manuscript/release audit runs from declared dependencies and returns an actionable verdict.
 3. Legacy split caches produce an explicit compatibility/migration path rather than blocking normal operation without guidance.
 4. Maintained status documentation no longer presents invalidated historical results or constrained-environment checks as current release evidence.
 
-**Plans:** 3 plans across 2 waves.
+**Plans:** 1/3 plans executed
 
 - Wave 1 — `01-01`: Repair artifact/resume/process/Parquet contracts and establish incremental mypy.
 - Wave 1 — `01-02`: Make the release audit self-contained and split-cache mismatch diagnostics actionable.
@@ -48,6 +49,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** STAT-01, STAT-02, STAT-03, STAT-04, STAT-05, STAT-06, STAT-07, METR-01, METR-02, METR-03, METR-04, METR-05
 
 **Success Criteria:**
+
 1. Constructed pairing counterexamples return exactly the matched win counts/ranks and cannot create Cartesian cross-split comparisons.
 2. Pairwise and multiple-method inference reports datasets as the experimental sample and fails closed when common-support/block assumptions do not hold.
 3. Performance, coverage, fallback, invalid-output, timeout, and failure views are separately queryable and a failure cannot improve headline eligibility.
@@ -65,6 +67,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** EXEC-01, EXEC-02, EXEC-03, EXEC-04, EXEC-05, DATA-01, DATA-02, DATA-03, MODL-01
 
 **Success Criteria:**
+
 1. A deliberately hanging model and its descendants are terminated within the configured budget/grace period, and later cells run in clean resources.
 2. Groups are absent from model features and disjoint across outer CV, inner HPO CV, and early-stopping validation.
 3. Split manifests detect any material dataset/group/row-order/algorithm change and reject folds with inadequate events or censoring.
@@ -82,6 +85,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** CORE-01, CORE-02, CORE-03, STORE-01, STORE-02, STORE-03, STORE-04, STORE-05
 
 **Success Criteria:**
+
 1. Ambiguous or incoherent configurations fail before any dataset/model work, and the runner no longer relies on parallel legacy policy flags.
 2. Material changes to code, data, methods, splits, environment, hardware tier, or protocol change the release recipe/run identity.
 3. Identical result appends are idempotent and provenance conflicts are rejected without overwriting prior evidence.
@@ -99,6 +103,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** SUIT-01, SUIT-02, SUIT-03, PROT-01, PROT-02, PROT-03, PROT-04, PROT-05, PROT-06
 
 **Success Criteria:**
+
 1. Every core dataset has a curation decision, frozen checksum/version, license, domain, event/follow-up definition, group structure, and related-task declaration.
 2. The 12–18 task suite spans at least four domains and relevant size/dimensionality/censoring regimes without counting related cohort variants as independent inference units.
 3. The balanced core roster has capability-verified default/tuned arm semantics and explicit comparable compute/refit policies.
@@ -116,6 +121,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 **Requirements:** REPR-01, REPR-02, REPR-03, REPR-04, REPR-05, REPR-06
 
 **Success Criteria:**
+
 1. CI builds the hashed-lock, digest-pinned Linux/amd64 environment and installs/tests a non-editable wheel inside it.
 2. Pull-request and release pipelines enforce the declared fast/heavy verification tiers, including semantic benchmark and report assertions.
 3. Two clean executions reproduce recipe, split, and result identities and satisfy declared metric/determinism tolerances.
@@ -142,7 +148,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Truthful Green Baseline | v2.0 | 0/3 | Planned | - |
+| 1. Truthful Green Baseline | v2.0 | 1/3 | In Progress|  |
 | 2. Scientific Comparison Kernel | v2.0 | 0/TBD | Not started | - |
 | 3. Execution and Data Safety | v2.0 | 0/TBD | Not started | - |
 | 4. Authoritative Protocol and Results | v2.0 | 0/TBD | Not started | - |
