@@ -31,7 +31,7 @@ PASSED — all 12 Phase 2 requirements are implemented and have executable evide
 ## Automated Evidence
 
 - Clean committed snapshot: **286 passed, 6 skipped**.
-- Dirty workspace integration snapshot (includes unrelated user tests): **290 passed, 6 skipped** before final review fixes; affected post-review suites: **103 passed** plus dedicated post-hoc fixtures.
+- Final workspace integration snapshot (includes unrelated user tests): **293 passed, 6 skipped**; affected post-review suites: **103 passed** plus dedicated post-hoc fixtures.
 - Clean snapshot Ruff: **passed**.
 - Clean snapshot compileall: **passed**.
 - Clean snapshot bounded mypy: **11 source files, no issues**.

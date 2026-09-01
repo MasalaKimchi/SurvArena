@@ -60,7 +60,7 @@ The benchmark now validates every prediction bundle before scoring, fixes reques
 ## Verification
 
 - Phase-affected integration suite: **116 passed**.
-- Full repository suite: **290 passed, 6 skipped**.
+- Final workspace repository suite: **293 passed, 6 skipped**.
 - Workspace Ruff, compileall, and bounded mypy (11 source files): **passed**.
 - Independent differential tolerance: **1e-6** for Harrell C, Uno C, Brier, IBS, and time-dependent AUC.
 - WHAS500/CoxPH semantic runner smoke: **5/5 successful**, fixed horizons `(21.0, 166.0, 613.0)`, finite Uno/Harrell in every fold, full-distribution eligible in every fold.
