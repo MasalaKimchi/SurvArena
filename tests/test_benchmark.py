@@ -1078,9 +1078,10 @@ def test_benchmark_execution_defaults_to_serial(tmp_path: Path, monkeypatch) -> 
 
     class RaisingExecutor:
         def __init__(self, *_args, **_kwargs) -> None:
-            raise AssertionError("ThreadPoolExecutor should not be used for default serial execution")
+            raise AssertionError("No executor should be used for default serial execution")
 
     monkeypatch.setattr(runner, "ThreadPoolExecutor", RaisingExecutor)
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", RaisingExecutor)
     cfg = _resume_benchmark_cfg()
     cfg["comparison_modes"] = ["no_hpo"]
 
@@ -1092,6 +1093,8 @@ def test_benchmark_execution_defaults_to_serial(tmp_path: Path, monkeypatch) -> 
 def test_benchmark_execution_uses_configured_n_jobs(tmp_path: Path, monkeypatch) -> None:
     calls = {"count": 0}
     captured_workers: list[int] = []
+    mapped_functions: list[object] = []
+    mapped_unit_counts: list[int] = []
     _install_common_monkeypatches(monkeypatch, calls)
     monkeypatch.setattr("survarena.data.splitters.load_or_create_splits", lambda **_kwargs: _single_split() * 2)
 
@@ -1106,9 +1109,12 @@ def test_benchmark_execution_uses_configured_n_jobs(tmp_path: Path, monkeypatch)
             return None
 
         def map(self, func, units):
-            return [func(unit) for unit in units]
+            materialized_units = list(units)
+            mapped_functions.append(func)
+            mapped_unit_counts.append(len(materialized_units))
+            return [func(unit) for unit in materialized_units]
 
-    monkeypatch.setattr(runner, "ThreadPoolExecutor", RecordingExecutor)
+    monkeypatch.setattr(runner, "ProcessPoolExecutor", RecordingExecutor)
     cfg = _resume_benchmark_cfg()
     cfg["comparison_modes"] = ["no_hpo"]
     cfg["execution"] = {"n_jobs": 2}
@@ -1117,6 +1123,8 @@ def test_benchmark_execution_uses_configured_n_jobs(tmp_path: Path, monkeypatch)
 
     assert calls["count"] == 2
     assert captured_workers == [2]
+    assert mapped_functions == [runner._evaluate_run_unit]
+    assert mapped_unit_counts == [2]
 
 
 def test_benchmark_execution_rejects_invalid_n_jobs() -> None:
