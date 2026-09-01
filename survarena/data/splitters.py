@@ -1,13 +1,20 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 
 import numpy as np
-from sklearn.model_selection import StratifiedKFold, train_test_split
+import pandas as pd
+from sklearn.model_selection import GroupKFold, GroupShuffleSplit, StratifiedKFold, train_test_split
+
+try:  # StratifiedGroupKFold is not present in older pinned sklearn versions.
+    from sklearn.model_selection import StratifiedGroupKFold
+except ImportError:  # pragma: no cover - depends on the pinned sklearn version.
+    StratifiedGroupKFold = None
 
 
 _SPLIT_MANIFEST_FILENAME = "manifest.json"
@@ -56,6 +63,53 @@ def _event_fingerprint(event: np.ndarray) -> str:
     return sha256(encoded).hexdigest()
 
 
+def _content_fingerprint(values: object) -> str:
+    """Deterministic, row-order-sensitive sha256 of array-like / DataFrame content.
+
+    M5: splits are stored as *positional* indices, so the reuse fingerprint must pin the
+    actual data (feature matrix and time), not just the event vector. Otherwise permuted or
+    silently-mutated rows reuse stale indices. Hashing is row-order-sensitive (a permutation
+    changes the digest) and NaN-safe (NaN has a stable IEEE-754 bit pattern; object columns
+    map NaN/None to a sentinel token). Numeric columns are hashed from their contiguous bytes;
+    non-numeric columns fall back to a canonical string representation.
+    """
+    hasher = sha256()
+
+    def _update_numeric(array: np.ndarray) -> None:
+        contiguous = np.ascontiguousarray(array)
+        hasher.update(str(contiguous.dtype).encode("utf-8"))
+        hasher.update(str(contiguous.shape).encode("utf-8"))
+        hasher.update(contiguous.tobytes())
+
+    def _update_object(series: pd.Series) -> None:
+        # Canonical string form; NaN/None collapse to a fixed sentinel so hashing never crashes.
+        def _canonical(value: object) -> str:
+            if value is None or (isinstance(value, float) and math.isnan(value)):
+                return "\x00__nan__"
+            return str(value)
+
+        text = "\x01".join(series.astype("object").map(_canonical))
+        hasher.update(text.encode("utf-8"))
+
+    if isinstance(values, pd.DataFrame):
+        # Column order is part of the identity of the positional index layout.
+        hasher.update("\x02".join(str(col) for col in values.columns).encode("utf-8"))
+        for column in values.columns:
+            series = values[column]
+            if pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series):
+                _update_numeric(series.to_numpy(dtype=np.float64))
+            else:
+                _update_object(series)
+            hasher.update(b"\x03")
+    else:
+        array = np.asarray(values)
+        if array.dtype.kind in ("f", "i", "u", "b"):
+            _update_numeric(array)
+        else:
+            _update_object(pd.Series(array.reshape(-1)))
+    return hasher.hexdigest()
+
+
 def _expected_split_manifest_payload(
     *,
     split_strategy: str,
@@ -64,6 +118,8 @@ def _expected_split_manifest_payload(
     seeds: list[int],
     outer_folds: int,
     outer_repeats: int,
+    X: object | None = None,
+    time: np.ndarray | None = None,
 ) -> dict:
     payload: dict[str, object] = {
         "version": _SPLIT_MANIFEST_VERSION,
@@ -72,6 +128,11 @@ def _expected_split_manifest_payload(
         "event_fingerprint": _event_fingerprint(event),
         "event_rate": float(np.mean(event)),
         "seeds": [int(seed) for seed in seeds],
+        # M5: pin the feature matrix and time vector so reusing positional indices against
+        # permuted/mutated data triggers the reuse-mismatch path. None when the caller has not
+        # yet wired X/time (older manifests also lack these keys -> dict inequality -> mismatch).
+        "x_fingerprint": None if X is None else _content_fingerprint(X),
+        "time_fingerprint": None if time is None else _content_fingerprint(np.asarray(time, dtype=float)),
     }
     if split_strategy == "repeated_nested_cv":
         payload.update(
@@ -167,6 +228,7 @@ def create_repeated_nested_outer_splits(
     seeds: list[int],
     outer_folds: int,
     repeats: int,
+    groups: np.ndarray | None = None,
 ) -> list[SplitDefinition]:
     if outer_folds < 2:
         raise ValueError("outer_folds must be >= 2 for repeated nested CV.")
@@ -179,10 +241,23 @@ def create_repeated_nested_outer_splits(
 
     splits: list[SplitDefinition] = []
     indices = np.arange(n_samples)
+    groups_arr = None if groups is None else np.asarray(groups)
 
     for repeat, seed in enumerate(seeds[:repeats]):
-        skf = StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=seed)
-        for fold, (train_idx, test_idx) in enumerate(skf.split(indices, event)):
+        if groups_arr is not None:
+            # H6: group-aware outer CV so no group_id (e.g. subject) spans multiple folds.
+            if StratifiedGroupKFold is not None:
+                # Preferred: keep event stratification AND group-disjointness.
+                splitter = StratifiedGroupKFold(n_splits=outer_folds, shuffle=True, random_state=seed)
+            else:
+                # Fallback for older sklearn: group-disjoint folds without event stratification.
+                splitter = GroupKFold(n_splits=outer_folds)
+            fold_iter = splitter.split(indices, event, groups_arr)
+        else:
+            # No groups: preserve the exact prior StratifiedKFold behavior.
+            splitter = StratifiedKFold(n_splits=outer_folds, shuffle=True, random_state=seed)
+            fold_iter = splitter.split(indices, event)
+        for fold, (train_idx, test_idx) in enumerate(fold_iter):
             split_id = f"repeat_{repeat}_fold_{fold}"
             splits.append(
                 SplitDefinition(
@@ -204,24 +279,38 @@ def create_fixed_split(
     seed: int,
     train_ratio: float = 0.7,
     val_ratio: float = 0.15,
+    groups: np.ndarray | None = None,
 ) -> list[SplitDefinition]:
     if train_ratio + val_ratio >= 1.0:
         raise ValueError("train_ratio + val_ratio must be < 1.0")
 
     indices = np.arange(n_samples)
-    train_idx, holdout_idx = train_test_split(
-        indices,
-        test_size=1.0 - train_ratio,
-        stratify=event,
-        random_state=seed,
-    )
     val_size_in_holdout = val_ratio / (1.0 - train_ratio)
-    val_idx, test_idx = train_test_split(
-        holdout_idx,
-        test_size=1.0 - val_size_in_holdout,
-        stratify=event[holdout_idx],
-        random_state=seed,
-    )
+    if groups is not None:
+        # H6: group-disjoint holdout so a subject cannot land in both train and test/val.
+        groups_arr = np.asarray(groups)
+        outer = GroupShuffleSplit(n_splits=1, test_size=1.0 - train_ratio, random_state=seed)
+        train_pos, holdout_pos = next(outer.split(indices, event, groups_arr))
+        train_idx = indices[train_pos]
+        holdout_idx = indices[holdout_pos]
+        inner = GroupShuffleSplit(n_splits=1, test_size=1.0 - val_size_in_holdout, random_state=seed)
+        val_pos, test_pos = next(inner.split(holdout_idx, event[holdout_idx], groups_arr[holdout_idx]))
+        val_idx = holdout_idx[val_pos]
+        test_idx = holdout_idx[test_pos]
+    else:
+        # No groups: preserve the exact prior event-stratified train_test_split behavior.
+        train_idx, holdout_idx = train_test_split(
+            indices,
+            test_size=1.0 - train_ratio,
+            stratify=event,
+            random_state=seed,
+        )
+        val_idx, test_idx = train_test_split(
+            holdout_idx,
+            test_size=1.0 - val_size_in_holdout,
+            stratify=event[holdout_idx],
+            random_state=seed,
+        )
     return [
         SplitDefinition(
             split_id="fixed_split_0",
@@ -246,7 +335,16 @@ def load_or_create_splits(
     outer_folds: int = 5,
     outer_repeats: int = 3,
     regenerate_on_mismatch: bool = False,
+    groups: np.ndarray | None = None,
+    X: object | None = None,
+    time: np.ndarray | None = None,
 ) -> list[SplitDefinition]:
+    # H6/M5: `groups`, `X` and `time` are optional with backward-compatible defaults so existing
+    # callers behave identically. The benchmark runner and compare API now pass groups (from
+    # metadata.group_col) for group-disjoint splitting, and X/time for content-aware split-cache
+    # invalidation.
+    groups_arr = None if groups is None else np.asarray(groups)
+
     def _validate_split_integrity(splits_to_check: list[SplitDefinition], n_rows: int) -> None:
         seen_split_ids: set[str] = set()
         for split in splits_to_check:
@@ -276,33 +374,55 @@ def load_or_create_splits(
                 if np.intersect1d(test_idx, val_idx).size > 0:
                     raise ValueError(f"Test/validation overlap detected for {split.split_id}")
 
+            # H6: when groups are available, no group_id may straddle train/test/val partitions.
+            if groups_arr is not None:
+                train_groups = set(np.unique(groups_arr[train_idx]).tolist())
+                test_groups = set(np.unique(groups_arr[test_idx]).tolist())
+                if train_groups & test_groups:
+                    raise ValueError(f"Train/test group overlap detected for {split.split_id}")
+                if val_idx is not None:
+                    val_groups = set(np.unique(groups_arr[val_idx]).tolist())
+                    if train_groups & val_groups:
+                        raise ValueError(f"Train/validation group overlap detected for {split.split_id}")
+                    if test_groups & val_groups:
+                        raise ValueError(f"Test/validation group overlap detected for {split.split_id}")
+
     def _validate_event_stratification(
         splits_to_check: list[SplitDefinition],
         event_labels: np.ndarray,
         *,
-        tolerance: float = 0.03,
+        abs_floor: float = 0.03,
     ) -> None:
         overall_rate = float(np.mean(event_labels))
+
+        def _allowed_deviation(n_fold: int) -> float:
+            # L3: a fixed absolute tolerance (old 0.03) is too loose at low event rates and too
+            # strict on tiny folds. Allow the largest of:
+            #   - a modest absolute floor (`abs_floor`),
+            #   - a relative tolerance (25% of the overall event rate), and
+            #   - 4 binomial sampling standard errors for this fold size
+            #     (4 * sqrt(p*(1-p)/n_fold)) so small folds get a wider, size-aware allowance.
+            # This still fires on genuinely degenerate folds (e.g. ~0 events) while tolerating
+            # statistically-normal stratification drift.
+            relative = 0.25 * overall_rate
+            standard_error = math.sqrt(max(overall_rate * (1.0 - overall_rate), 0.0) / max(n_fold, 1))
+            return max(abs_floor, relative, 4.0 * standard_error)
+
+        def _check(name: str, idx: np.ndarray, split_id: str) -> None:
+            n_fold = int(np.asarray(idx).size)
+            rate = float(np.mean(event_labels[idx]))
+            allowed = _allowed_deviation(n_fold)
+            if abs(rate - overall_rate) > allowed:
+                raise ValueError(
+                    f"{name} split is not event-stratified enough for {split_id}: "
+                    f"rate={rate:.4f}, overall_rate={overall_rate:.4f}, allowed_deviation={allowed:.4f}"
+                )
+
         for split in splits_to_check:
-            train_rate = float(np.mean(event_labels[split.train_idx]))
-            test_rate = float(np.mean(event_labels[split.test_idx]))
-            if abs(train_rate - overall_rate) > tolerance:
-                raise ValueError(
-                    f"Train split is not event-stratified enough for {split.split_id}: "
-                    f"train_rate={train_rate:.4f}, overall_rate={overall_rate:.4f}, tolerance={tolerance:.4f}"
-                )
-            if abs(test_rate - overall_rate) > tolerance:
-                raise ValueError(
-                    f"Test split is not event-stratified enough for {split.split_id}: "
-                    f"test_rate={test_rate:.4f}, overall_rate={overall_rate:.4f}, tolerance={tolerance:.4f}"
-                )
+            _check("Train", split.train_idx, split.split_id)
+            _check("Test", split.test_idx, split.split_id)
             if split.val_idx is not None:
-                val_rate = float(np.mean(event_labels[split.val_idx]))
-                if abs(val_rate - overall_rate) > tolerance:
-                    raise ValueError(
-                        f"Validation split is not event-stratified enough for {split.split_id}: "
-                        f"val_rate={val_rate:.4f}, overall_rate={overall_rate:.4f}, tolerance={tolerance:.4f}"
-                    )
+                _check("Validation", split.val_idx, split.split_id)
 
     manifest_payload = _expected_split_manifest_payload(
         split_strategy=split_strategy,
@@ -311,10 +431,15 @@ def load_or_create_splits(
         seeds=seeds,
         outer_folds=outer_folds,
         outer_repeats=outer_repeats,
+        X=X,
+        time=time,
     )
     manifest_path = _split_manifest_path(root, task_id)
     if manifest_path.exists():
         manifest = read_split_manifest(manifest_path)
+        # M5: dict equality includes the new x_fingerprint/time_fingerprint keys, so older
+        # manifests lacking them (or content-mismatched data) fall through to the reuse-mismatch
+        # path below rather than silently reusing stale positional indices.
         if manifest.get("manifest_payload") == manifest_payload:
             split_ids = [str(split_id) for split_id in manifest.get("split_ids", [])]
             loaded_splits = [read_split(_split_file_path(root, task_id, split_id)) for split_id in split_ids]
@@ -338,9 +463,10 @@ def load_or_create_splits(
             seeds=seeds,
             outer_folds=outer_folds,
             repeats=outer_repeats,
+            groups=groups_arr,
         )
     elif split_strategy == "fixed_split":
-        splits = create_fixed_split(n_samples=n_samples, event=event, seed=seeds[0])
+        splits = create_fixed_split(n_samples=n_samples, event=event, seed=seeds[0], groups=groups_arr)
     else:
         raise ValueError(f"Unsupported split strategy: {split_strategy}")
 
