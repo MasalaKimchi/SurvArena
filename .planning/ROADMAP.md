@@ -34,7 +34,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 3. Legacy split caches produce an explicit compatibility/migration path rather than blocking normal operation without guidance.
 4. Maintained status documentation no longer presents invalidated historical results or constrained-environment checks as current release evidence.
 
-**Plans:** 1/3 plans executed
+**Plans:** 2/3 plans executed
 
 - Wave 1 — `01-01`: Repair artifact/resume/process/Parquet contracts and establish incremental mypy.
 - Wave 1 — `01-02`: Make the release audit self-contained and split-cache mismatch diagnostics actionable.
@@ -148,7 +148,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 1. Truthful Green Baseline | v2.0 | 1/3 | In Progress|  |
+| 1. Truthful Green Baseline | v2.0 | 2/3 | In Progress|  |
 | 2. Scientific Comparison Kernel | v2.0 | 0/TBD | Not started | - |
 | 3. Execution and Data Safety | v2.0 | 0/TBD | Not started | - |
 | 4. Authoritative Protocol and Results | v2.0 | 0/TBD | Not started | - |
