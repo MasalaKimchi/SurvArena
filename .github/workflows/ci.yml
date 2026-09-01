@@ -1,0 +1,116 @@
+name: CI
+
+# v2 baseline continuous integration for SurvArena.
+# Four tiers, cheapest first:
+#   lint          - ruff only, one Python, seconds.
+#   type          - explicit incremental mypy kernel scope.
+#   import-smoke  - light deps only, guards the lazy `import survarena` + py3.10.
+#   test          - full editable install (torch/autogluon), the slow job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch)
+# so we don't queue redundant heavy `test` jobs.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: CI only reads the repository.
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: Lint (ruff)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Ruff only - no heavy deps. Pin to the same range as the `dev` extra
+      # in pyproject.toml so CI matches the local developer tool version.
+      - name: Install ruff
+        run: python -m pip install "ruff>=0.15,<0.16"
+      # Matches the documented command in README.md ("ruff check survarena tests scripts").
+      - name: Ruff check
+        run: ruff check survarena tests scripts
+
+  type:
+    name: Type (incremental kernel scope)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install declared type checker
+        run: python -m pip install "mypy==2.3.1"
+      - name: Mypy declared scope
+        run: >
+          python -m mypy
+          survarena/core
+          survarena/benchmark/resume.py
+          survarena/data/splitters.py
+          scripts/audit_manuscript_publishability.py
+
+  import-smoke:
+    name: Import smoke (light deps)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # Cheap regression guard for the lazy top-level import (survarena/__init__.py
+    # uses PEP 562 __getattr__) and Python 3.10 compatibility. We install ONLY a
+    # light runtime subset - deliberately NOT torch/autogluon - and never install
+    # the package itself, so `import survarena` must succeed purely on the lazy
+    # __init__. If this fails, the top-level import regressed (it started pulling
+    # the heavy dependency chain) - that is a real bug to fix in the package.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install light runtime subset (no torch/autogluon)
+        run: python -m pip install numpy pandas scipy scikit-learn pyyaml pyarrow
+      # `python -c` puts the current dir (repo root) on sys.path, so this imports
+      # the local ./survarena without a build/editable install.
+      - name: Import survarena lazily
+        run: python -c "import survarena; print(survarena.__all__)"
+
+  test:
+    name: Test (pytest)
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    # This job installs the full heavy stack (torch, autogluon, xgboost,
+    # catboost, scikit-survival, ...) via the editable `[dev]` install, so it is
+    # by far the slowest. Foundation extras are intentionally NOT installed here:
+    # they are optional and heavier, and the suite must pass without them.
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      - name: Install SurvArena with dev extras (heavy stack)
+        run: python -m pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest -q
+      - name: Compile package
+        run: python -m compileall -q survarena

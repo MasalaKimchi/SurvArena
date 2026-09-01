@@ -1,0 +1,101 @@
+name: Benchmark smoke
+
+# Seed of the "free CI as batch worker" idea from SURVARENA_REVAMP_PLAN.md:
+# GitHub Actions gives free linux/amd64 runners (~2-core / 7 GB, 6 h per job).
+# The long-term plan is a scheduled workflow that grinds shards of the benchmark
+# (dataset x method x fold), commits result rows back to the store, and doubles
+# as the canonical amd64 environment. This file is the first, tiny step.
+#
+# SAFE FOR NOW - manual only:
+#   * `workflow_dispatch` lets a maintainer trigger it by hand.
+#   * the `schedule` trigger is intentionally COMMENTED OUT so this never burns
+#     Actions minutes automatically. Enable it only once real sharding + a
+#     result merge-back path exist (see the revamp plan's roadmap).
+#
+# Heavy / foundation models (TabPFN, TabICL, Mitra, TabM, ...) stay OFF CI - they
+# belong to the community / self-hosted tier. This smoke job runs the single
+# smallest classical slice to prove the end-to-end `benchmark run` path works in
+# the canonical container.
+
+on:
+  workflow_dispatch:
+  # schedule:
+  #   - cron: "17 6 * * 1"  # ~weekly; enable only after sharding + result merge-back land
+
+permissions:
+  contents: read
+
+concurrency:
+  group: benchmark-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Smallest slice (whas500 / coxph / 1 seed)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+      # Core + dev stack only. No foundation extras: heavy models stay off CI.
+      - name: Install SurvArena with dev extras
+        run: python -m pip install -e ".[dev]"
+      # whas500 ships inside scikit-survival, so no external dataset download is
+      # needed. `--output-dir` makes the artifact path deterministic; a single
+      # dataset writes its outputs directly into that directory.
+      - name: Run smallest benchmark slice
+        run: >
+          survarena benchmark run
+          --config configs/benchmark/manuscript_v1.yaml
+          --dataset whas500
+          --method coxph
+          --limit-seeds 1
+          --output-dir results/ci_smoke
+      - name: Assert semantic benchmark outputs
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          import numpy as np
+          import pandas as pd
+
+          root = Path("results/ci_smoke")
+          fold_paths = list(root.glob("*_fold_results.csv"))
+          assert len(fold_paths) == 1, fold_paths
+          frame = pd.read_csv(fold_paths[0])
+          required_columns = {"dataset_id", "method_id", "split_id", "seed", "hpo_mode", "status", "uno_c"}
+          missing = required_columns - set(frame.columns)
+          assert not missing, f"missing fold-result columns: {sorted(missing)}"
+          successful = frame.loc[frame["status"].eq("success")].copy()
+          assert not successful.empty, "smoke produced no successful fold rows"
+          assert successful["dataset_id"].str.startswith("whas500").all()
+          assert successful["method_id"].eq("coxph").all()
+          assert successful["hpo_mode"].eq("no_hpo").all()
+          assert np.isfinite(pd.to_numeric(successful["uno_c"], errors="coerce")).all()
+
+          expected = {
+              "coxph_fold_results.csv",
+              "coxph_leaderboard.csv",
+              "coxph_run_diagnostics.csv",
+              "experiment_manifest.json",
+              "experiment_navigator.json",
+              "README.md",
+          }
+          missing_artifacts = expected - {path.name for path in root.iterdir()}
+          assert not missing_artifacts, f"missing compact artifacts: {sorted(missing_artifacts)}"
+          assert not (root / "coxph_leaderboard.json").exists()
+          print(f"semantic smoke passed: {len(successful)} successful row(s), finite uno_c")
+          PY
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-smoke-results
+          path: results/ci_smoke
+          if-no-files-found: warn
