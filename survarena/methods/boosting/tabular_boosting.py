@@ -169,6 +169,10 @@ def _configure_xgboost_runtime_threads() -> None:
 
 
 class _BaseCalibratedCoxBoostingMethod(BaseSurvivalMethod):
+    # Subclasses' fit() build an eval_set / early_stopping_rounds from the
+    # validation fold (XGBoost/CatBoost early stopping).
+    consumes_validation = True
+
     def __init__(self, **params: Any) -> None:
         super().__init__(**params)
         self.model = None
@@ -201,6 +205,10 @@ class _BaseCalibratedCoxBoostingMethod(BaseSurvivalMethod):
 
 
 class _BaseAFTBoostingMethod(BaseSurvivalMethod):
+    # Subclasses' fit() build an eval_set / early_stopping_rounds from the
+    # validation fold (XGBoost/CatBoost early stopping).
+    consumes_validation = True
+
     _distribution_param: str
     _scale_param: str
 

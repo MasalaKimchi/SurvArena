@@ -7,6 +7,7 @@ from typing import Any
 
 import pandas as pd
 
+from survarena.evaluation._eligibility import eligible_frame
 from survarena.evaluation.statistics import metric_direction
 from survarena.logging.export_shared import (
     BENCHMARK_METRIC_COLUMNS,
@@ -141,6 +142,11 @@ def export_leaderboard(
     output_dir: Path | None = None,
     file_prefix: str | None = None,
 ) -> pd.DataFrame:
+    # M4: the leaderboard is a comparative aggregate (per-method means + ranks),
+    # so failed (status != "success") and comparison-ineligible rows -- and rows
+    # missing the ranked primary metric -- must be excluded before aggregation so
+    # only genuine, comparable fits enter the comparison.
+    fold_results = eligible_frame(fold_results, metric=primary_metric)
     requested_seed_keys = group_keys_with_hpo_mode(
         fold_results,
         ["benchmark_id", "dataset_id", "method_id", "seed"],
@@ -166,11 +172,20 @@ def export_leaderboard(
     if primary_metric not in leaderboard.columns:
         raise ValueError(f"Primary metric '{primary_metric}' not found in leaderboard columns.")
     primary_metric_ascending = metric_direction(primary_metric) == "minimize"
-    leaderboard.sort_values(
-        by=["dataset_id", primary_metric, "runtime_sec"],
-        ascending=[True, primary_metric_ascending, True],
-        inplace=True,
-    )
+    # L5: sort only by columns that are actually present so a missing runtime_sec
+    # (or dataset_id) degrades gracefully instead of raising KeyError.
+    sort_spec = [
+        ("dataset_id", True),
+        (primary_metric, primary_metric_ascending),
+        ("runtime_sec", True),
+    ]
+    sort_by = [(col, asc) for col, asc in sort_spec if col in leaderboard.columns]
+    if sort_by:
+        leaderboard.sort_values(
+            by=[col for col, _asc in sort_by],
+            ascending=[asc for _col, asc in sort_by],
+            inplace=True,
+        )
 
     if output_dir is None:
         csv_path = root / "results" / "tables" / "leaderboard.csv"

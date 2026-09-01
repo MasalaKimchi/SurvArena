@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from contextlib import suppress
 from dataclasses import asdict
+import os
 import pickle
+import tempfile
 from pathlib import Path
-from typing import Any, TypeVar
+from typing import Any, Callable, TypeVar
 
 from survarena.config import read_yaml
 from survarena.logging.tracker import write_json
@@ -12,6 +15,30 @@ from survarena.logging.tracker import write_json
 PREDICTOR_SERIALIZATION_VERSION = 1
 
 PredictorT = TypeVar("PredictorT")
+
+
+def _atomic_write(target: Path, writer: Callable[[Path], None]) -> None:
+    """Write ``target`` atomically (M8).
+
+    ``writer`` is invoked with a temp path in the *same directory* as ``target``
+    so the final ``os.replace`` is an atomic rename on the same filesystem. A
+    crash mid-write can therefore never truncate or destroy the prior good file,
+    and the temp file is cleaned up on any failure.
+    """
+    target.parent.mkdir(parents=True, exist_ok=True)
+    # Keep the target's suffix on the temp file so writers that normalize the path
+    # by extension still land on the temp path we hand them (kept in the same dir so
+    # os.replace is an atomic same-filesystem rename).
+    fd, tmp_name = tempfile.mkstemp(dir=str(target.parent), prefix=f".{target.name}.", suffix=f".tmp{target.suffix}")
+    os.close(fd)
+    tmp_path = Path(tmp_name)
+    try:
+        writer(tmp_path)
+        os.replace(tmp_path, target)
+    except BaseException:
+        with suppress(FileNotFoundError):
+            tmp_path.unlink()
+        raise
 
 
 def default_predictor_path(artifact_dir: Path | None) -> Path:
@@ -40,9 +67,16 @@ def serialization_manifest(predictor: Any, output_path: Path) -> dict[str, Any]:
 def save_predictor(predictor: Any, path: str | Path | None = None) -> Path:
     output_path = Path(path) if path is not None else default_predictor_path(predictor.artifact_dir_)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("wb") as handle:
-        pickle.dump(predictor, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    write_json(predictor_manifest_path(output_path), serialization_manifest(predictor, output_path))
+
+    def _dump_pickle(tmp_path: Path) -> None:
+        with tmp_path.open("wb") as handle:
+            pickle.dump(predictor, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    # M8: write pickle + manifest via temp file + atomic rename so a crash mid-dump
+    # cannot corrupt the previous good artifact.
+    _atomic_write(output_path, _dump_pickle)
+    manifest = serialization_manifest(predictor, output_path)
+    _atomic_write(predictor_manifest_path(output_path), lambda tmp_path: write_json(tmp_path, manifest))
     return output_path
 
 
@@ -72,7 +106,9 @@ def persist_artifacts(predictor: Any, dataset_name: str, results: list[Any]) -> 
     predictor.artifact_dir_ = artifact_dir
 
     if predictor.leaderboard_ is not None:
-        predictor.leaderboard_.to_csv(artifact_dir / "leaderboard.csv", index=False)
+        # M8: atomic CSV write to protect a prior good leaderboard on crash.
+        leaderboard = predictor.leaderboard_
+        _atomic_write(artifact_dir / "leaderboard.csv", lambda tmp_path: leaderboard.to_csv(tmp_path, index=False))
     payload = {
         "config": {
             "label_time": predictor.label_time,
@@ -111,5 +147,6 @@ def persist_artifacts(predictor: Any, dataset_name: str, results: list[Any]) -> 
         "per_model_test_metrics": predictor.model_test_metrics_,
         "results": [asdict(result) for result in results],
     }
-    write_json(artifact_dir / "fit_summary.json", payload)
+    # M8: atomic JSON write (save_predictor already writes its own artifacts atomically).
+    _atomic_write(artifact_dir / "fit_summary.json", lambda tmp_path: write_json(tmp_path, payload))
     save_predictor(predictor, artifact_dir / "predictor.pkl")

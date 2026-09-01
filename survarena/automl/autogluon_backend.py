@@ -27,9 +27,39 @@ def _as_frame(X: Any) -> pd.DataFrame:
 
 
 def _training_frame(X: Any, event: np.ndarray) -> pd.DataFrame:
+    # `event` is expected to already be the (binary) classification target for the rows in
+    # `X`. Censoring-aware callers pass horizon-derived labels (see horizon_event_labels)
+    # rather than the raw event indicator, so the classifier is not biased under censoring.
     frame = _as_frame(X)
     frame[_TARGET_COL] = np.asarray(event, dtype=int)
     return frame
+
+
+def horizon_event_labels(
+    time: np.ndarray,
+    event: np.ndarray,
+    horizon: float,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build censoring-aware binary labels for "event by a fixed horizon h".
+
+    The classifier target ``P(event by h)`` is defined per subject as:
+
+    * label = 1 if the subject had the event at time <= h (``event == 1 and time <= h``);
+    * label = 0 if the subject is known event-free at h (``time > h``, regardless of
+      whether the observed endpoint was an event or a censoring);
+    * unknown otherwise (subjects censored before h: ``event == 0 and time <= h``) -- their
+      status at h cannot be determined, so they are excluded via ``keep_mask == False``.
+
+    Returns ``(keep_mask, labels)``, both aligned to the input rows. ``labels`` is only
+    meaningful where ``keep_mask`` is True.
+    """
+    time = np.asarray(time, dtype=float)
+    event = np.asarray(event, dtype=int)
+    had_event_by_h = (event == 1) & (time <= horizon)
+    known_event_free = time > horizon
+    keep_mask = had_event_by_h | known_event_free
+    labels = had_event_by_h.astype(int)
+    return keep_mask, labels
 
 
 def fit_autogluon_event_predictor(

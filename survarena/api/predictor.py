@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import math
 import os
+import traceback
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 from pathlib import Path
 from time import perf_counter
 from typing import Any
@@ -296,14 +299,11 @@ class SurvivalPredictor:
                         method_id=method_id,
                         plan=validation_plan,
                     )
-                selection_result = select_hyperparameters(
+                selection_result = self._select_hyperparameters_bounded(
                     method_id=method_id,
                     method_cfg=method_cfg,
                     fold_cache=fold_cache,
-                    primary_metric=self.eval_metric,
-                    seed=self.random_state,
-                    quiet=not self.verbose,
-                    metric_bundle_callback=self._collect_fold_metric_bundle,
+                    time_limit=method_time_limit,
                 )
                 metric_rows = selection_result.get("best_metric_rows")
                 validation_metrics = (
@@ -332,6 +332,15 @@ class SurvivalPredictor:
                     )
                 )
             except Exception as exc:
+                # M2-traceback: preserve the full traceback as failure evidence,
+                # matching the richer records the benchmark runner keeps. The
+                # PredictorModelResult schema (a slots dataclass in
+                # _predictor_results.py, outside this change's edit scope) has no
+                # dedicated error_traceback field, so the traceback is folded into
+                # the serialized `error` payload after the short message instead of
+                # being discarded.
+                error_message = str(exc)
+                error_payload = f"{error_message}\n\nTraceback (most recent call last):\n{traceback.format_exc()}"
                 results.append(
                     PredictorModelResult(
                         method_id=method_id,
@@ -343,7 +352,7 @@ class SurvivalPredictor:
                         training_backend=self._training_backend_for_method(method_id),
                         time_limit_sec=method_time_limit,
                         status="failed",
-                        error=str(exc),
+                        error=error_payload,
                         error_type=type(exc).__name__,
                     )
                 )
@@ -571,6 +580,55 @@ class SurvivalPredictor:
 
     def _selection_sort_key(self, result: PredictorModelResult) -> tuple[bool, float]:
         return selection_sort_key(result)
+
+    def _select_hyperparameters_bounded(
+        self,
+        *,
+        method_id: str,
+        method_cfg: dict[str, Any],
+        fold_cache: list[dict[str, Any]],
+        time_limit: float | None,
+    ) -> dict[str, Any]:
+        # M9: AutoGluon methods self-enforce their per-method slice via the
+        # `time_limit` injected into their params, so they run inline. Native
+        # methods have no internal budget; without enforcement an early native
+        # method that overruns consumes the shared remaining budget and turns
+        # later, not-yet-run methods into skipped/TimeLimitExceeded records purely
+        # by run order. Here the per-method slice is enforced so the OVERRUNNING
+        # method is the one recorded as timed-out, leaving innocent later methods
+        # their fair share.
+        def _run() -> dict[str, Any]:
+            return select_hyperparameters(
+                method_id=method_id,
+                method_cfg=method_cfg,
+                fold_cache=fold_cache,
+                primary_metric=self.eval_metric,
+                seed=self.random_state,
+                quiet=not self.verbose,
+                metric_bundle_callback=self._collect_fold_metric_bundle,
+            )
+
+        if is_autogluon_method(method_id) or time_limit is None or not math.isfinite(time_limit):
+            return _run()
+
+        # Run the native selection on a worker thread (cross-platform, no signals)
+        # and stop waiting once the slice elapses. A TimeoutError is raised so the
+        # fit loop records THIS method as failed rather than letting it starve the
+        # rest of the portfolio.
+        executor = ThreadPoolExecutor(max_workers=1)
+        future = executor.submit(_run)
+        try:
+            result = future.result(timeout=time_limit)
+        except FuturesTimeoutError as exc:
+            # Python cannot force-kill the worker thread; detach it (do not block on
+            # shutdown) so budget accounting stays fair for the remaining methods.
+            executor.shutdown(wait=False)
+            raise TimeoutError(
+                f"Native method '{method_id}' exceeded its per-method time budget of "
+                f"{time_limit:.3f}s during hyperparameter selection."
+            ) from exc
+        executor.shutdown(wait=False)
+        return result
 
     def _fold_cache_metric_summary(
         self,
@@ -981,7 +1039,21 @@ class SurvivalPredictor:
                     survival_times=np.asarray(survival_times)[clipped_survival_mask],
                     horizons=tuple(min(float(h), max_supported - 1e-8) for h in horizons),
                 )
-                return metrics.to_dict()
+                # M7: these metrics were computed on only the subset of test rows with
+                # test_time <= max_supported (IPCW horizon truncation), NOT the full
+                # test set. Attach explicit numeric markers so the truncation can never
+                # be silently reported as the full-set metric; downstream comparative
+                # aggregates can key off metrics_test_subset_truncated to exclude a
+                # metric computed on a non-comparable subset. Values are kept numeric
+                # because callers (e.g. _evaluate_fitted_models) coerce every bundle
+                # entry with float(), so a non-numeric reason string cannot be added here.
+                bundle = metrics.to_dict()
+                n_test_total = int(np.asarray(test_time).shape[0])
+                n_test_evaluated = int(np.count_nonzero(mask))
+                bundle["metrics_test_subset_truncated"] = True
+                bundle["n_test_evaluated"] = n_test_evaluated
+                bundle["n_test_total"] = n_test_total
+                return bundle
 
             harrell = compute_harrell_c_index(
                 eval_time=np.asarray(test_time),

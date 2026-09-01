@@ -1,12 +1,19 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+import warnings
+from datetime import datetime, timezone
 from typing import Any, Callable
 
 from survarena.evaluation.statistics import metric_direction
 
 
 _RUNTIME_ONLY_METHOD_PARAMS = {"seed"}
+
+# Metrics that evaluation.metrics.compute_primary_metric_score can produce for model selection.
+# Any other primary_metric would raise there, but only inside the HPO arm's inner-CV evaluation,
+# so we validate it up front (see M3 in select_hyperparameters) to keep the hpo and no_hpo arms
+# symmetric.
+_SUPPORTED_SELECTION_METRICS: frozenset[str] = frozenset({"harrell_c", "uno_c"})
 
 
 def resolve_runtime_method_params(params: dict[str, Any], *, seed: int) -> dict[str, Any]:
@@ -107,7 +114,7 @@ def _build_hpo_metadata(
 
 
 def _utc_timestamp() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
 def _parse_hpo_config(method_cfg: dict[str, Any], hpo_config: dict[str, Any] | None) -> dict[str, Any]:
@@ -221,6 +228,18 @@ def select_hyperparameters(
     metric_bundle_callback: Callable[[dict[str, Any], Any, Any], dict[str, float]] | None = None,
     evaluate_defaults_when_disabled: bool = True,
 ) -> dict[str, Any]:
+    # M3 (choice (a)): validate the selection metric once, up front, before any fitting.
+    # compute_primary_metric_score only supports harrell_c / uno_c, and it is only exercised
+    # inside the HPO arm's inner CV -- so an unsupported primary_metric (e.g. ibs, td_auc_*)
+    # would fail the hpo arm while the no_hpo arm silently succeeded (asymmetric coverage).
+    # Raising here makes both arms fail identically and clearly on bad config. tuning.py is the
+    # right place because both arms funnel through select_hyperparameters before any run work.
+    if primary_metric not in _SUPPORTED_SELECTION_METRICS:
+        raise ValueError(
+            f"Unsupported primary_metric for HPO selection: {primary_metric!r}. "
+            f"Supported selection metrics are {sorted(_SUPPORTED_SELECTION_METRICS)}."
+        )
+
     from survarena.utils.quiet import quiet_training_output
 
     with quiet_training_output(enabled=quiet):
@@ -305,12 +324,28 @@ def select_hyperparameters(
             sampler=sampler,
             pruner=pruner,
         )
+        # L1: reproducibility-first HPO. Driving the study by a wall-clock `timeout` makes the
+        # number of completed trials -- and therefore the selected config -- depend on machine
+        # speed. A fixed trial budget (max_trials) is always resolved here, so we drive the study
+        # by n_trials and only pass the configured timeout (if any) as a non-binding safety cap.
+        # If that cap actually truncates the trial budget we warn, so the user knows the run is no
+        # longer reproducible.
+        requested_trials = int(resolved_hpo["max_trials"])
+        safety_timeout = resolved_hpo["timeout_seconds"]
         study.optimize(
             _objective,
-            n_trials=int(resolved_hpo["max_trials"]),
-            timeout=resolved_hpo["timeout_seconds"],
+            n_trials=requested_trials,
+            timeout=safety_timeout,
         )
         finished_at = _utc_timestamp()
+        if safety_timeout is not None and int(len(study.trials)) < requested_trials:
+            warnings.warn(
+                f"HPO timeout ({safety_timeout}s) truncated the trial budget "
+                f"({int(len(study.trials))}/{requested_trials} trials ran); the selected config "
+                "is wall-clock dependent and not reproducible. Increase timeout_seconds or remove "
+                "it to guarantee a fixed trial count.",
+                stacklevel=2,
+            )
 
         completed_trials = [
             trial

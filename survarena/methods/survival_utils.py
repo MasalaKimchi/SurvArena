@@ -1,8 +1,31 @@
 from __future__ import annotations
 
+import math
+
 import numpy as np
 import pandas as pd
-from scipy.special import expit, ndtr
+
+# scipy provides fast C implementations of the logistic sigmoid (expit) and the
+# standard-normal CDF (ndtr) that are used ONLY to form AFT survival curves
+# (log-logistic / log-normal). scipy is imported optionally so the entire methods
+# layer stays importable and usable without it; when scipy is present these are
+# its exact functions (production numerics unchanged), and when it is absent the
+# numerically-equivalent numpy/stdlib fallbacks below are used.
+try:  # pragma: no cover - exercised by whichever branch the environment allows
+    from scipy.special import expit as _expit, ndtr as _ndtr
+except ImportError:  # pragma: no cover
+    _erfc = np.vectorize(math.erfc, otypes=[np.float64])
+
+    def _expit(values: np.ndarray) -> np.ndarray:
+        """Stable logistic sigmoid 1/(1+e^-x); matches scipy.special.expit."""
+        x = np.asarray(values, dtype=np.float64)
+        with np.errstate(over="ignore"):
+            return np.where(x >= 0.0, 1.0 / (1.0 + np.exp(-x)), np.exp(x) / (1.0 + np.exp(x)))
+
+    def _ndtr(values: np.ndarray) -> np.ndarray:
+        """Standard-normal CDF via the complementary error function; matches scipy.special.ndtr."""
+        x = np.asarray(values, dtype=np.float64)
+        return 0.5 * _erfc(-x / np.sqrt(2.0))
 
 
 def fit_breslow_baseline_survival(
@@ -123,9 +146,9 @@ def _normalize_survival_frame(survival_frame: pd.DataFrame) -> pd.DataFrame:
 
 def _aft_cdf(values: np.ndarray, *, distribution: str) -> np.ndarray:
     if distribution == "normal":
-        return ndtr(values)
+        return _ndtr(values)
     if distribution == "logistic":
-        return expit(values)
+        return _expit(values)
     if distribution == "extreme":
         return 1.0 - np.exp(-np.exp(values))
     raise ValueError(f"Unsupported AFT distribution '{distribution}'.")

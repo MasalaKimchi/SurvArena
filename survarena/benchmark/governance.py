@@ -84,9 +84,15 @@ def apply_parity_governance(
         modes = parity_modes.get(parity_key, set())
         missing_modes = [mode for mode in comparison_modes if mode not in modes]
         has_all_modes = not missing_modes
+        # A row may already be comparison-ineligible for a NON-parity reason set
+        # upstream (e.g. a degenerate trivial-predictor fallback, or metrics
+        # computed on an IPCW-truncated test subset). Parity governance only owns
+        # the parity dimension of eligibility, so it must never resurrect such a
+        # row to eligible just because both HPO modes happen to be present.
+        pre_existing_ineligible = bool(metrics.get("comparison_ineligible", False))
         if len(comparison_modes) == 1 or has_all_modes:
             metrics["parity_eligible"] = len(comparison_modes) > 1
-            metrics["comparison_ineligible"] = False
+            metrics["comparison_ineligible"] = pre_existing_ineligible
             metrics["parity_reason"] = None
             metrics["missing_modes"] = []
         else:

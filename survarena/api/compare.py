@@ -8,6 +8,7 @@ from survarena.benchmark.runner import evaluate_split, normalize_hpo_budget_tele
 from survarena.config import read_yaml
 from survarena.data.splitters import load_or_create_splits
 from survarena.data.user_dataset import load_user_dataset
+from survarena.evaluation._eligibility import eligible_frame
 from survarena.logging.export import (
     create_experiment_dir,
     export_fold_results,
@@ -217,6 +218,9 @@ def compare_survival_models(
         return summary
 
     task_id = f"{dataset.metadata.dataset_id}_{resolved_benchmark_id}"
+    # H6/M5: group-aware splits + content-aware split-cache invalidation.
+    group_col = getattr(dataset.metadata, "group_col", None)
+    split_groups = dataset.X[group_col].to_numpy() if group_col and group_col in dataset.X.columns else None
     splits = load_or_create_splits(
         root=repo_root,
         task_id=task_id,
@@ -226,6 +230,9 @@ def compare_survival_models(
         seeds=resolved_seeds,
         outer_folds=int(outer_folds),
         outer_repeats=int(outer_repeats),
+        groups=split_groups,
+        X=dataset.X,
+        time=dataset.time,
     )
 
     model_name = method_ids[0] if len(method_ids) == 1 else "multi_model"
@@ -371,9 +378,15 @@ def compare_survival_models(
             row["missing_modes"] = []
 
     frame = export_fold_results(repo_root, all_records, output_dir=resolved_output_dir, file_prefix=model_name)
+    # M4: the leaderboard is a comparative aggregate (per-method mean ranking), so it
+    # must exclude failed (status != "success") and comparison-ineligible rows (e.g.
+    # missing parity counterpart) and rows missing the primary metric. The coverage /
+    # reliability / failure summaries below intentionally consume the full `frame`
+    # because they need the failures, so only the leaderboard input is filtered here.
+    eligible_frame_for_leaderboard = eligible_frame(frame, metric=primary_metric)
     leaderboard = export_leaderboard(
         repo_root,
-        frame,
+        eligible_frame_for_leaderboard,
         primary_metric=primary_metric,
         output_dir=resolved_output_dir,
         file_prefix=model_name,

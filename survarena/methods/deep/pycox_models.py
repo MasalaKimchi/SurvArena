@@ -16,6 +16,9 @@ from survarena.methods.survival_utils import risk_from_survival_frame, survival_
 
 
 class _BasePyCoxMethod(BaseSurvivalMethod, ABC):
+    # fit() adds an EarlyStopping callback and passes val_data when a validation
+    # fold is supplied (see fit() below); the whole pycox family early-stops on it.
+    consumes_validation = True
     model_kind: str = ""
 
     def __init__(

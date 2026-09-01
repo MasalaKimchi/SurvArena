@@ -18,6 +18,9 @@ from survarena.methods.survival_utils import fit_breslow_baseline_survival
 class DeepSurvMomentumMethod(BaseSurvivalMethod):
     """DeepSurv variant using torchsurv Momentum with Cox loss."""
 
+    # fit() monitors the validation fold for early stopping (best-epoch selection).
+    consumes_validation = True
+
     def __init__(
         self,
         hidden_layers: str | list[int] = "128-64",

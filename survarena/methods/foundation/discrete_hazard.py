@@ -44,6 +44,11 @@ def _fit_classifier(model: Any, X: Any, y: np.ndarray, row_weights: np.ndarray |
 
 
 class _PooledDiscreteTimeHazardSurvivalMethod(BaseSurvivalMethod):
+    # fit() explicitly `del`s the validation args (frozen in-context backbones do
+    # no early stopping); make the classification explicit despite the base
+    # default, since this family shares the "discrete_hazard" name with the deep
+    # SharedDiscreteHazardMethod, which DOES consume validation.
+    consumes_validation = False
     method_id = ""
     foundation_backbone = "DirectFoundationClassifier"
     foundation_training = "frozen"

@@ -618,6 +618,99 @@ def test_evaluate_split_adds_optional_validation_diagnostics(monkeypatch) -> Non
     assert metrics["validation_diagnostic_test_score"] == record["validation_diagnostic_test_score"]
 
 
+class _FullTrainCarveSpyMethod(BaseSurvivalMethod):
+    # consumes_validation stays False (inherited): the runner must fit this on the
+    # FULL training set via the strict 3-arg signature (no validation holdout carved).
+    # A 3-arg fit also means the test fails loudly if the runner ever passed val here.
+    last_fit_rows: int | None = None
+
+    def fit(self, X, time, event) -> "_FullTrainCarveSpyMethod":
+        type(self).last_fit_rows = int(len(time))
+        return self
+
+    def predict_risk(self, X):
+        return np.asarray(X, dtype=float)[:, 0]
+
+    def predict_survival(self, X, times):
+        risk = np.maximum(np.asarray(self.predict_risk(X), dtype=float), 1e-6)
+        return np.exp(-np.outer(risk, np.asarray(times, dtype=float)))
+
+
+class _ValidationCarveSpyMethod(_FullTrainCarveSpyMethod):
+    # Declares that fit() consumes the validation fold, so the runner MUST carve a
+    # ~15% holdout and call the 6-arg fit -> this model sees fewer than the full rows.
+    consumes_validation = True
+    last_received_val: bool | None = None
+
+    def fit(self, X, time, event, X_val=None, time_val=None, event_val=None) -> "_ValidationCarveSpyMethod":
+        type(self).last_fit_rows = int(len(time))
+        type(self).last_received_val = X_val is not None
+        return self
+
+
+def _carve_fairness_dataset() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, SplitDefinition]:
+    n, n_train = 48, 40
+    rng = np.random.default_rng(0)
+    frame = pd.DataFrame({"x1": np.linspace(0.1, 5.0, n), "x2": rng.normal(size=n)})
+    time = np.linspace(1.0, float(n), n)
+    event = np.tile([1, 0], n // 2).astype(int)  # 20 events / 20 censored across the 40 train rows
+    split = SplitDefinition(
+        split_id="carve_split",
+        seed=5,
+        repeat=0,
+        fold=0,
+        train_idx=np.arange(n_train, dtype=int),
+        test_idx=np.arange(n_train, n, dtype=int),
+    )
+    return frame, time, event, split
+
+
+def _run_carve_fairness_split(monkeypatch, method_cls) -> dict[str, object]:
+    frame, time, event, split = _carve_fairness_dataset()
+    monkeypatch.setattr(runner, "get_method_class", lambda _method_id: method_cls)
+    monkeypatch.setattr(runner, "peak_process_memory_mb", lambda: 64.0, raising=False)
+    return runner.evaluate_split(
+        benchmark_id="carve_fairness",
+        dataset_id="toy_dataset",
+        method_id="coxph",
+        split=split,
+        X=frame,
+        time=time,
+        event=event,
+        method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
+        inner_folds=2,
+        timeout_seconds=None,
+        primary_metric="harrell_c",
+        horizons_quantiles=(0.25, 0.5, 0.75),
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg-hash",
+        hpo_cfg={"enabled": False},
+    )
+
+
+def test_final_fit_skips_validation_holdout_for_non_val_methods(monkeypatch) -> None:
+    _FullTrainCarveSpyMethod.last_fit_rows = None
+    record = _run_carve_fairness_split(monkeypatch, _FullTrainCarveSpyMethod)
+
+    # consumes_validation=False -> no holdout carved; fit sees ALL 40 training rows.
+    assert record["status"] == "success"
+    assert record["final_fit_validation"] is False
+    assert _FullTrainCarveSpyMethod.last_fit_rows == 40
+
+
+def test_final_fit_carves_validation_holdout_for_val_consuming_methods(monkeypatch) -> None:
+    _ValidationCarveSpyMethod.last_fit_rows = None
+    _ValidationCarveSpyMethod.last_received_val = None
+    record = _run_carve_fairness_split(monkeypatch, _ValidationCarveSpyMethod)
+
+    # consumes_validation=True -> ~15% holdout carved; fit sees the reduced train set + a val fold.
+    assert record["status"] == "success"
+    assert record["final_fit_validation"] is True
+    assert _ValidationCarveSpyMethod.last_received_val is True
+    assert _ValidationCarveSpyMethod.last_fit_rows is not None
+    assert _ValidationCarveSpyMethod.last_fit_rows < 40
+
+
 def test_evaluate_split_persists_model_and_prediction_artifacts(tmp_path: Path, monkeypatch) -> None:
     frame = pd.DataFrame(
         {

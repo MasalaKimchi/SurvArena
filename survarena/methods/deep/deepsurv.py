@@ -22,6 +22,9 @@ __all__ = ["DeepSurvMethod", "_activation_cls", "_parse_hidden_layers"]
 
 
 class DeepSurvMethod(BaseSurvivalMethod):
+    # fit() monitors the validation fold for early stopping (best-epoch selection).
+    consumes_validation = True
+
     def __init__(
         self,
         hidden_layers: str | list[int] = "128-64",

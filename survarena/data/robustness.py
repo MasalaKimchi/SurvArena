@@ -7,6 +7,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from survarena.data.feature_roles import is_low_cardinality_numeric_categorical
+
 
 @dataclass(slots=True)
 class RobustnessTrack:
@@ -62,7 +64,17 @@ def apply_robustness_track(X: pd.DataFrame, *, track: RobustnessTrack, split: An
     X_out = X.copy(deep=True)
     rng = _rng_for_track(track, seed)
     test_idx = np.asarray(split.test_idx, dtype=int)
-    numeric_cols = X_out.select_dtypes(include=[np.number]).columns.tolist()
+    # Only perturb genuinely CONTINUOUS features. Low-cardinality integer columns (e.g. a stage
+    # code) are treated as CATEGORICAL by the preprocessor (see data/feature_roles.py /
+    # data/preprocess.py); adding Gaussian noise or median-imputing them yields off-vocabulary
+    # values that map to an all-zero one-hot row and are silently dropped. We reuse the project's
+    # categorical-detection helper (and exclude bool columns, also treated as categorical) so those
+    # columns are left unperturbed rather than corrupted.
+    numeric_cols = [
+        col
+        for col in X_out.select_dtypes(include=[np.number]).columns
+        if not pd.api.types.is_bool_dtype(X_out[col]) and not is_low_cardinality_numeric_categorical(X_out[col])
+    ]
     if not numeric_cols:
         return X_out
 
@@ -94,6 +106,13 @@ def apply_robustness_track(X: pd.DataFrame, *, track: RobustnessTrack, split: An
 
 
 def apply_label_noise(event: np.ndarray, *, track: RobustnessTrack, split: Any, seed: int) -> np.ndarray:
+    """Flip a fraction of TEST-set event labels (test-time outcome corruption).
+
+    This is a TEST-TIME label-corruption track: it measures how stable a metric is when the
+    *evaluation* outcomes are noisy. It is NOT training-label robustness -- only labels at the
+    test indices are flipped, so training labels are left untouched. The flip behavior itself is
+    intentional and unchanged.
+    """
     event_out = np.asarray(event, dtype=np.int32).copy()
     if track.kind != "label_noise" or track.severity <= 0.0:
         return event_out

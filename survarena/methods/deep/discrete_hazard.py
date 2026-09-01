@@ -20,6 +20,9 @@ from survarena.methods.discrete_time import (
 
 
 class SharedDiscreteHazardMethod(BaseSurvivalMethod):
+    # fit() monitors the validation fold for early stopping (best-epoch selection).
+    consumes_validation = True
+
     def __init__(
         self,
         time_bin_quantiles: str | list[float] = "0.25-0.5-0.75",

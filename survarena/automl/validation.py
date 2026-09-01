@@ -63,13 +63,32 @@ def prepare_resampled_fold_cache(*, method_id: str, folds: list[ResampledFold]) 
     return fold_cache
 
 
+def _dataset_groups(dataset: SurvivalDataset, groups: np.ndarray | None) -> np.ndarray | None:
+    """Resolve subject groups for group-disjoint splitting (H6).
+
+    An explicit ``groups`` argument wins; otherwise groups are derived from the
+    dataset's declared ``metadata.group_col`` when present, so callers that pass
+    a dataset automatically get group-aware inner splits without extra wiring.
+    """
+    if groups is not None:
+        return np.asarray(groups)
+    group_col = getattr(getattr(dataset, "metadata", None), "group_col", None)
+    if group_col and group_col in dataset.X.columns:
+        return dataset.X[group_col].to_numpy()
+    return None
+
+
 def build_bagging_folds(
     dataset: SurvivalDataset,
     *,
     num_bag_folds: int,
     num_bag_sets: int,
     seed: int,
+    groups: np.ndarray | None = None,
 ) -> list[ResampledFold]:
+    # H6: inner bagging folds are made group-disjoint (a subject cannot appear in
+    # both train and validation) whenever the dataset declares a group_col or an
+    # explicit groups array is supplied.
     resolved_num_bag_folds = _validate_num_bag_folds(num_bag_folds)
     resolved_num_bag_sets = _validate_num_bag_sets(num_bag_sets)
 
@@ -81,16 +100,32 @@ def build_bagging_folds(
             "Lower num_bag_folds or provide a larger training set."
         )
 
-    StratifiedKFold = importlib.import_module("sklearn.model_selection").StratifiedKFold
+    model_selection = importlib.import_module("sklearn.model_selection")
+    groups_arr = _dataset_groups(dataset, groups)
     indices = np.arange(len(dataset.X))
     folds: list[ResampledFold] = []
     for bag_set in range(resolved_num_bag_sets):
-        splitter = StratifiedKFold(
-            n_splits=resolved_num_bag_folds,
-            shuffle=True,
-            random_state=int(seed) + bag_set,
-        )
-        for train_idx, validation_idx in splitter.split(indices, event):
+        if groups_arr is not None:
+            stratified_group_kfold = getattr(model_selection, "StratifiedGroupKFold", None)
+            if stratified_group_kfold is not None:
+                # Preferred: event-stratified AND group-disjoint folds.
+                splitter = stratified_group_kfold(
+                    n_splits=resolved_num_bag_folds,
+                    shuffle=True,
+                    random_state=int(seed) + bag_set,
+                )
+            else:
+                # Fallback for older sklearn: group-disjoint folds without event stratification.
+                splitter = model_selection.GroupKFold(n_splits=resolved_num_bag_folds)
+            split_iter = splitter.split(indices, event, groups_arr)
+        else:
+            splitter = model_selection.StratifiedKFold(
+                n_splits=resolved_num_bag_folds,
+                shuffle=True,
+                random_state=int(seed) + bag_set,
+            )
+            split_iter = splitter.split(indices, event)
+        for train_idx, validation_idx in split_iter:
             folds.append(
                 ResampledFold(
                     train_X=dataset.X.iloc[train_idx].reset_index(drop=True),
@@ -133,7 +168,11 @@ def build_validation_plan(
     tuning_dataset: SurvivalDataset | None = None,
     holdout_frac: float | None = None,
     seed: int,
+    groups: np.ndarray | None = None,
 ) -> ValidationPlan:
+    # H6: when the dataset declares a group_col (or explicit groups are supplied) and no explicit
+    # tuning_dataset is used, the auto holdout below is group-disjoint so a subject cannot land in
+    # both train and validation.
     if tuning_dataset is not None:
         validation_X = _align_validation_frame(dataset.X, tuning_dataset.X)
         return ValidationPlan(
@@ -159,14 +198,22 @@ def build_validation_plan(
             "Provide tuning_data for low-event datasets."
         )
 
-    train_test_split = importlib.import_module("sklearn.model_selection").train_test_split
+    model_selection = importlib.import_module("sklearn.model_selection")
     indices = np.arange(len(dataset.X))
-    train_idx, validation_idx = train_test_split(
-        indices,
-        test_size=resolved_holdout_frac,
-        stratify=event,
-        random_state=seed,
-    )
+    groups_arr = _dataset_groups(dataset, groups)
+    if groups_arr is not None:
+        # H6: group-disjoint holdout so a subject cannot straddle train and validation.
+        group_shuffle_split = model_selection.GroupShuffleSplit(
+            n_splits=1, test_size=resolved_holdout_frac, random_state=seed
+        )
+        train_idx, validation_idx = next(group_shuffle_split.split(indices, event, groups_arr))
+    else:
+        train_idx, validation_idx = model_selection.train_test_split(
+            indices,
+            test_size=resolved_holdout_frac,
+            stratify=event,
+            random_state=seed,
+        )
     return ValidationPlan(
         source="auto_holdout",
         holdout_frac=resolved_holdout_frac,

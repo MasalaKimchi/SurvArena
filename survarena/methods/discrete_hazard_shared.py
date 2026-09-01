@@ -91,7 +91,17 @@ def build_discrete_hazard_training_frame(
 
 
 def should_use_discrete_hazard_fallback(instance: Any, frame: DiscreteHazardFrame) -> bool:
-    return int(len(frame.y_stacked)) < int(instance.params["min_rows_per_interval"]) or np.unique(frame.y_stacked).size < 2
+    # A degenerate fit (too few stacked rows or a single label class) forces the trivial
+    # KM-baseline fallback, which returns a constant risk (C ~ 0.5). Record the canonical
+    # `used_fallback_` signal here at the single decision point so every adapter relying on
+    # this helper honours the shared contract, regardless of what the call site sets.
+    # This does not change WHEN the fallback triggers.
+    use_fallback = (
+        int(len(frame.y_stacked)) < int(instance.params["min_rows_per_interval"])
+        or np.unique(frame.y_stacked).size < 2
+    )
+    instance.used_fallback_ = bool(use_fallback)
+    return use_fallback
 
 
 def predict_discrete_hazards(
