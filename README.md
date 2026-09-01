@@ -298,7 +298,7 @@ Common checks:
 .venv/bin/python scripts/audit_manuscript_publishability.py --strict
 ```
 
-The mypy gate is an explicit incremental kernel scope, not a whole-package type claim. The strict audit currently exits 2 with `publishable=false` because historical matrices predate behavior-changing fixes; a traceback is a verification failure.
+The mypy gate is an explicit incremental kernel scope with imported legacy modules skipped, not a whole-package type claim. The strict audit currently exits 2 with `publishable=false` because historical matrices predate behavior-changing fixes; a traceback is a verification failure.
 
 The same baseline is defined in [`.github/workflows/ci.yml`](.github/workflows/ci.yml), with the semantic WHAS500/CoxPH check in [`.github/workflows/benchmark-smoke.yml`](.github/workflows/benchmark-smoke.yml). See [`docs/test_status.md`](docs/test_status.md) for observed local evidence, [`docs/ci_and_reproducibility.md`](docs/ci_and_reproducibility.md) for configured-versus-observed automation, and [the v2 roadmap](.planning/ROADMAP.md) for the `survbench-1.0-rc1` target.
 

@@ -20,7 +20,7 @@ This page distinguishes checks actually executed in the current workspace from a
 
 The six skips are optional foundation/integration cases with explicit availability guards. They are not broad skips added to make Phase 1 green.
 
-The mypy gate is intentionally incremental, not whole-package coverage. Its exact scope is repeated in `pyproject.toml`, the README, and `.github/workflows/ci.yml`; expansion belongs to later phases as typed contracts become authoritative.
+The mypy gate is intentionally incremental, not whole-package coverage. Its exact scope is repeated in `pyproject.toml`, the README, and `.github/workflows/ci.yml`; `follow_imports = "skip"` prevents those targets from silently expanding into the untyped legacy dependency graph. Expansion belongs to later phases as typed contracts become authoritative.
 
 ## Semantic Benchmark Smoke
 

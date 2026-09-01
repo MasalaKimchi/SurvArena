@@ -13,7 +13,7 @@ SurvArena separates fast development assurance, semantic benchmark smoke, and ci
 | Job | Python | Contract |
 |---|---:|---|
 | `lint` | 3.11 | `ruff check survarena tests scripts` |
-| `type` | 3.11 | Mypy 2.3.1 over the declared incremental kernel scope |
+| `type` | 3.11 | Mypy 2.3.1 over the declared incremental kernel scope, without recursively claiming imported legacy modules |
 | `import-smoke` | 3.10, 3.11, 3.12 | Lazy `import survarena` using a light dependency subset |
 | `test` | 3.11, 3.12 | Editable `[dev]` install, full `pytest -q`, and `compileall` |
 
