@@ -33,6 +33,19 @@ class TimeLimitExceeded(TimeoutError):
     """Raised when a native fit exceeds its configured wall-clock budget (M11)."""
 
 
+def _benchmark_run_id(
+    *,
+    dataset_id: str,
+    method_id: str,
+    split_id: str,
+    seed: int,
+    hpo_mode: str | None,
+) -> str:
+    """Return the arm-qualified identity for one evaluated benchmark unit."""
+    mode = hpo_mode or "default"
+    return f"{dataset_id}_{method_id}_{split_id}_seed{int(seed)}_{mode}"
+
+
 _CANONICAL_PROFILES = ("manuscript",)
 _PROFILE_REQUIRED_KEYS: dict[str, tuple[str, ...]] = {
     "manuscript": ("outer_folds", "outer_repeats"),
@@ -182,7 +195,13 @@ def evaluate_split(
     from survarena.utils.seeds import set_global_seed
     from survarena.utils.time import timer
 
-    run_id = f"{dataset_id}_{method_id}_{split.split_id}_seed{split.seed}"
+    run_id = _benchmark_run_id(
+        dataset_id=dataset_id,
+        method_id=method_id,
+        split_id=split.split_id,
+        seed=int(split.seed),
+        hpo_mode=hpo_mode,
+    )
     started_at = perf_counter()
     split_indices_hash = payload_sha256(
         {
@@ -657,6 +676,7 @@ def _save_model_artifacts(
                     "method_id": method_id,
                     "split_id": split_id,
                     "seed": int(seed),
+                    "hpo_mode": hpo_mode,
                     "best_params": best_params,
                     "model": model,
                     "preprocessor": preprocessor,
@@ -680,6 +700,7 @@ def _save_model_artifacts(
         "method_id": method_id,
         "split_id": split_id,
         "seed": int(seed),
+        "hpo_mode": hpo_mode,
         # H7(a): persistence failure is an artifact-level problem, not a scientific
         # failure. Record it as "failed" here but do NOT raise — the caller keeps
         # status="success" and its already-computed metrics.
