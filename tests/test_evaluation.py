@@ -633,7 +633,7 @@ def test_pairwise_significance_keeps_hpo_mode_strata_separate() -> None:
     assert (result.groupby("hpo_mode")["p_value_corrected"].count() == 2).all()
 
 
-def test_critical_difference_summary_contains_cd() -> None:
+def test_critical_difference_summary_with_two_methods_fails_posthoc_closed() -> None:
     frame = pd.DataFrame(
         [
             {"benchmark_id": "b1", "dataset_id": "d1", "method_id": "a", "uno_c": 0.8},
@@ -644,4 +644,46 @@ def test_critical_difference_summary_contains_cd() -> None:
     )
     result = critical_difference_summary(frame, metric="uno_c")
     assert not result.empty
-    assert (result["critical_difference"] > 0).all()
+    assert result["critical_difference"].isna().all()
+    assert not result["posthoc_eligible"].any()
+    assert (result["assumption_status"] == "insufficient_methods").all()
+
+
+def test_elo_clustered_match_lists_replicate_linearly_without_self_matches() -> None:
+    # Regression guard for the Elo bootstrap: resampling a cluster must replicate
+    # its matches LINEARLY (a cluster drawn c times contributes its matches c
+    # times) and must never introduce (method, method) self-matches. The previous
+    # bootstrap rebuilt a DataFrame and re-grouped it, so a unit drawn c times
+    # collapsed back into one group and produced ~c^2 cross-method matches plus
+    # spurious within-method self-ties, inflating the Elo CI width.
+    from survarena.evaluation._ratings import _clustered_match_lists
+
+    frame = pd.DataFrame(
+        [
+            {"dataset_id": "d1", "method_id": "a", "uno_c": 0.80},
+            {"dataset_id": "d1", "method_id": "b", "uno_c": 0.70},
+            {"dataset_id": "d1", "method_id": "c", "uno_c": 0.60},
+        ]
+    )
+    cluster_to_matches, methods = _clustered_match_lists(frame, metric="uno_c")
+
+    assert methods == ["a", "b", "c"]
+    assert sorted(cluster_to_matches) == ["d1"]
+    base = cluster_to_matches["d1"]
+    # One unit of 3 methods -> exactly C(3,2) = 3 cross-method matches, no self-ties.
+    assert len(base) == 3
+    assert all(left != right for left, right, _s in base)
+
+    # A bootstrap draw that picks this cluster c times replicates its matches
+    # linearly (this mirrors the extend() done inside elo_ratings' bootstrap).
+    for c in (1, 2, 3, 5):
+        boot_matches: list[tuple[str, str, float]] = []
+        for _ in range(c):
+            boot_matches.extend(base)
+        assert len(boot_matches) == c * len(base)  # linear replication
+        assert all(left != right for left, right, _s in boot_matches)  # zero self-matches
+        if c > 1:
+            # Strictly fewer than the old re-group count C(3c, 2) (which also
+            # carried 3 * C(c, 2) self-ties) -- i.e. no quadratic inflation.
+            quadratic_regroup_count = (3 * c) * (3 * c - 1) // 2
+            assert len(boot_matches) < quadratic_regroup_count

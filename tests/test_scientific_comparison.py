@@ -232,3 +232,23 @@ def test_critical_difference_uses_only_complete_rectangular_dataset_block() -> N
     assert (result["n_datasets_total"] == 2).all()
     assert (result["n_datasets_excluded"] == 1).all()
     assert (result["assumption_status"] == "insufficient_datasets").all()
+    assert result["critical_difference"].isna().all()
+
+
+def test_critical_difference_is_emitted_only_after_significant_friedman() -> None:
+    rows: list[dict[str, object]] = []
+    for dataset_index in range(4):
+        dataset_id = f"d{dataset_index}"
+        rows.extend(
+            [
+                _row(dataset_id, "s1", "a", 0.9),
+                _row(dataset_id, "s1", "b", 0.7),
+                _row(dataset_id, "s1", "c", 0.5),
+            ]
+        )
+
+    result = critical_difference_summary(pd.DataFrame(rows), metric="uno_c")
+
+    assert (result["assumption_status"] == "complete_block").all()
+    assert result["posthoc_eligible"].all()
+    assert (result["critical_difference"] > 0.0).all()

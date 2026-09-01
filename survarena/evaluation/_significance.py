@@ -417,8 +417,12 @@ def critical_difference_summary(
             except ValueError:
                 assumption_status = "friedman_undefined"
         q_alpha = _nemenyi_q_alpha(n_methods)
-        cd = float(q_alpha * np.sqrt(n_methods * (n_methods + 1) / (6.0 * max(n_datasets, 1))))
         posthoc_eligible = assumption_status == "complete_block" and friedman_p_value < 0.05
+        cd = (
+            float(q_alpha * np.sqrt(n_methods * (n_methods + 1) / (6.0 * n_datasets)))
+            if posthoc_eligible
+            else float("nan")
+        )
         for row in avg.to_dict(orient="records"):
             rows.append(
                 {
