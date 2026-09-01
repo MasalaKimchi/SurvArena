@@ -16,7 +16,7 @@ leaderboards, and disk-first result artifacts.
 
 | Goal | First command | Details |
 | --- | --- | --- |
-| Install a local environment | `PYTHON_BIN=python3.11 ./scripts/setup_env.sh` | [`docs/environment.md`](docs/environment.md) |
+| Install the locked local environment | `uv sync --locked` | [`docs/environment.md`](docs/environment.md) |
 | Try your own CSV or Parquet dataset | `survarena pilot --data train.csv --time-col time --event-col event --dataset-name my_dataset` | [Pilot your own dataset](#pilot-your-own-dataset) |
 | Fit and save a predictor | `survarena fit --train train.csv --time-col time --event-col event --dataset-name my_dataset` | [Fit a predictor](#fit-a-predictor) |
 | Inspect a benchmark before running it | `survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml` | [`docs/benchmarking_workflow.md`](docs/benchmarking_workflow.md) |
@@ -41,18 +41,21 @@ results/                   Local experiment outputs
 
 ## Install
 
-Use a repo-local virtual environment. Dependencies include compiled and
+Install the project-pinned uv release, then create the repo-local environment
+from the committed developer/CI lock. Dependencies include compiled and
 modeling-heavy packages such as `scikit-survival`, `torch`, `torchsurv`,
 `autogluon.tabular`, `xgboost`, and `catboost`.
 
 ```bash
-PYTHON_BIN=python3.11 ./scripts/setup_env.sh
-source .venv/bin/activate
-python scripts/check_environment.py
+curl -LsSf https://astral.sh/uv/0.12.8/install.sh | sh
+uv sync --locked
+uv run --no-sync python scripts/check_environment.py
 ```
 
 Supported Python versions are 3.10, 3.11, and 3.12; Python 3.11 is preferred.
-For manual setup, optional extras, and foundation-model dependency notes, see
+The checked-in `.python-version` selects 3.11 when no interpreter is supplied.
+For optional extras, the pip compatibility path, and foundation-model
+dependency notes, see
 [`docs/environment.md`](docs/environment.md).
 
 ## Validate the Install
@@ -60,16 +63,14 @@ For manual setup, optional extras, and foundation-model dependency notes, see
 Start with commands that check wiring before fitting many models:
 
 ```bash
-source .venv/bin/activate
-
 # Confirm imports and metric backends.
-python scripts/check_environment.py
+uv run --no-sync python scripts/check_environment.py
 
 # Inspect the maintained benchmark plan without fitting models.
-survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
+uv run --no-sync survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
 
 # Run one small built-in benchmark slice end to end.
-survarena benchmark run \
+uv run --no-sync survarena benchmark run \
   --config configs/benchmark/manuscript_v1.yaml \
   --dataset whas500 \
   --method coxph \
@@ -79,13 +80,13 @@ survarena benchmark run \
 For a deeper protocol spot-check, run:
 
 ```bash
-./scripts/validate_benchmark_protocol.sh
+uv run --no-sync ./scripts/validate_benchmark_protocol.sh
 ```
 
 Before treating local artifacts as publishable manuscript evidence, run:
 
 ```bash
-python scripts/audit_manuscript_publishability.py --strict
+uv run --no-sync python scripts/audit_manuscript_publishability.py --strict
 ```
 
 The generated report is [`docs/manuscript_publishability.md`](docs/manuscript_publishability.md).
@@ -250,16 +251,15 @@ Foundation adapters are optional. Check readiness before including them in long
 benchmark runs:
 
 ```bash
-INSTALL_EXTRAS=dev,foundation PYTHON_BIN=python3.11 ./scripts/setup_env.sh
-source .venv/bin/activate
-python scripts/check_environment.py --include-foundation
-survarena foundation-check
+uv sync --locked --extra foundation
+uv run --no-sync python scripts/check_environment.py --include-foundation
+uv run --no-sync survarena foundation-check
 ```
 
 For user data, the shortest evaluation path is:
 
 ```bash
-survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
+uv run --no-sync survarena pilot --data my_survival_data.csv --time-col time --event-col event --foundation
 ```
 
 See [`docs/foundation_models.md`](docs/foundation_models.md) for adapter status,
@@ -282,21 +282,30 @@ reuse consistent evaluation partitions.
 
 ## Development
 
-Install developer dependencies with the setup script or manually:
+The primary developer path uses the committed lock. The default `dev`
+dependency group includes the repository's Ruff, mypy, and pytest versions.
 
 ```bash
-python -m pip install -e ".[dev]"
+uv sync --locked
+uv lock --check
 ```
 
 Common checks:
 
 ```bash
-.venv/bin/ruff check survarena tests scripts
-.venv/bin/python -m mypy survarena/core survarena/benchmark/resume.py survarena/data/splitters.py scripts/audit_manuscript_publishability.py
-.venv/bin/python -m pytest -q
-.venv/bin/python -m compileall -q survarena
-.venv/bin/python scripts/audit_manuscript_publishability.py --strict
+uv run --no-sync ruff check survarena tests scripts
+uv run --no-sync python -m mypy survarena/core survarena/benchmark/resume.py survarena/data/splitters.py scripts/audit_manuscript_publishability.py
+uv run --no-sync python -m pytest -q
+uv run --no-sync python -m compileall -q survarena
+uv run --no-sync python scripts/audit_manuscript_publishability.py --strict
+uv sync --locked --only-group docs --python 3.11
+uv run --no-sync sphinx-build -n -W --keep-going -b html docs docs/_build/html
 ```
+
+After an explicit sync, `uv run --no-sync` guarantees that checks use the
+installed lock state without silently changing it. `scripts/setup_env.sh` and
+`python -m pip install -e ".[dev]"` remain supported compatibility paths, but
+they are not lock-equivalent workflows.
 
 The mypy gate is an explicit incremental kernel scope with imported legacy modules skipped, not a whole-package type claim. The strict audit currently exits 2 with `publishable=false` because historical matrices predate behavior-changing fixes; a traceback is a verification failure.
 

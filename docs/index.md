@@ -5,6 +5,47 @@ Last reviewed against the repository docs: 2026-06-05.
 Use this page as the routing map when you know what you want to do but not
 which document owns it.
 
+```{toctree}
+:maxdepth: 2
+:caption: User guides
+
+environment
+datasets
+methods
+foundation_models
+benchmarking_workflow
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Benchmark and reference
+
+protocol
+training_strategy
+discrete_time_hazard_adapter
+autogluon_comparison
+cancer_survival_datasets
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Evidence and status
+
+manuscript_evidence
+manuscript_publishability
+manuscript_run_status
+test_status
+```
+
+```{toctree}
+:maxdepth: 2
+:caption: Contributor guides
+
+contributing_method_adapters
+contributing_datasets
+ci_and_reproducibility
+```
+
 ## First-Time Users
 
 | Task | Read |
@@ -27,6 +68,7 @@ which document owns it.
 | Manuscript evidence bundle and local machine notes | [`manuscript_evidence.md`](manuscript_evidence.md) |
 | Manuscript publishability gaps and completion criteria | [`manuscript_publishability.md`](manuscript_publishability.md) |
 | AutoGluon-style UX comparison | [`autogluon_comparison.md`](autogluon_comparison.md) |
+| CI checks and reproducibility boundaries | [`ci_and_reproducibility.md`](ci_and_reproducibility.md) |
 
 ## Contributors
 

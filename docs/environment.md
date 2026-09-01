@@ -1,39 +1,67 @@
 # Environment
 
-Last reviewed against `pyproject.toml` and setup scripts: 2026-06-05.
+Last reviewed against `pyproject.toml`, `uv.lock`, and setup scripts: 2026-09-01.
 
 ## Supported Python
 
 - 3.11 preferred
 - 3.10 and 3.12 supported
 
-## Quick Setup
+## Locked uv Setup
+
+```bash
+curl -LsSf https://astral.sh/uv/0.12.8/install.sh | sh
+uv sync --locked
+uv run --no-sync python scripts/check_environment.py
+```
+
+The repository requires uv 0.12.8, and `.python-version` selects CPython 3.11
+by default. `uv sync --locked` refuses a stale `uv.lock` instead of resolving a
+new environment. After that explicit sync, use `uv run --no-sync` so commands
+cannot silently update either the environment or lock.
+
+The default sync:
+
+- creates the repo-local `.venv`
+- installs SurvArena's pinned runtime dependencies
+- installs the default `dev` dependency group containing Ruff, mypy, and pytest
+
+Optional foundation extras remain explicit:
+
+```bash
+uv sync --locked --extra foundation
+uv sync --locked --extra foundation-tabarena
+uv sync --locked --extra foundation-tabpfn
+uv sync --locked --extra foundation-mitra
+uv run --no-sync python scripts/check_environment.py --include-foundation
+uv run --no-sync survarena foundation-check
+```
+
+Optional tracking support uses the same lock:
+
+```bash
+uv sync --locked --extra tracking
+```
+
+Always run benchmark commands through the explicitly synced environment:
+
+```bash
+uv run --no-sync python -c "import sys; print(sys.executable)"
+uv run --no-sync survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
+```
+
+## Pip Compatibility Setup
+
+The setup script and manual pip install remain available for contributors who
+cannot use uv. These paths resolve independently and are not equivalent to the
+committed lock.
 
 ```bash
 PYTHON_BIN=python3.11 ./scripts/setup_env.sh
 source .venv/bin/activate
 ```
 
-The setup script:
-
-- creates `.venv`
-- installs SurvArena in editable mode with developer tooling and the default
-  manuscript TabPFN and TabICL foundation dependencies
-- runs `scripts/check_environment.py`
-
-Useful overrides:
-
-- `PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
-- `PYTHON_BIN=python3.10 ./scripts/setup_env.sh`
-- `PYTHON_BIN=python3.12 ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev ./scripts/setup_env.sh` for a core-only contributor environment
-- `INSTALL_EXTRAS=dev,foundation ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev,foundation-tabarena ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev,foundation-tabpfn ./scripts/setup_env.sh`
-- `INSTALL_EXTRAS=dev,foundation-mitra ./scripts/setup_env.sh`
-- `VENV_DIR=.venv311 PYTHON_BIN=python3.11 ./scripts/setup_env.sh`
-
-## Manual Setup
+Manual equivalent:
 
 ```bash
 python3.11 -m venv .venv
@@ -43,53 +71,52 @@ python -m pip install -e ".[dev]"
 python scripts/check_environment.py
 ```
 
-Optional foundation extras:
+Foundation extras can also be appended to that compatibility install:
 
 ```bash
 python -m pip install -e ".[dev,foundation-tabpfn,foundation-tabarena]"
 python -m pip install -e ".[foundation]"
-python scripts/check_environment.py --include-foundation
-survarena foundation-check
-```
-
-Install only one foundation backend when isolating dependency issues:
-
-```bash
-python -m pip install -e ".[foundation-tabarena]"
-python -m pip install -e ".[foundation-tabpfn]"
-python -m pip install -e ".[foundation-mitra]"
-```
-
-Always run benchmark commands with the activated repo-local environment:
-
-```bash
-source .venv/bin/activate
-python -c "import sys, tabicl; print(sys.executable); print(tabicl.__file__)"
-survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
-```
-
-Optional tracking extras:
-
-```bash
-python -m pip install -e ".[tracking]"
 ```
 
 ## Reproducibility Notes
 
-`pyproject.toml` is the source of truth for supported dependency pins and
-optional extras. `requirements.txt` is only a convenience wrapper around the
-default editable contributor install.
+`pyproject.toml` is the source of truth for dependency constraints and optional
+extras. `uv.lock` is the generated, cross-platform resolution used by developer
+machines and CI. Confirm that metadata and lock still agree before committing:
 
-Do not treat `requirements.txt` as a lockfile. Before publishing or archiving a
-benchmark bundle, write an environment freeze next to the retained artifacts:
+```bash
+uv lock --check
+```
+
+For an intentional single-package update, first edit that package's intended
+constraint in `pyproject.toml`—especially when it is exactly pinned—then update
+and review the resolution:
+
+```bash
+uv lock --upgrade-package NAME
+git diff -- uv.lock
+uv lock --check
+```
+
+`requirements.txt` is only a pip compatibility wrapper and is not a lockfile.
+An environment freeze can help diagnose a compatibility-path run:
 
 ```bash
 python -m pip freeze --all > results/<bundle>/environment-freeze.txt
 python -VV > results/<bundle>/python-version.txt
 ```
 
-A committed constraints or lock file is useful once the project chooses one
-exact platform and extras combination for manuscript reproduction.
+Neither the cross-platform developer lock nor a local freeze is the canonical
+manuscript-release environment. Citable benchmark evidence still requires the
+separately governed Phase 6 Linux/amd64 environment and release recipe.
+
+Build the maintained Markdown documentation with the isolated docs group and
+strict warnings:
+
+```bash
+uv sync --locked --only-group docs --python 3.11
+uv run --no-sync sphinx-build -n -W --keep-going -b html docs docs/_build/html
+```
 
 ## What the Check Covers
 
@@ -102,20 +129,21 @@ exact platform and extras combination for manuscript reproduction.
 ## Smoke Checks
 
 ```bash
-python -m compileall survarena
-survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
-survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
-survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
+uv run --no-sync python -m compileall survarena
+uv run --no-sync survarena benchmark run --config configs/benchmark/manuscript_v1.yaml --dry-run
+uv run --no-sync survarena benchmark plan --config configs/benchmark/manuscript_v1.yaml
+uv run --no-sync survarena benchmark doctor --config configs/benchmark/manuscript_v1.yaml --check-imports
 ```
 
-Use `python scripts/check_environment.py --include-foundation` and
-`survarena foundation-check` for optional foundation dependency readiness.
+Use `uv run --no-sync python scripts/check_environment.py --include-foundation`
+and `uv run --no-sync survarena foundation-check` for optional foundation
+dependency readiness.
 
 End-to-end protocol spot-check (dry run plus a tiny fit and artifact checks;
 see `docs/protocol.md`):
 
 ```bash
-./scripts/validate_benchmark_protocol.sh
+uv run --no-sync ./scripts/validate_benchmark_protocol.sh
 ```
 
 Optional environment overrides: `BENCHMARK_CONFIG`, `WORK_DIR`, `PYTHON_BIN`.

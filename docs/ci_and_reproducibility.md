@@ -8,7 +8,9 @@ SurvArena separates fast development assurance, semantic benchmark smoke, and ci
 
 ## Defined Workflows
 
-### [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
+### Pull-request CI
+
+Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 
 | Job | Python | Contract |
 |---|---:|---|
@@ -19,7 +21,9 @@ SurvArena separates fast development assurance, semantic benchmark smoke, and ci
 
 Foundation extras remain outside baseline CI. Their gated weights, authentication, runtime, and hardware needs require separate capability-specific jobs before release.
 
-### [`.github/workflows/benchmark-smoke.yml`](../.github/workflows/benchmark-smoke.yml)
+### Manual benchmark smoke
+
+Workflow: [`.github/workflows/benchmark-smoke.yml`](../.github/workflows/benchmark-smoke.yml)
 
 This manual workflow runs WHAS500/CoxPH with one seed and no external dataset download. It then asserts:
 
