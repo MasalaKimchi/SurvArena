@@ -56,7 +56,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 4. Metric edge fixtures agree with independent references within declared tolerances and every result records its evaluation window/IPCW support.
 5. Invalid or unsupported prediction bundles are rejected before scoring and cannot enter full-distribution headline tables.
 
-**Plans:** 0/3 plans complete
+**Plans:** 1/3 plans executed
 
 - Wave 1 — `02-01`: Establish exact comparison cells, complete common support, dataset ranks/wins, reliability, and equal-weight ratings.
 - Wave 2 — `02-02`: Make pairwise and multiple-method inference dataset-level, complete-block, and equally weighted.
@@ -153,7 +153,7 @@ Milestone v2.0 converts the current manuscript-oriented benchmark into the verif
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 1. Truthful Green Baseline | v2.0 | 3/3 | Complete    | 2026-09-01 |
-| 2. Scientific Comparison Kernel | v2.0 | 0/3 | Planned | - |
+| 2. Scientific Comparison Kernel | v2.0 | 1/3 | In Progress|  |
 | 3. Execution and Data Safety | v2.0 | 0/TBD | Not started | - |
 | 4. Authoritative Protocol and Results | v2.0 | 0/TBD | Not started | - |
 | 5. Representative Protocol Pilot | v2.0 | 0/TBD | Not started | - |
