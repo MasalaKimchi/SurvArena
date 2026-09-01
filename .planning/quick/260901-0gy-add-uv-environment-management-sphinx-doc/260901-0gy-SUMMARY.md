@@ -24,7 +24,7 @@ key-files:
 
 key-decisions:
   - "Treat uv.lock as the cross-platform developer/CI lock, not the separately governed canonical Linux/amd64 manuscript-release environment."
-  - "Keep the Python 3.10 import and infrastructure lanes, but run the full suite on 3.11/3.12 until the overlapping user-owned timezone.utc compatibility edit in tuning.py can be committed separately."
+  - "Run full pytest and compileall on the supported Python boundaries, 3.10 and 3.12, while retaining import coverage on 3.10/3.11/3.12."
   - "Build narrative Markdown with MyST and a plain-text Mermaid lexer, without autodoc or a Mermaid renderer."
 
 patterns-established:
@@ -41,7 +41,7 @@ completed: 2026-09-01
 
 # Quick Task 260901-0gy: uv, Sphinx, and Locked CI Summary
 
-**A uv 0.12.8 lock-backed contributor environment, strict 18-page Sphinx guide site, and immutable GitHub Actions quality gates now share one executable local/CI contract.**
+**A uv 0.12.8 lock-backed contributor environment, strict 20-source Sphinx guide site, and immutable GitHub Actions quality gates now share one executable local/CI contract.**
 
 ## Performance
 
@@ -54,7 +54,7 @@ completed: 2026-09-01
 ## Accomplishments
 
 - Added a generated cross-platform `uv.lock`, preferred Python 3.11 pin, uv version requirement, PEP 735 quality/test/import/docs groups, and strict pytest configuration without changing runtime or optional-backend pins.
-- Turned all 18 tracked Markdown pages into a strict MyST/Sphinx site with complete toctree coverage and a warning-safe plain-text Mermaid fallback.
+- Turned every tracked Markdown guide into a strict MyST/Sphinx site with complete, regression-tested toctree coverage and a warning-safe plain-text Mermaid fallback.
 - Rebuilt PR and manual benchmark workflows around locked uv syncs, immutable official action SHAs, read-only permissions, credential-safe checkout, stable cache profiles, and focused infrastructure regression tests.
 - Verified the committed result from a detached zero-overlay worktree while preserving all 30 pre-existing dirty files byte-for-byte.
 
@@ -65,8 +65,9 @@ Each implementation task was committed atomically:
 1. **Task 1: Define the uv and pytest project contract** - `10be59f` (chore)
 2. **Task 2: Build the existing Markdown guides as strict Sphinx documentation** - `c999e5d` (docs)
 3. **Task 3: Enforce the locked local contract in GitHub Actions** - `c2be225` (chore)
+4. **Verification gap closure: Restore boundary CI and integrate later guides** - `b7b1df2` (fix)
 
-Plan metadata and this summary remain uncommitted for the root GSD orchestrator, as required by the quick-task handoff.
+The root GSD orchestrator finalized the plan, summary, verification, and state artifacts after independent re-verification.
 
 ## Files Created/Modified
 
@@ -90,11 +91,11 @@ Plan metadata and this summary remain uncommitted for the root GSD orchestrator,
 - The committed lock is deliberately described as the reproducible developer/CI resolution. Phase 6 still owns a canonical Linux/amd64 release environment for citable benchmark evidence.
 - Cheap jobs install isolated dependency groups; only full tests and manual benchmark smoke install the runtime graph.
 - Sphinx renders maintained narrative sources only, avoiding autodoc imports of the heavy scientific stack.
-- Because the clean committed tree uses `datetime.UTC` in `survarena/benchmark/tuning.py`, full Python 3.10 collection cannot start. The working tree already contains an overlapping user-owned `timezone.utc` fix plus unrelated HPO changes, so those bytes were preserved and not staged. The non-red full-test matrix is 3.11/3.12 pending a separate owner-controlled commit of that compatibility hunk.
+- The initial clean tree could not collect on Python 3.10 because it used `datetime.UTC`. The overlapping user-owned `timezone.utc` fix was preserved, later landed independently, and enabled `b7b1df2` to restore the intended 3.10/3.12 full-test matrix.
 
-## Verification
+## Initial Execution Verification
 
-The final gate ran from a detached validation worktree at `c2be225` with no dirty-file overlays:
+The initial gate ran from a detached validation worktree at `c2be225` with no dirty-file overlays. These results record the original execution checkpoint; the final re-verification evidence appears under **Verification Gap Closure** below.
 
 - uv 0.12.8 version and `uv lock --check`: passed.
 - `ruff check --output-format=github survarena tests scripts`: passed.
@@ -129,21 +130,22 @@ The final gate ran from a detached validation worktree at `c2be225` with no dirt
 - **Verification:** The strict build rendered all 18 pages with no warnings in both candidate and detached final validation.
 - **Committed in:** `c999e5d` (part of Task 2)
 
-### Constrained Plan Adjustment
+### Temporary Plan Adjustment (Closed)
 
-**3. [Rule 3 - Blocking] Substituted Python 3.11 for the full Python 3.10 test lane**
+**3. [Rule 3 - Blocking] Temporarily substituted Python 3.11 for the full Python 3.10 test lane**
 
 - **Found during:** Task 3 (Enforce the locked local contract in GitHub Actions)
 - **Issue:** Clean Python 3.10 collection fails because committed `survarena/benchmark/tuning.py` imports `datetime.UTC`, introduced in Python 3.11. The pre-existing dirty version already changes the exact lines to `timezone.utc`, alongside unrelated user HPO work.
-- **Resolution:** Per the dirty-worktree guardrail, neither the overlapping line nor the rest of `tuning.py` was modified or staged. CI and its regression/documentation contract use full tests on 3.11/3.12; the minimum version remains covered by locked import and infrastructure-policy lanes.
+- **Initial resolution:** Per the dirty-worktree guardrail, neither the overlapping line nor the rest of `tuning.py` was modified or staged. CI temporarily used full tests on 3.11/3.12.
+- **Closure:** The compatibility fix later landed independently. Clean Python 3.10 verification passed with 297 tests and 6 skips plus compileall, and `b7b1df2` restored CI, tests, and documentation to the 3.10/3.12 boundaries.
 - **Files modified:** `.github/workflows/ci.yml`, `tests/test_developer_infrastructure.py`, `docs/ci_and_reproducibility.md`
 - **Verification:** Clean final lanes passed as listed above, and the original `tuning.py` hash remained identical to the baseline manifest.
 - **Committed in:** `c2be225` (part of Task 3)
 
 ---
 
-**Total deviations:** 2 auto-fixed blockers and 1 constrained matrix adjustment.
-**Impact on plan:** The uv, documentation, security, and supported-version import contracts are complete. The original minimum-version full-suite criterion remains pending the owner-controlled Python 3.10 compatibility commit described below; no unrelated user edits were absorbed.
+**Total deviations:** 2 auto-fixed blockers and 1 temporary matrix adjustment, now closed.
+**Impact on plan:** The uv, documentation, security, and supported-version contracts are complete. No unrelated user edits were absorbed by the quick-task commits.
 
 ## Issues Encountered
 
@@ -160,18 +162,38 @@ None - no secrets, deployment, or external service configuration was added.
 
 ## Remaining Issue
 
-- Full-suite Python 3.10 CI should replace the temporary 3.11 lane after the owner safely commits the already-present `timezone.utc` compatibility hunk in `survarena/benchmark/tuning.py`. Until then, Python 3.10 is proven only by locked import smoke and infrastructure tests, not the full 290-test suite.
+- No developer/CI contract gap remains. The separately governed canonical Linux/amd64 release environment and regenerated manuscript evidence remain milestone work, not part of this quick task.
 
 ## Next Phase Readiness
 
 - Contributors and PR CI can now reproduce the same locked Ruff, mypy, pytest, compile, and Sphinx commands with uv 0.12.8.
 - Phase 6 can build its separately governed canonical Linux/amd64 release environment without conflating it with the cross-platform developer lock.
-- Root review is needed only for the documented Python 3.10 full-suite variance; all other planned gates passed cleanly.
+- Independent re-verification passed all 5 must-haves; the developer/CI workflow is ready for use.
+
+## Verification Gap Closure (2026-09-01)
+
+Commit `b7b1df2` closes the independent verification gaps: full tests again target
+the supported Python 3.10/3.12 boundaries; every tracked Markdown guide is in one
+toctree; the two planning-file references are Sphinx-safe; and regression tests
+now require the exact four-path mypy scope plus a locked sync before every
+`uv run --no-sync` execution. The July code-quality audit now identifies its
+no-lock statement as a superseded snapshot while keeping the canonical release
+lock outstanding.
+
+Post-remediation validation used isolated uv 0.12.8 environments:
+
+- `uv lock --check`: passed (223 packages).
+- Focused infrastructure suite: 5 passed on Python 3.10.21 and 5 passed on Python 3.12.2.
+- Ruff 0.15.22: passed over `survarena tests scripts`.
+- Scoped mypy 2.3.1: passed with 11 source files checked.
+- Strict Sphinx 8.2.3/MyST 5.1 build: passed for all 20 sources with `-n -W --keep-going`.
+- Full suites were not repeated because the independent verifier had already established 297 passed and 6 skipped plus compileall on both boundary versions against the current kernel.
+- Concurrent `docs/index.md` routing and `docs/benchmark_readiness.md` register additions were preserved during selective staging and landed separately in `43457a0`.
 
 ## Self-Check: PASSED
 
 - All key created artifacts and the summary exist.
-- Task commits `10be59f`, `c999e5d`, and `c2be225` are present in repository history.
+- Task commits `10be59f`, `c999e5d`, `c2be225`, and `b7b1df2` are present in repository history.
 - The implementation commit range exactly matches the 13 planned files plus the authorized `survarena/core/protocol/spec.py` blocking fix.
 
 ---
