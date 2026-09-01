@@ -48,11 +48,14 @@ in a numpy/pandas/stdlib sandbox; `[ENV]` = needs the full stack.
    `logging/export_shared.py`, `evaluation/_metric_stats.py`). As the leaderboard
    grows, this is how a new metric silently goes missing on failure rows or in an
    export column. Derive all of them from one `MetricBundle`.
-2. **[M][VN] Ship a hash-pinned lockfile + complete env capture.** No resolved
-   lock today; the run manifest's package list is hardcoded and *omits
-   torch/torchsurv/scipy* (`logging/manifest.py:34`). A citable benchmark must let
-   a reader reproduce a number from code+env — record the full `pip freeze` and a
-   `git_dirty` flag per run.
+2. **[M][VN] Ship a hash-pinned release lock + complete env capture.** At the
+   2026-07-15 audit snapshot there was no resolved lock. The developer/CI gap is
+   now superseded by the committed cross-platform `uv.lock`; the separately
+   governed canonical release lock is still outstanding. The run manifest's
+   package list is hardcoded and *omits torch/torchsurv/scipy*
+   (`logging/manifest.py:34`). A citable benchmark must let a reader reproduce a
+   number from code+env — record the full environment and a `git_dirty` flag per
+   run.
 3. **[M][VN] Centralize determinism and prove it.** `utils/seeds.py:9` seeds only
    `random`+`numpy`; torch determinism is decentralized to each deep adapter via
    `set_torch_seed`. A new adapter that forgets it is silently non-reproducible,

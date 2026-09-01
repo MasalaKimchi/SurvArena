@@ -20,7 +20,7 @@ read-only jobs:
 | `quality` | 3.11 | Reject a stale lock, then run Ruff with GitHub annotations |
 | `type` | 3.11 | Run mypy over the declared incremental kernel scope |
 | `import-smoke` | 3.10, 3.11, 3.12 | Import `survarena` with only the six locked lightweight dependencies |
-| `full-tests` | 3.11, 3.12 | Install the locked runtime and test group, run full pytest, then compile the package |
+| `full-tests` | 3.10, 3.12 | Install the locked runtime and test group, run full pytest, then compile the package |
 | `docs` | 3.11 | Build every tracked Markdown guide with nitpicky, fail-on-warning Sphinx |
 
 All jobs have explicit timeouts, cancel superseded runs, and keep
@@ -70,12 +70,12 @@ for version in 3.10 3.11 3.12; do
 done
 ```
 
-Full tests and compile checks run on the preferred and maximum supported
-versions. The lightweight import matrix separately retains the Python 3.10
-minimum-version guard.
+Full tests and compile checks run on the minimum and maximum supported versions.
+The preferred Python 3.11 line is exercised by the quality, type, documentation,
+import-smoke, and manual benchmark-smoke jobs.
 
 ```bash
-for version in 3.11 3.12; do
+for version in 3.10 3.12; do
   UV_PROJECT_ENVIRONMENT=".venv-test-${version}" \
     uv sync --locked --no-default-groups --group test --python "${version}"
   UV_PROJECT_ENVIRONMENT=".venv-test-${version}" \

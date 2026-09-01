@@ -73,7 +73,7 @@ The audit assesses benchmark design and release evidence; it is not an independe
 - [`test_status.md`](test_status.md) owns commands actually observed in a named environment; configured checks are not silently promoted to observed evidence.
 - [`ci_and_reproducibility.md`](ci_and_reproducibility.md) owns configured automation and the boundary between developer CI and the canonical release environment.
 - [`manuscript_publishability.md`](manuscript_publishability.md) owns the volatile evidence-bundle verdict and completion criteria.
-- [`.planning/REQUIREMENTS.md`](../.planning/REQUIREMENTS.md) owns milestone requirement state, and [`.planning/ROADMAP.md`](../.planning/ROADMAP.md) owns phase sequencing. This register owns rationale, maturity classification, and durable audit IDs rather than duplicating their changeable status tables.
+- `.planning/REQUIREMENTS.md` owns milestone requirement state, and `.planning/ROADMAP.md` owns phase sequencing. This register owns rationale, maturity classification, and durable audit IDs rather than duplicating their changeable status tables.
 
 ## Dirty Cited-File Snapshot
 

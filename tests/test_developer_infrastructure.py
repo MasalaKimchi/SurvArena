@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import re
+import shlex
+import subprocess
 from pathlib import Path
 
 try:
@@ -14,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = ROOT / "pyproject.toml"
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 SMOKE_WORKFLOW = ROOT / ".github" / "workflows" / "benchmark-smoke.yml"
+DOCS_INDEX = ROOT / "docs" / "index.md"
 
 CHECKOUT_ACTION = "actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1"
 SETUP_UV_ACTION = "astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9"
@@ -62,6 +65,43 @@ def _dependency_profile(job: dict[str, object]) -> str:
     return matches[0]
 
 
+def _tracked_markdown_guides() -> set[str]:
+    result = subprocess.run(
+        ["git", "ls-files", "--", "docs"],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    guides = set()
+    for item in result.stdout.splitlines():
+        path = Path(item)
+        if path.suffix == ".md" and path != Path("docs/index.md"):
+            guides.add(path.relative_to("docs").with_suffix("").as_posix())
+    return guides
+
+
+def _toctree_documents() -> list[str]:
+    entries: list[str] = []
+    in_toctree = False
+    for line in DOCS_INDEX.read_text(encoding="utf-8").splitlines():
+        item = line.strip()
+        if item == "```{toctree}":
+            assert not in_toctree
+            in_toctree = True
+            continue
+        if in_toctree and item == "```":
+            in_toctree = False
+            continue
+        if not in_toctree or not item or item.startswith(":"):
+            continue
+        titled_target = re.fullmatch(r".+\s+<([^>]+)>", item)
+        target = titled_target.group(1) if titled_target else item
+        entries.append(target.removesuffix(".md"))
+    assert not in_toctree
+    return entries
+
+
 def test_uv_dependency_groups_and_pytest_contract() -> None:
     config = _load_pyproject()
     project = config["project"]
@@ -93,6 +133,12 @@ def test_uv_dependency_groups_and_pytest_contract() -> None:
     assert uv_config["dependency-groups"]["docs"]["requires-python"] == ">=3.11"
     assert {"-ra", "--strict-config", "--strict-markers"} <= set(pytest_options["addopts"])
     assert pytest_options["xfail_strict"] is True
+
+
+def test_all_tracked_markdown_guides_are_in_exactly_one_toctree() -> None:
+    entries = _toctree_documents()
+    assert len(entries) == len(set(entries))
+    assert set(entries) == _tracked_markdown_guides()
 
 
 def test_workflow_triggers_permissions_and_resource_guards() -> None:
@@ -131,7 +177,7 @@ def test_workflow_matrices_actions_checkout_and_cache_profiles() -> None:
 
     assert set(ci_jobs) == {"quality", "type", "import-smoke", "full-tests", "docs"}
     assert ci_jobs["import-smoke"]["strategy"]["matrix"]["python-version"] == ["3.10", "3.11", "3.12"]
-    assert ci_jobs["full-tests"]["strategy"]["matrix"]["python-version"] == ["3.11", "3.12"]
+    assert ci_jobs["full-tests"]["strategy"]["matrix"]["python-version"] == ["3.10", "3.12"]
 
     expected_python = {
         "quality": "3.11",
@@ -174,8 +220,19 @@ def test_workflow_commands_are_locked_and_match_local_quality_gates() -> None:
         "uv run --no-sync ruff check --output-format=github survarena tests scripts"
         in _commands(ci_jobs["quality"])
     )
-    assert "uv run --no-sync python -m mypy" in _commands(ci_jobs["type"])
-    assert "survarena/core" in _commands(ci_jobs["type"])
+    mypy_commands = [
+        str(step["run"])
+        for step in _steps(ci_jobs["type"])
+        if "python -m mypy" in str(step.get("run", ""))
+    ]
+    assert len(mypy_commands) == 1
+    mypy_tokens = shlex.split(mypy_commands[0])
+    assert mypy_tokens[mypy_tokens.index("mypy") + 1 :] == [
+        "survarena/core",
+        "survarena/benchmark/resume.py",
+        "survarena/data/splitters.py",
+        "scripts/audit_manuscript_publishability.py",
+    ]
     assert "uv run --no-sync python -c \"import survarena" in _commands(ci_jobs["import-smoke"])
     assert "uv run --no-sync python -m pytest -q" in _commands(ci_jobs["full-tests"])
     assert "uv run --no-sync python -m compileall -q survarena" in _commands(ci_jobs["full-tests"])
@@ -184,14 +241,19 @@ def test_workflow_commands_are_locked_and_match_local_quality_gates() -> None:
 
     for workflow in (ci, smoke):
         for job in workflow["jobs"].values():
-            for step in _steps(job):
+            locked_sync_indices = []
+            run_steps = [(index, step) for index, step in enumerate(_steps(job)) if "run" in step]
+            for index, step in run_steps:
                 command = step.get("run")
-                if command is None:
-                    continue
                 command = str(command).strip()
                 if command.startswith("uv sync"):
                     assert "--locked" in command
+                    locked_sync_indices.append(index)
                 elif command == "uv lock --check":
                     continue
                 else:
                     assert command.startswith("uv run --no-sync")
+            assert locked_sync_indices
+            for index, step in run_steps:
+                if re.search(r"(?m)^\s*uv\s+run\s+--no-sync\b", str(step["run"])):
+                    assert any(sync_index < index for sync_index in locked_sync_indices)

@@ -35,6 +35,8 @@ manuscript_evidence
 manuscript_publishability
 manuscript_run_status
 test_status
+benchmark_readiness
+code_quality_and_efficiency
 ```
 
 ```{toctree}
