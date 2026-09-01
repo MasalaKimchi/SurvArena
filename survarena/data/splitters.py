@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
@@ -91,6 +92,34 @@ def _expected_split_manifest_payload(
     else:
         raise ValueError(f"Unsupported split strategy: {split_strategy}")
     return payload
+
+
+def _split_manifest_payload_diff(observed: object, expected: Mapping[str, object]) -> list[str]:
+    """Return a deterministic, bounded compatibility diff for a cached manifest payload."""
+
+    def _bounded(value: object, *, limit: int = 160) -> str:
+        rendered = repr(value)
+        return rendered if len(rendered) <= limit else f"{rendered[: limit - 3]}..."
+
+    if not isinstance(observed, Mapping):
+        return [f"manifest_payload has type {type(observed).__name__}; expected a mapping"]
+
+    observed_by_name = {str(key): value for key, value in observed.items()}
+    expected_keys = set(expected)
+    observed_keys = set(observed_by_name)
+    differences = [
+        f"missing field '{key}' (expected {_bounded(expected[key])})" for key in sorted(expected_keys - observed_keys)
+    ]
+    differences.extend(
+        f"unexpected field '{key}' (cached {_bounded(observed_by_name[key])})"
+        for key in sorted(observed_keys - expected_keys)
+    )
+    differences.extend(
+        f"changed field '{key}': cached={_bounded(observed_by_name[key])}, expected={_bounded(expected[key])}"
+        for key in sorted(expected_keys & observed_keys)
+        if observed_by_name[key] != expected[key]
+    )
+    return differences or ["manifest payload differs but no field-level difference could be rendered"]
 
 
 def write_split_manifest(root: Path, task_id: str, manifest_payload: dict, split_ids: list[str]) -> None:
@@ -293,11 +322,13 @@ def load_or_create_splits(
             _validate_event_stratification(loaded_splits, event)
             return loaded_splits
         if not regenerate_on_mismatch:
+            differences = _split_manifest_payload_diff(manifest.get("manifest_payload"), manifest_payload)
             raise ValueError(
                 "Existing split manifest payload mismatch for "
-                f"task_id='{task_id}'. "
-                "Deterministic contract violation: refusing to regenerate splits automatically. "
-                "Re-run with explicit regenerate flag to overwrite split artifacts."
+                f"task_id='{task_id}' at '{manifest_path}'.\n"
+                + "\n".join(f"- {difference}" for difference in differences)
+                + "\nDeterministic contract violation: refusing to regenerate splits automatically. "
+                "Re-run the benchmark with --regenerate-splits to deliberately replace these split artifacts."
             )
 
     if split_strategy == "repeated_nested_cv":

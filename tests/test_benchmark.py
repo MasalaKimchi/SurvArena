@@ -85,7 +85,10 @@ def test_manifest_mismatch_raises_by_default(tmp_path) -> None:
         outer_repeats=1,
     )
 
-    with pytest.raises(ValueError, match="manifest payload mismatch"):
+    manifest_path = tmp_path / "data" / "splits" / task_id / "manifest.json"
+    original_manifest = manifest_path.read_bytes()
+
+    with pytest.raises(ValueError, match="manifest payload mismatch") as exc_info:
         load_or_create_splits(
             root=tmp_path,
             task_id=task_id,
@@ -96,6 +99,48 @@ def test_manifest_mismatch_raises_by_default(tmp_path) -> None:
             outer_folds=2,
             outer_repeats=1,
         )
+
+    message = str(exc_info.value)
+    assert "changed field 'seeds'" in message
+    assert str(manifest_path) in message
+    assert "--regenerate-splits" in message
+    assert manifest_path.read_bytes() == original_manifest
+
+
+def test_legacy_manifest_reports_missing_fingerprint_without_rewriting(tmp_path) -> None:
+    task_id = "determinism_legacy_manifest"
+    event = _event_labels()
+    load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[11],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+    manifest_path = tmp_path / "data" / "splits" / task_id / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    del manifest["manifest_payload"]["event_fingerprint"]
+    manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    legacy_manifest = manifest_path.read_bytes()
+
+    with pytest.raises(ValueError) as exc_info:
+        load_or_create_splits(
+            root=tmp_path,
+            task_id=task_id,
+            split_strategy="repeated_nested_cv",
+            n_samples=event.size,
+            event=event,
+            seeds=[11],
+            outer_folds=2,
+            outer_repeats=1,
+        )
+
+    assert "missing field 'event_fingerprint'" in str(exc_info.value)
+    assert "--regenerate-splits" in str(exc_info.value)
+    assert manifest_path.read_bytes() == legacy_manifest
 
 
 def test_manifest_mismatch_allows_explicit_regenerate(tmp_path) -> None:
@@ -126,6 +171,22 @@ def test_manifest_mismatch_allows_explicit_regenerate(tmp_path) -> None:
 
     assert regenerated
     assert all(split.seed == 22 for split in regenerated)
+    manifest_path = tmp_path / "data" / "splits" / task_id / "manifest.json"
+    regenerated_manifest = manifest_path.read_bytes()
+
+    reused = load_or_create_splits(
+        root=tmp_path,
+        task_id=task_id,
+        split_strategy="repeated_nested_cv",
+        n_samples=event.size,
+        event=event,
+        seeds=[22],
+        outer_folds=2,
+        outer_repeats=1,
+    )
+
+    assert [split.split_id for split in reused] == [split.split_id for split in regenerated]
+    assert manifest_path.read_bytes() == regenerated_manifest
 
 
 def test_matching_manifest_reuses_existing_splits(tmp_path) -> None:
