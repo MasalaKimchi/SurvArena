@@ -1,6 +1,6 @@
 # SurvArena Project State
 
-**Status date:** 2026-08-31
+**Status date:** 2026-09-01
 
 **Software milestone:** `v2.0 Verified Benchmark Kernel`
 
@@ -12,7 +12,7 @@ SurvArena is a Python benchmark toolkit for single-event, right-censored tabular
 
 ## Current Verified Behavior
 
-The 2026-08-31 local development environment has executed the full package test suite, Ruff, an explicit incremental mypy scope, and package byte-compilation. The strict manuscript audit now executes without the optional `tabulate` dependency and returns an actionable blocker verdict rather than crashing. Split-cache mismatches remain fail-closed and report field differences, the manifest path, and the explicit `--regenerate-splits` recovery flag.
+The 2026-09-01 local development environment has executed the full package test suite, Ruff, an explicit incremental mypy scope, and package byte-compilation. A clean archive of the committed snapshot passed the same development gates and a five-fold WHAS500/CoxPH semantic smoke. The strict manuscript audit now executes without the optional `tabulate` dependency and returns an actionable blocker verdict rather than crashing. Split-cache mismatches remain fail-closed and report field differences, the manifest path, and the explicit `--regenerate-splits` recovery flag.
 
 Phase 1 establishes code-health and semantic-smoke evidence only. It does not validate the manuscript's statistical conclusions or make historical result matrices citable.
 

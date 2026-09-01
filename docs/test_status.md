@@ -1,6 +1,6 @@
 # Test and Verification Status
 
-**Observed locally:** 2026-08-31
+**Observed locally:** 2026-09-01
 
 **Scope:** Phase 1 of `v2.0 Verified Benchmark Kernel`
 
@@ -14,7 +14,8 @@ This page distinguishes checks actually executed in the current workspace from a
 |---|---|---|
 | Lint | `.venv/bin/ruff check survarena tests scripts` | Passed |
 | Incremental static types | `.venv/bin/python -m mypy survarena/core survarena/benchmark/resume.py survarena/data/splitters.py scripts/audit_manuscript_publishability.py` | No issues in 11 source files |
-| Full suite | `.venv/bin/python -m pytest -q` | 256 passed, 6 skipped |
+| Full suite, current workspace | `.venv/bin/python -m pytest -q` | 256 passed, 6 skipped |
+| Full suite, clean committed snapshot | `.venv/bin/python -m pytest -q` | 248 passed, 6 skipped |
 | Byte compilation | `.venv/bin/python -m compileall -q survarena` | Passed |
 | Strict evidence audit | `.venv/bin/python scripts/audit_manuscript_publishability.py --strict` | Executed without traceback; expected `publishable=false`, exit 2 |
 
@@ -24,7 +25,9 @@ The mypy gate is intentionally incremental, not whole-package coverage. Its exac
 
 ## Semantic Benchmark Smoke
 
-The Phase 1 smoke uses one WHAS500 seed with CoxPH in the no-HPO arm. Passing requires more than a zero process exit: at least one successful row, a finite Uno C value, dataset/method/arm identity columns, and the compact manifest/navigator/fold/leaderboard/diagnostics artifacts. The final observed output directory is temporary and is not retained as benchmark evidence.
+The Phase 1 smoke uses one WHAS500 seed with CoxPH in the no-HPO arm. Passing requires more than a zero process exit: at least one successful row, a finite Uno C value, dataset/method/arm identity columns, and the compact manifest/navigator/fold/leaderboard/diagnostics artifacts.
+
+The clean committed snapshot produced five successful outer-fold rows. Uno C ranged from `0.670736789703` to `0.887688636780`; every value was finite. The manifest, navigator, fold results, leaderboard, diagnostics, and README existed, while the deliberately redundant JSON leaderboard did not. The temporary output was not copied into `results/` and is not benchmark evidence.
 
 ## Configured but Not Independently Observed
 

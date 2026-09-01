@@ -1,6 +1,6 @@
 # CI and Reproducibility
 
-**Status date:** 2026-08-31
+**Status date:** 2026-09-01
 
 **Target:** `survbench-1.0-rc1`
 
@@ -40,7 +40,7 @@ The README repeats the exact Ruff, mypy, pytest, and compile commands. `scripts/
 
 - Direct dependencies are pinned in `pyproject.toml`, but there is no fully resolved hashed transitive lock.
 - `Dockerfile` and `.dockerignore` are scaffolding; no successful canonical image build is claimed here.
-- Hosted CI definitions have been syntax-checked locally, but no completed remote run is claimed.
+- Hosted CI definitions have been syntax-checked locally, and their committed source snapshot passed equivalent local gates plus the five-fold semantic smoke; no completed remote run is claimed.
 - Developer-machine numbers are diagnostic only. Citable results must come from the future digest-pinned Linux/amd64 release environment.
 - Historical benchmark matrices predate behavior-changing fixes and must not be mixed into the release collection.
 
