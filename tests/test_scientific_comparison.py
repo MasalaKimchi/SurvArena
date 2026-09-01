@@ -7,6 +7,11 @@ import pytest
 from survarena.evaluation._comparison import build_comparison_population, coverage_summary
 from survarena.evaluation._ranking import add_dataset_ranks, pairwise_win_rate
 from survarena.evaluation._ratings import elo_ratings
+from survarena.evaluation._significance import (
+    bootstrap_metric_ci,
+    critical_difference_summary,
+    pairwise_significance,
+)
 
 
 def _row(
@@ -143,3 +148,75 @@ def test_elo_point_rating_is_invariant_to_fold_replication_within_dataset() -> N
 
     np.testing.assert_allclose(actual.loc[expected.index, "elo_rating"], expected["elo_rating"])
     assert (actual["n_datasets"] == 2).all()
+
+
+def test_pairwise_significance_uses_dataset_as_inferential_unit() -> None:
+    rows: list[dict[str, object]] = []
+    for split in range(15):
+        rows.append(_row("d1", f"s{split}", "a", 0.8))
+        rows.append(_row("d1", f"s{split}", "b", 0.6))
+
+    result = pairwise_significance(pd.DataFrame(rows), metric="uno_c")
+    a_vs_b = result[(result["method_id"] == "a") & (result["opponent_method_id"] == "b")].iloc[0]
+
+    assert int(a_vs_b["n_datasets"]) == 1
+    assert int(a_vs_b["n_matched_cells"]) == 15
+    assert not bool(a_vs_b["testable"])
+    assert a_vs_b["not_testable_reason"] == "insufficient_datasets"
+    assert float(a_vs_b["p_value"]) == 1.0
+
+
+def test_dataset_replication_does_not_change_pairwise_effect_or_p_value() -> None:
+    rows: list[dict[str, object]] = []
+    for dataset, a_score, b_score in (("d1", 0.8, 0.7), ("d2", 0.6, 0.65), ("d3", 0.9, 0.75)):
+        rows.append(_row(dataset, "s1", "a", a_score))
+        rows.append(_row(dataset, "s1", "b", b_score))
+    base = pd.DataFrame(rows)
+    replicated = [*rows]
+    for split in range(2, 12):
+        replicated.append(_row("d1", f"s{split}", "a", 0.8))
+        replicated.append(_row("d1", f"s{split}", "b", 0.7))
+
+    expected = pairwise_significance(base, metric="uno_c")
+    actual = pairwise_significance(pd.DataFrame(replicated), metric="uno_c")
+    expected_ab = expected[(expected["method_id"] == "a") & (expected["opponent_method_id"] == "b")].iloc[0]
+    actual_ab = actual[(actual["method_id"] == "a") & (actual["opponent_method_id"] == "b")].iloc[0]
+
+    assert int(actual_ab["n_datasets"]) == 3
+    assert float(actual_ab["effect_size_mean_delta"]) == pytest.approx(
+        float(expected_ab["effect_size_mean_delta"])
+    )
+    assert float(actual_ab["p_value"]) == pytest.approx(float(expected_ab["p_value"]))
+
+
+def test_bootstrap_metric_ci_weights_dataset_means_equally() -> None:
+    rows = [_row("d1", "s1", "a", 0.9), _row("d2", "s1", "a", 0.3)]
+    for split in range(2, 12):
+        rows.append(_row("d1", f"s{split}", "a", 0.9))
+
+    result = bootstrap_metric_ci(pd.DataFrame(rows), metric="uno_c", n_bootstrap=100, seed=3).iloc[0]
+
+    assert float(result["mean"]) == pytest.approx(0.6)
+    assert int(result["n_datasets"]) == 2
+    assert int(result["n_cells"]) == 11
+
+
+def test_critical_difference_uses_only_complete_rectangular_dataset_block() -> None:
+    frame = pd.DataFrame(
+        [
+            _row("d1", "s1", "a", 0.9),
+            _row("d1", "s1", "b", 0.8),
+            _row("d1", "s1", "c", 0.7),
+            _row("d2", "s1", "a", 0.9),
+            _row("d2", "s1", "b", 0.8),
+        ]
+    )
+
+    result = critical_difference_summary(frame, metric="uno_c")
+
+    assert set(result["method_id"]) == {"a", "b", "c"}
+    assert (result["n_methods"] == 3).all()
+    assert (result["n_datasets"] == 1).all()
+    assert (result["n_datasets_total"] == 2).all()
+    assert (result["n_datasets_excluded"] == 1).all()
+    assert (result["assumption_status"] == "insufficient_datasets").all()
