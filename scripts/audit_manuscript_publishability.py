@@ -180,7 +180,20 @@ def _markdown_table(frame: pd.DataFrame, columns: list[str]) -> str:
     if frame.empty:
         return "_No rows._"
     subset = frame.loc[:, columns].copy()
-    return subset.to_markdown(index=False)
+
+    def _cell(value: Any) -> str:
+        if value is None or bool(pd.isna(value)):
+            return "NA"
+        text = str(value).replace("\\", "\\\\").replace("|", "\\|")
+        return text.replace("\r\n", "<br>").replace("\n", "<br>").replace("\r", "<br>")
+
+    header = "| " + " | ".join(_cell(column) for column in columns) + " |"
+    separator = "| " + " | ".join("---" for _ in columns) + " |"
+    rows = [
+        "| " + " | ".join(_cell(value) for value in row) + " |"
+        for row in subset.itertuples(index=False, name=None)
+    ]
+    return "\n".join([header, separator, *rows])
 
 
 def build_report() -> tuple[str, bool]:
