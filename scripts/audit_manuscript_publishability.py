@@ -36,6 +36,9 @@ FOUNDATION_ALIAS_TO_CANONICAL = {
     "realtabpfn_discrete_hazard_survival": "realtabpfn_survival",
 }
 CANONICAL_FOUNDATION_METHODS = tuple(FOUNDATION_ALIAS_TO_CANONICAL.values())
+# Behavior-changing benchmark fixes invalidate the retained matrices as release evidence.
+# Phase 6 replaces this fail-closed flag with a provenance-verified collection check.
+CURRENT_EVIDENCE_VALID = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -220,6 +223,10 @@ def build_report() -> tuple[str, bool]:
         ineligible_pairs = int(status_rows["status"].astype(str).str.contains("ineligible|failed", case=False, na=False).sum())
 
     blocking = []
+    if not CURRENT_EVIDENCE_VALID:
+        blocking.append(
+            "Regenerate all citable matrices from the v2 release recipe; retained results predate behavior-changing fixes."
+        )
     if current_clinical.status != "complete":
         blocking.append("Complete the canonical current-default clinical no-HPO matrix and rebuild its Elo/report bundle.")
     if clinical_hpo.status != "complete":
@@ -238,12 +245,13 @@ def build_report() -> tuple[str, bool]:
     locally_completed = [
         "Canonical foundation adapters default to pooled discrete-time hazard.",
         "Maintained benchmark configs dry-run with canonical foundation IDs.",
-        "Clinical no-HPO current-default evidence has complete 7-dataset x 27-method x 15-split coverage.",
-        "Current-default clinical and genomics Elo/report bundles have been rebuilt.",
+        "Retained clinical no-HPO artifacts have complete structural 7-dataset x 27-method x 15-split coverage.",
+        "Retained clinical and genomics Elo/report bundles exist but are invalidated as current release evidence.",
         "Protocol smoke validation passes locally.",
     ]
     is_publishable = (
-        current_clinical.status == "complete"
+        CURRENT_EVIDENCE_VALID
+        and current_clinical.status == "complete"
         and clinical_hpo.status == "complete"
         and current_genomics.status == "complete"
     )
@@ -255,8 +263,8 @@ def build_report() -> tuple[str, bool]:
         "",
         "## Verdict",
         "",
-        "**Not yet publication-ready as the full no-HPO-plus-HPO manuscript evidence bundle.** The current-default clinical",
-        "no-HPO matrix and report are complete; the remaining blockers are listed below.",
+        "**Not yet publication-ready as the full no-HPO-plus-HPO manuscript evidence bundle.** Retained matrices",
+        "demonstrate structural coverage only; behavior-changing fixes require full v2 evidence regeneration.",
         "",
         "## Completed Locally",
         "",

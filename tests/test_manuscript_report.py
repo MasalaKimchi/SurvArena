@@ -75,7 +75,10 @@ def test_strict_audit_reaches_verdict_without_rendering_traceback(tmp_path: Path
         check=False,
     )
 
-    assert completed.returncode in {0, 2}
-    assert "publishable=" in completed.stdout
+    assert completed.returncode == 2
+    assert "publishable=false" in completed.stdout
     assert "Traceback" not in completed.stderr
-    assert report_path.read_text(encoding="utf-8").startswith("# Manuscript Publishability Audit")
+    report = report_path.read_text(encoding="utf-8")
+    assert report.startswith("# Manuscript Publishability Audit")
+    assert "invalidated as current release evidence" in report
+    assert "Regenerate all citable matrices" in report
