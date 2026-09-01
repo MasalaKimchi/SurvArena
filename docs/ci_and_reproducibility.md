@@ -4,57 +4,133 @@
 
 **Target:** `survbench-1.0-rc1`
 
-SurvArena separates fast development assurance, semantic benchmark smoke, and citable release reproduction. The first two are defined now; a locked, independently reproduced release environment is Phase 6 work.
+SurvArena uses the same committed `uv.lock` for contributor checks and GitHub
+Actions. This developer/CI lock is intentionally distinct from the canonical
+Linux/amd64 release environment governed by Phase 6.
 
-## Defined Workflows
-
-### Pull-request CI
+## Pull-request CI
 
 Workflow: [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 
+Pushes and pull requests targeting `main`, plus manual dispatches, run these
+read-only jobs:
+
 | Job | Python | Contract |
 |---|---:|---|
-| `lint` | 3.11 | `ruff check survarena tests scripts` |
-| `type` | 3.11 | Mypy 2.3.1 over the declared incremental kernel scope, without recursively claiming imported legacy modules |
-| `import-smoke` | 3.10, 3.11, 3.12 | Lazy `import survarena` using a light dependency subset |
-| `test` | 3.11, 3.12 | Editable `[dev]` install, full `pytest -q`, and `compileall` |
+| `quality` | 3.11 | Reject a stale lock, then run Ruff with GitHub annotations |
+| `type` | 3.11 | Run mypy over the declared incremental kernel scope |
+| `import-smoke` | 3.10, 3.11, 3.12 | Import `survarena` with only the six locked lightweight dependencies |
+| `full-tests` | 3.11, 3.12 | Install the locked runtime and test group, run full pytest, then compile the package |
+| `docs` | 3.11 | Build every tracked Markdown guide with nitpicky, fail-on-warning Sphinx |
 
-Foundation extras remain outside baseline CI. Their gated weights, authentication, runtime, and hardware needs require separate capability-specific jobs before release.
+All jobs have explicit timeouts, cancel superseded runs, and keep
+`permissions: contents: read`. Checkout credentials are not persisted.
+Official actions are pinned to audited commit SHAs rather than floating tags.
+Foundation extras remain outside baseline pull-request CI because their gated
+weights, authentication, runtime, and hardware needs require capability-specific
+validation.
 
-### Manual benchmark smoke
+## Manual benchmark smoke
 
-Workflow: [`.github/workflows/benchmark-smoke.yml`](../.github/workflows/benchmark-smoke.yml)
+Workflow:
+[`.github/workflows/benchmark-smoke.yml`](../.github/workflows/benchmark-smoke.yml)
 
-This manual workflow runs WHAS500/CoxPH with one seed and no external dataset download. It then asserts:
+This dispatch-only workflow runs WHAS500/CoxPH with one seed from the same lock.
+It requires successful fold rows with finite Uno C, checks the compact artifact
+set, rejects the redundant JSON leaderboard, and uploads the temporary smoke
+directory for diagnosis. It does not create citable evidence or merge results
+into the repository.
 
-- exactly one fold-results artifact is discovered;
-- required dataset, method, split, seed, arm, status, and Uno C columns exist;
-- at least one row succeeded and its Uno C is finite;
-- dataset/method/arm are WHAS500, CoxPH, and `no_hpo`;
-- the compact fold, leaderboard, diagnostics, manifest, navigator, and README artifacts exist;
-- a redundant JSON leaderboard was not emitted.
+## Local Equivalents
 
-The workflow uploads the temporary smoke directory for diagnosis. It does not create citable evidence or merge results into the repository.
+Use the exact uv version required by `pyproject.toml`. Every install is locked,
+and every subsequent command disables implicit synchronization.
 
-## Local Equivalence
+Lock, Ruff, and scoped mypy:
 
-The README repeats the exact Ruff, mypy, pytest, and compile commands. `scripts/validate_benchmark_protocol.sh` remains a local convenience wrapper for a focused benchmark, while the workflow contains the release-facing semantic assertions.
+```bash
+uv lock --check
+uv sync --locked --only-group quality --python 3.11
+uv run --no-sync ruff check --output-format=github survarena tests scripts
+uv run --no-sync python -m mypy \
+  survarena/core \
+  survarena/benchmark/resume.py \
+  survarena/data/splitters.py \
+  scripts/audit_manuscript_publishability.py
+```
 
-## Current Reproducibility Boundary
+Lazy imports across the supported Python range:
 
-- Direct dependencies are pinned in `pyproject.toml`, but there is no fully resolved hashed transitive lock.
-- `Dockerfile` and `.dockerignore` are scaffolding; no successful canonical image build is claimed here.
-- Hosted CI definitions have been syntax-checked locally, and their committed source snapshot passed equivalent local gates plus the five-fold semantic smoke; no completed remote run is claimed.
-- Developer-machine numbers are diagnostic only. Citable results must come from the future digest-pinned Linux/amd64 release environment.
-- Historical benchmark matrices predate behavior-changing fixes and must not be mixed into the release collection.
+```bash
+for version in 3.10 3.11 3.12; do
+  UV_PROJECT_ENVIRONMENT=".venv-import-${version}" \
+    uv sync --locked --only-group import-smoke --python "${version}"
+  UV_PROJECT_ENVIRONMENT=".venv-import-${version}" \
+    uv run --no-sync python -c "import survarena"
+done
+```
+
+Full tests and compile checks run on the preferred and maximum supported
+versions. The lightweight import matrix separately retains the Python 3.10
+minimum-version guard.
+
+```bash
+for version in 3.11 3.12; do
+  UV_PROJECT_ENVIRONMENT=".venv-test-${version}" \
+    uv sync --locked --no-default-groups --group test --python "${version}"
+  UV_PROJECT_ENVIRONMENT=".venv-test-${version}" \
+    uv run --no-sync python -m pytest -q
+  UV_PROJECT_ENVIRONMENT=".venv-test-${version}" \
+    uv run --no-sync python -m compileall -q survarena
+done
+```
+
+Strict documentation:
+
+```bash
+UV_PROJECT_ENVIRONMENT=.venv-docs \
+  uv sync --locked --only-group docs --python 3.11
+UV_PROJECT_ENVIRONMENT=.venv-docs \
+  uv run --no-sync sphinx-build -n -W --keep-going -b html docs docs/_build/html
+```
+
+## Lock and Cache Contract
+
+`astral-sh/setup-uv` installs uv 0.12.8 and selects Python explicitly in every
+job. Its cache key includes `uv.lock`; stable dependency-profile suffixes keep
+unrelated environments separate:
+
+| Profile | Jobs |
+|---|---|
+| `quality` | Lock/Ruff and scoped mypy |
+| `docs` | Strict Sphinx |
+| `import-smoke` | All lightweight import lanes |
+| `full-tests` | Both full-test lanes |
+| `benchmark-smoke` | Manual semantic benchmark |
+
+`uv lock --check` rejects stale project metadata. `uv sync --locked` refuses
+to re-resolve it, and `uv run --no-sync` prevents command execution from
+changing the installed environment. CI caches package artifacts managed by uv;
+it does not cache project virtual environments.
+
+## Reproducibility Boundary
+
+- `pyproject.toml` remains the source of dependency constraints and extras.
+- `uv.lock` is the generated cross-platform developer/CI resolution.
+- `requirements.txt` and `scripts/setup_env.sh` remain pip compatibility
+  paths and are not lock-equivalent.
+- Developer-machine and pull-request outputs are diagnostic only.
+- Citable evidence requires the separately governed Phase 6 Linux/amd64 image,
+  release lock, recipe, and independent reproduction.
+- Historical matrices that predate behavior-changing fixes remain invalidated.
+
+This repository change validates the workflow definitions and local equivalents;
+it does not claim that a hosted GitHub Actions run occurred.
 
 ## Phase 6 Release Gate
 
-Before `survbench-1.0-rc1` can be cited, CI must build a non-editable wheel, resolve a hashed lock, build a digest-pinned OCI image, run semantic sentinel checks inside it, reproduce recipe/split/result identities twice within declared tolerances, regenerate all reports from one canonical collection, and independently reproduce at least one complete dataset-method matrix.
-
-Until then, environment snapshots may help diagnosis but are not a substitute for the release lock and image digest:
-
-```bash
-python -m pip freeze --all > environment-freeze.txt
-python -VV > python-version.txt
-```
+Before `survbench-1.0-rc1` can be cited, the release process must build a
+non-editable wheel, produce the canonical platform-specific lock and
+digest-pinned image, run semantic sentinels inside it, reproduce
+recipe/split/result identities within declared tolerances, and regenerate all
+reports from one canonical result collection.

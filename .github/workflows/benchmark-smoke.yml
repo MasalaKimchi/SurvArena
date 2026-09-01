@@ -1,26 +1,7 @@
 name: Benchmark smoke
 
-# Seed of the "free CI as batch worker" idea from SURVARENA_REVAMP_PLAN.md:
-# GitHub Actions gives free linux/amd64 runners (~2-core / 7 GB, 6 h per job).
-# The long-term plan is a scheduled workflow that grinds shards of the benchmark
-# (dataset x method x fold), commits result rows back to the store, and doubles
-# as the canonical amd64 environment. This file is the first, tiny step.
-#
-# SAFE FOR NOW - manual only:
-#   * `workflow_dispatch` lets a maintainer trigger it by hand.
-#   * the `schedule` trigger is intentionally COMMENTED OUT so this never burns
-#     Actions minutes automatically. Enable it only once real sharding + a
-#     result merge-back path exist (see the revamp plan's roadmap).
-#
-# Heavy / foundation models (TabPFN, TabICL, Mitra, TabM, ...) stay OFF CI - they
-# belong to the community / self-hosted tier. This smoke job runs the single
-# smallest classical slice to prove the end-to-end `benchmark run` path works in
-# the canonical container.
-
 on:
   workflow_dispatch:
-  # schedule:
-  #   - cron: "17 6 * * 1"  # ~weekly; enable only after sharding + result merge-back land
 
 permissions:
   contents: read
@@ -31,27 +12,25 @@ concurrency:
 
 jobs:
   smoke:
-    name: Smallest slice (whas500 / coxph / 1 seed)
+    name: Smallest slice (WHAS500 / CoxPH / 1 seed)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
           python-version: "3.11"
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      # Core + dev stack only. No foundation extras: heavy models stay off CI.
-      - name: Install SurvArena with dev extras
-        run: python -m pip install -e ".[dev]"
-      # whas500 ships inside scikit-survival, so no external dataset download is
-      # needed. `--output-dir` makes the artifact path deterministic; a single
-      # dataset writes its outputs directly into that directory.
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: benchmark-smoke
+      - name: Sync locked runtime
+        run: uv sync --locked --no-default-groups --python 3.11
       - name: Run smallest benchmark slice
         run: >
-          survarena benchmark run
+          uv run --no-sync survarena benchmark run
           --config configs/benchmark/manuscript_v1.yaml
           --dataset whas500
           --method coxph
@@ -59,7 +38,7 @@ jobs:
           --output-dir results/ci_smoke
       - name: Assert semantic benchmark outputs
         run: |
-          python - <<'PY'
+          uv run --no-sync python - <<'PY'
           from pathlib import Path
 
           import numpy as np
@@ -94,7 +73,7 @@ jobs:
           PY
       - name: Upload benchmark results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: benchmark-smoke-results
           path: results/ci_smoke

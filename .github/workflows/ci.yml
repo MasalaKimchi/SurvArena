@@ -1,12 +1,5 @@
 name: CI
 
-# v2 baseline continuous integration for SurvArena.
-# Four tiers, cheapest first:
-#   lint          - ruff only, one Python, seconds.
-#   type          - explicit incremental mypy kernel scope.
-#   import-smoke  - light deps only, guards the lazy `import survarena` + py3.10.
-#   test          - full editable install (torch/autogluon), the slow job.
-
 on:
   push:
     branches: [main]
@@ -14,103 +7,127 @@ on:
     branches: [main]
   workflow_dispatch:
 
-# Cancel superseded runs on the same ref (e.g. rapid pushes to a PR branch)
-# so we don't queue redundant heavy `test` jobs.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-# Least privilege: CI only reads the repository.
 permissions:
   contents: read
 
 jobs:
-  lint:
-    name: Lint (ruff)
+  quality:
+    name: Lock freshness and Ruff
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
           python-version: "3.11"
-      # Ruff only - no heavy deps. Pin to the same range as the `dev` extra
-      # in pyproject.toml so CI matches the local developer tool version.
-      - name: Install ruff
-        run: python -m pip install "ruff>=0.15,<0.16"
-      # Matches the documented command in README.md ("ruff check survarena tests scripts").
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: quality
+      - name: Check lock freshness
+        run: uv lock --check
+      - name: Sync quality tools
+        run: uv sync --locked --only-group quality --python 3.11
       - name: Ruff check
-        run: ruff check survarena tests scripts
+        run: uv run --no-sync ruff check --output-format=github survarena tests scripts
 
   type:
-    name: Type (incremental kernel scope)
+    name: Mypy (incremental kernel scope)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
           python-version: "3.11"
-      - name: Install declared type checker
-        run: python -m pip install "mypy==2.3.1"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: quality
+      - name: Sync quality tools
+        run: uv sync --locked --only-group quality --python 3.11
       - name: Mypy declared scope
         run: >
-          python -m mypy
+          uv run --no-sync python -m mypy
           survarena/core
           survarena/benchmark/resume.py
           survarena/data/splitters.py
           scripts/audit_manuscript_publishability.py
 
   import-smoke:
-    name: Import smoke (light deps)
+    name: Lazy import (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    # Cheap regression guard for the lazy top-level import (survarena/__init__.py
-    # uses PEP 562 __getattr__) and Python 3.10 compatibility. We install ONLY a
-    # light runtime subset - deliberately NOT torch/autogluon - and never install
-    # the package itself, so `import survarena` must succeed purely on the lazy
-    # __init__. If this fails, the top-level import regressed (it started pulling
-    # the heavy dependency chain) - that is a real bug to fix in the package.
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
           python-version: ${{ matrix.python-version }}
-      - name: Install light runtime subset (no torch/autogluon)
-        run: python -m pip install numpy pandas scipy scikit-learn pyyaml pyarrow
-      # `python -c` puts the current dir (repo root) on sys.path, so this imports
-      # the local ./survarena without a build/editable install.
-      - name: Import survarena lazily
-        run: python -c "import survarena; print(survarena.__all__)"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: import-smoke
+      - name: Sync lightweight import dependencies
+        run: uv sync --locked --only-group import-smoke --python ${{ matrix.python-version }}
+      - name: Import SurvArena lazily
+        run: uv run --no-sync python -c "import survarena; print(survarena.__all__)"
 
-  test:
-    name: Test (pytest)
+  full-tests:
+    name: Full tests and compile (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 60
-    # This job installs the full heavy stack (torch, autogluon, xgboost,
-    # catboost, scikit-survival, ...) via the editable `[dev]` install, so it is
-    # by far the slowest. Foundation extras are intentionally NOT installed here:
-    # they are optional and heavier, and the suite must pass without them.
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
           python-version: ${{ matrix.python-version }}
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Upgrade pip
-        run: python -m pip install --upgrade pip
-      - name: Install SurvArena with dev extras (heavy stack)
-        run: python -m pip install -e ".[dev]"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: full-tests
+      - name: Sync runtime and test dependencies
+        run: uv sync --locked --no-default-groups --group test --python ${{ matrix.python-version }}
       - name: Run tests
-        run: pytest -q
+        run: uv run --no-sync python -m pytest -q
       - name: Compile package
-        run: python -m compileall -q survarena
+        run: uv run --no-sync python -m compileall -q survarena
+
+  docs:
+    name: Strict Sphinx documentation
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9 # v9.0.0
+        with:
+          version: "0.12.8"
+          python-version: "3.11"
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+          cache-suffix: docs
+      - name: Sync documentation tools
+        run: uv sync --locked --only-group docs --python 3.11
+      - name: Build documentation strictly
+        run: uv run --no-sync sphinx-build -n -W --keep-going -b html docs docs/_build/html
