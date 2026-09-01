@@ -91,6 +91,7 @@ def bootstrap_metric_ci(
                 {
                     **row_base,
                     "mean": float("nan"),
+                    "median": float("nan"),
                     "ci95_low": float("nan"),
                     "ci95_high": float("nan"),
                     "n": 0,
@@ -98,6 +99,7 @@ def bootstrap_metric_ci(
                     "n_cells": 0,
                     "support_policy": support_policy,
                     "support_digest": population.support_digest,
+                    "bootstrap_seed": seed,
                 }
             )
             continue
@@ -106,6 +108,7 @@ def bootstrap_metric_ci(
             {
                 **row_base,
                 "mean": float(np.mean(values)),
+                "median": float(np.median(values)),
                 "ci95_low": float(np.percentile(draws, 2.5)) if draws.size else float("nan"),
                 "ci95_high": float(np.percentile(draws, 97.5)) if draws.size else float("nan"),
                 "n": int(values.size),
@@ -113,6 +116,7 @@ def bootstrap_metric_ci(
                 "n_cells": int(sub["n_cells"].sum()),
                 "support_policy": support_policy,
                 "support_digest": population.support_digest,
+                "bootstrap_seed": seed,
             }
         )
     return pd.DataFrame(rows)

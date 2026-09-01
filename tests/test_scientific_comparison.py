@@ -197,8 +197,10 @@ def test_bootstrap_metric_ci_weights_dataset_means_equally() -> None:
     result = bootstrap_metric_ci(pd.DataFrame(rows), metric="uno_c", n_bootstrap=100, seed=3).iloc[0]
 
     assert float(result["mean"]) == pytest.approx(0.6)
+    assert float(result["median"]) == pytest.approx(0.6)
     assert int(result["n_datasets"]) == 2
     assert int(result["n_cells"]) == 12
+    assert int(result["bootstrap_seed"]) == 3
 
 
 def test_critical_difference_uses_only_complete_rectangular_dataset_block() -> None:
