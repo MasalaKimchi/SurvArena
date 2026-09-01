@@ -14,8 +14,8 @@ This page distinguishes checks actually executed in the current workspace from a
 |---|---|---|
 | Lint | `.venv/bin/ruff check survarena tests scripts` | Passed |
 | Incremental static types | `.venv/bin/python -m mypy survarena/core survarena/benchmark/resume.py survarena/data/splitters.py scripts/audit_manuscript_publishability.py` | No issues in 11 source files |
-| Full suite, current workspace | `.venv/bin/python -m pytest -q` | 256 passed, 6 skipped |
-| Full suite, clean committed snapshot | `.venv/bin/python -m pytest -q` | 248 passed, 6 skipped |
+| Full suite, current workspace | `.venv/bin/python -m pytest -q` | 258 passed, 6 skipped |
+| Full suite, clean committed snapshot | `.venv/bin/python -m pytest -q` | 250 passed, 6 skipped |
 | Byte compilation | `.venv/bin/python -m compileall -q survarena` | Passed |
 | Strict evidence audit | `.venv/bin/python scripts/audit_manuscript_publishability.py --strict` | Executed without traceback; expected `publishable=false`, exit 2 |
 

@@ -43,8 +43,8 @@ Phase 1 now has a truthful, clean-snapshot development baseline and a semantic b
 
 - **Duration:** 24 min
 - **Tasks:** 3 plus clean-snapshot coherence corrections
-- **Committed snapshot:** 248 passed, 6 skipped
-- **Current workspace:** 256 passed, 6 skipped
+- **Committed snapshot:** 250 passed, 6 skipped
+- **Current workspace:** 258 passed, 6 skipped
 
 ## Accomplishments
 
@@ -72,9 +72,9 @@ Phase 1 now has a truthful, clean-snapshot development baseline and a semantic b
 
 - Workspace Ruff — **passed**.
 - Workspace declared mypy scope — **no issues in 11 source files**.
-- Workspace pytest — **256 passed, 6 skipped, 22 warnings**.
+- Workspace pytest — **258 passed, 6 skipped, 22 warnings**.
 - Workspace compileall — **passed**.
-- Clean committed archive pytest — **248 passed, 6 skipped, 22 warnings**.
+- Clean committed archive pytest — **250 passed, 6 skipped, 22 warnings**.
 - Clean committed archive Ruff/mypy/compileall — **passed**.
 - Clean committed archive semantic smoke — **5/5 rows successful; all Uno C finite; compact artifacts present**.
 - Strict evidence audit — **`publishable=false`, expected exit 2, no traceback**.
