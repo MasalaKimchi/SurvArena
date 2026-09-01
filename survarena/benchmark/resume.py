@@ -7,6 +7,10 @@ from typing import Any
 
 ResumeCompletionKey = tuple[str, str, str, int, str]
 
+# M3-resume: the single default mode a legacy (pre-hpo_mode) row is allowed to
+# satisfy. Legacy rows only ever came from the default no-HPO arm.
+_LEGACY_DEFAULT_MODE = "no_hpo"
+
 
 def is_missing_resume_value(value: Any) -> bool:
     if value is None:
@@ -34,6 +38,7 @@ def resume_completion_key(
     seed_value = row.get("seed")
     if is_missing_resume_value(seed_value):
         return None, "missing required field 'seed'"
+    assert seed_value is not None
     try:
         seed = int(seed_value)
     except (TypeError, ValueError):
@@ -82,8 +87,9 @@ def completed_resume_keys(
         if key[4]:
             completed_keys.add(key)
         else:
-            # Backward compatibility: pre-mode artifacts had no hpo_mode.
-            # Treat a successful legacy row as completed for requested execution modes.
-            for legacy_mode in comparison_modes:
-                completed_keys.add((key[0], key[1], key[2], key[3], legacy_mode))
+            # M3-resume: a legacy row without an hpo_mode column predates dual-mode
+            # runs and only ever represented the default (no-HPO) arm. Treat it as
+            # completing the no_hpo mode ONLY -- never every comparison mode -- so a
+            # requested hpo arm that was never executed is still scheduled to run.
+            completed_keys.add((key[0], key[1], key[2], key[3], _LEGACY_DEFAULT_MODE))
     return completed_keys
