@@ -213,6 +213,26 @@ def test_ipcw_support_uses_censoring_distribution_not_last_event() -> None:
     assert float(metrics["metric_support_upper"]) > 5.0
 
 
+def test_duplicate_fixed_horizons_are_scored_without_changing_estimand() -> None:
+    fixture = _metric_fixture()
+    horizons = (3.0, 3.0, 5.0)
+
+    metrics = compute_survival_metrics(
+        train_time=fixture["train_time"],
+        train_event=fixture["train_event"],
+        test_time=fixture["test_time"],
+        test_event=fixture["test_event"],
+        risk_scores=fixture["risk"],
+        survival_probs=fixture["survival"],
+        survival_times=fixture["grid"],
+        horizons=horizons,
+    ).to_dict()
+
+    assert [metrics[f"horizon_requested_{label}"] for label in ("25", "50", "75")] == list(horizons)
+    assert float(metrics["td_auc_25"]) == pytest.approx(float(metrics["td_auc_50"]))
+    assert float(metrics["brier_25"]) == pytest.approx(float(metrics["brier_50"]))
+
+
 def test_calibration_line_matches_independent_scipy_optimizer() -> None:
     from scipy.optimize import minimize
 

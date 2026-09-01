@@ -183,17 +183,29 @@ def coverage_summary(
     return pd.DataFrame(rows, columns=columns)
 
 
-def _support_digest(coverage: pd.DataFrame, *, metric: str, cell_keys: list[str]) -> str:
-    supported = coverage[coverage["dataset_on_common_support"]]
+def _support_digest(
+    frame: pd.DataFrame,
+    *,
+    metric: str,
+    cell_keys: list[str],
+    required_methods: tuple[str, ...],
+    require_complete: bool,
+) -> str:
+    identity = [*cell_keys, "method_id"]
+    support = (
+        frame[identity]
+        .astype(str)
+        .sort_values(identity, kind="stable")
+        .to_dict(orient="records")
+        if not frame.empty
+        else []
+    )
     payload = {
         "metric": metric,
         "cell_keys": cell_keys,
-        "support": supported[
-            [column for column in [*stratum_columns(coverage), "dataset_id", "method_id"] if column in supported.columns]
-        ]
-        .astype(str)
-        .sort_values(list(c for c in [*stratum_columns(coverage), "dataset_id", "method_id"] if c in supported.columns))
-        .to_dict(orient="records"),
+        "required_methods": list(required_methods),
+        "require_complete": require_complete,
+        "support": support,
     }
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()
@@ -224,7 +236,13 @@ def build_comparison_population(
         if required_methods is not None
         else tuple(sorted(frame["method_id"].dropna().astype(str).unique()))
     )
-    digest = _support_digest(coverage, metric=metric, cell_keys=cell_keys)
+    digest = _support_digest(
+        population_frame,
+        metric=metric,
+        cell_keys=cell_keys,
+        required_methods=methods,
+        require_complete=require_complete,
+    )
     return ComparisonPopulation(
         frame=population_frame.reset_index(drop=True),
         coverage=coverage.reset_index(drop=True),

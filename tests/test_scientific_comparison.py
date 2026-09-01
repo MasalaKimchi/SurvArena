@@ -69,6 +69,16 @@ def test_duplicate_method_cell_identity_fails_closed() -> None:
         build_comparison_population(frame, metric="uno_c")
 
 
+def test_support_digest_identifies_exact_comparison_cells() -> None:
+    first = pd.DataFrame([_row("d1", "s1", "a", 0.8), _row("d1", "s1", "b", 0.7)])
+    second = pd.DataFrame([_row("d1", "s2", "a", 0.8), _row("d1", "s2", "b", 0.7)])
+
+    first_population = build_comparison_population(first, metric="uno_c")
+    second_population = build_comparison_population(second, metric="uno_c")
+
+    assert first_population.support_digest != second_population.support_digest
+
+
 def test_common_support_excludes_incomplete_dataset_and_reports_missing_method() -> None:
     frame = pd.DataFrame(
         [

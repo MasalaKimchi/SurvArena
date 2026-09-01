@@ -135,21 +135,32 @@ def compute_survival_metrics(
         "full_distribution_eligible": True,
     }
     labels = ("25", "50", "75")
-    horizon_supported = np.asarray(
+    ipcw_supported = np.asarray(
         [
             np.isfinite(support_lower)
             and np.isfinite(support_upper)
             and support_lower <= horizon <= support_upper
-            and float(survival_times[0]) <= horizon <= float(survival_times[-1])
             for horizon in requested_horizons
         ],
         dtype=bool,
     )
-    for label, horizon, supported in zip(labels, requested_horizons, horizon_supported, strict=True):
+    grid_supported = np.asarray(
+        [float(survival_times[0]) <= horizon <= float(survival_times[-1]) for horizon in requested_horizons],
+        dtype=bool,
+    )
+    horizon_supported = ipcw_supported & grid_supported
+    for index, (label, horizon, supported) in enumerate(
+        zip(labels, requested_horizons, horizon_supported, strict=True)
+    ):
+        reason = ""
+        if not ipcw_supported[index]:
+            reason = "outside_ipcw_support"
+        elif not grid_supported[index]:
+            reason = "outside_prediction_grid"
         support_metadata[f"horizon_requested_{label}"] = horizon
         support_metadata[f"horizon_used_{label}"] = horizon if supported else float("nan")
         support_metadata[f"horizon_eligible_{label}"] = bool(supported)
-        support_metadata[f"horizon_reason_{label}"] = "" if supported else "outside_ipcw_support"
+        support_metadata[f"horizon_reason_{label}"] = reason
 
     if estimable_mask.sum() < 2:
         return MetricBundle(
@@ -207,47 +218,48 @@ def compute_survival_metrics(
     if bool(horizon_supported.any()):
         supported_indices = np.flatnonzero(horizon_supported)
         supported_horizons = tuple(requested_horizons[index] for index in supported_indices)
-        supported_horizons_array = np.asarray(supported_horizons, dtype=float)
-        supported_horizons_t = torch.as_tensor(supported_horizons_array.astype(np.float32))
-        ipcw_horizons = get_ipcw(train_event_t, train_time_t, supported_horizons_t)
-        supported_survival = _survival_at_times(survival_probs, survival_times, supported_horizons)
-        supported_event_probs_t = torch.as_tensor((1.0 - supported_survival).astype(np.float32))
+        unique_horizons, horizon_inverse = _unique_horizons(supported_horizons)
+        unique_horizons_t = torch.as_tensor(unique_horizons.astype(np.float32))
+        ipcw_horizons = get_ipcw(train_event_t, train_time_t, unique_horizons_t)
+        unique_survival = _survival_at_times(survival_probs, survival_times, tuple(unique_horizons.tolist()))
+        supported_event_probs_t = torch.as_tensor((1.0 - unique_survival).astype(np.float32))
         supported_aucs = Auc()(
             supported_event_probs_t,
             test_event_t,
             test_time_t,
             auc_type="cumulative",
-            new_time=supported_horizons_t,
+            new_time=unique_horizons_t,
             weight=ipcw_test,
             weight_new_time=ipcw_horizons,
         )
         supported_brier = BrierScore()(
-            torch.as_tensor(supported_survival.astype(np.float32)),
+            torch.as_tensor(unique_survival.astype(np.float32)),
             test_event_t,
             test_time_t,
-            new_time=supported_horizons_t,
+            new_time=unique_horizons_t,
             weight=ipcw_test,
             weight_new_time=ipcw_horizons,
         )
-        supported_observed, supported_known = _event_status_at_horizons(
+        unique_observed, unique_known = _event_status_at_horizons(
             test_time,
             test_event,
-            supported_horizons,
+            tuple(unique_horizons.tolist()),
         )
-        supported_weights = _ipcw_weights_at_horizons(
+        unique_weights = _ipcw_weights_at_horizons(
             ipcw_at_time=ipcw_test.detach().cpu().numpy(),
             ipcw_at_horizons=ipcw_horizons.detach().cpu().numpy(),
             test_time=test_time,
             test_event=test_event,
-            horizons=supported_horizons,
+            horizons=tuple(unique_horizons.tolist()),
         )
         for local_index, output_index in enumerate(supported_indices):
-            aucs[output_index] = _safe_float(supported_aucs[local_index])
-            brier_at_horizons[output_index] = _safe_float(supported_brier[local_index])
-            horizon_survival[:, output_index] = supported_survival[:, local_index]
-            horizon_observed[:, output_index] = supported_observed[:, local_index]
-            horizon_known[:, output_index] = supported_known[:, local_index]
-            horizon_weights[:, output_index] = supported_weights[:, local_index]
+            unique_index = int(horizon_inverse[local_index])
+            aucs[output_index] = _safe_float(supported_aucs[unique_index])
+            brier_at_horizons[output_index] = _safe_float(supported_brier[unique_index])
+            horizon_survival[:, output_index] = unique_survival[:, unique_index]
+            horizon_observed[:, output_index] = unique_observed[:, unique_index]
+            horizon_known[:, output_index] = unique_known[:, unique_index]
+            horizon_weights[:, output_index] = unique_weights[:, unique_index]
 
     extra_metrics: dict[str, float] = {}
     horizon_event_probs = 1.0 - horizon_survival
