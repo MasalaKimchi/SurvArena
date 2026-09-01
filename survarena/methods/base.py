@@ -34,6 +34,7 @@ class BaseSurvivalMethod(ABC):
     native_categoricals: bool = False
     supports_gpu: bool = False
     deterministic_given_seed: bool = True
+    supports_survival_distribution: bool = True
 
     @classmethod
     def capabilities(cls) -> ModelCapabilities:

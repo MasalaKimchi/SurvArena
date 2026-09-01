@@ -117,6 +117,28 @@ KNOWN_METRIC_COLUMNS: frozenset[str] = frozenset(_CORE_METRIC_COLUMNS + _MANUSCR
 # digits (e.g. ``td_auc_10``).
 _DYNAMIC_METRIC_PREFIXES: tuple[str, ...] = ("td_auc_", "brier_", "net_benefit_")
 
+_METRIC_PROVENANCE_COLUMNS: tuple[str, ...] = (
+    "metric_support_policy",
+    "metric_support_lower",
+    "metric_support_upper",
+    "evaluation_window_lower",
+    "evaluation_window_upper",
+    "full_distribution_eligible",
+    "full_distribution_ineligible_reason",
+    "horizon_requested_25",
+    "horizon_requested_50",
+    "horizon_requested_75",
+    "horizon_used_25",
+    "horizon_used_50",
+    "horizon_used_75",
+    "horizon_eligible_25",
+    "horizon_eligible_50",
+    "horizon_eligible_75",
+    "horizon_reason_25",
+    "horizon_reason_50",
+    "horizon_reason_75",
+)
+
 
 def _is_dynamic_metric(name: str) -> bool:
     """Return ``True`` for a horizon-suffixed dynamic metric (e.g. ``td_auc_10``).
@@ -230,6 +252,7 @@ class RunResult:
     created_at: str = ""  # ISO-8601 UTC; filled with "now" in __post_init__ if empty
     # --- metrics -----------------------------------------------------------
     metrics: Mapping[str, float] = field(default_factory=dict)
+    metric_provenance: Mapping[str, object] = field(default_factory=dict)
 
     #: Natural key. ``run_id`` is a deterministic hash of exactly these fields.
     #: Note ``benchmark_id`` is intentionally *not* part of the key: it is a label
@@ -250,6 +273,7 @@ class RunResult:
         }
         # Freeze the metrics mapping (defensive copy -> read-only view).
         object.__setattr__(self, "metrics", MappingProxyType(cleaned))
+        object.__setattr__(self, "metric_provenance", MappingProxyType(dict(self.metric_provenance)))
         # Default created_at to "now" (UTC, ISO-8601) when not supplied.
         if not self.created_at:
             object.__setattr__(self, "created_at", datetime.now(timezone.utc).isoformat())
@@ -290,6 +314,7 @@ class RunResult:
                 coerced = _as_metric_value(value)
                 if coerced is not None:
                     metrics[name] = coerced
+        metric_provenance = {name: row[name] for name in _METRIC_PROVENANCE_COLUMNS if name in row}
 
         return cls(
             schema_version=schema_version,
@@ -314,6 +339,7 @@ class RunResult:
             env_fingerprint=str(_first(row, "env_fingerprint") or ""),
             created_at=str(_first(row, "created_at") or ""),
             metrics=metrics,
+            metric_provenance=metric_provenance,
         )
 
     # -- serialisation -----------------------------------------------------
@@ -348,4 +374,5 @@ class RunResult:
         }
         # Metric columns last; never collide with the scalar keys above.
         row.update(self.metrics)
+        row.update(self.metric_provenance)
         return row

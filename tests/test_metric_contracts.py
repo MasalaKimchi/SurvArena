@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import numpy as np
+import pandas as pd
 import pytest
 
+from survarena.benchmark import runner
+from survarena.core.results import RunResult
+from survarena.data.splitters import SplitDefinition
 from survarena.evaluation.metrics import (
     _calibration_line,
     _survival_at_times,
@@ -11,6 +17,7 @@ from survarena.evaluation.metrics import (
     compute_uno_c_index,
 )
 from survarena.evaluation.predictions import PredictionValidationError, validate_prediction_bundle
+from survarena.methods.base import BaseSurvivalMethod
 
 
 def _valid_bundle() -> dict[str, object]:
@@ -259,3 +266,172 @@ def test_uno_reference_handles_heavy_censoring() -> None:
     )
 
     assert actual == pytest.approx(expected, abs=1e-6)
+
+
+def test_run_result_preserves_compact_metric_support_provenance() -> None:
+    row = {
+        "benchmark_id": "bench",
+        "dataset_id": "d1",
+        "method_id": "coxph",
+        "split_id": "s1",
+        "seed": 1,
+        "status": "success",
+        "uno_c": 0.7,
+        "metric_support_policy": "censoring_distribution_fixed_horizons_v1",
+        "metric_support_lower": 2.0,
+        "metric_support_upper": 8.0,
+        "full_distribution_eligible": True,
+        "horizon_requested_50": 5.0,
+        "horizon_eligible_50": False,
+        "horizon_reason_50": "outside_ipcw_support",
+    }
+
+    result = RunResult.from_fold_row(row, protocol_id="p1")
+    restored = result.to_row()
+
+    assert result.metric_provenance["metric_support_policy"] == row["metric_support_policy"]
+    assert restored["horizon_requested_50"] == 5.0
+    assert restored["horizon_eligible_50"] is False
+    assert restored["horizon_reason_50"] == "outside_ipcw_support"
+
+
+class _ValidRunnerMethod(BaseSurvivalMethod):
+    def fit(self, X, time, event):
+        return self
+
+    def predict_risk(self, X):
+        return np.asarray(X, dtype=float)[:, 0]
+
+    def predict_survival(self, X, times):
+        risk = np.maximum(np.asarray(self.predict_risk(X), dtype=float), 0.01)
+        return np.exp(-np.outer(risk, np.asarray(times, dtype=float)) / 100.0)
+
+
+class _InvalidRunnerMethod(_ValidRunnerMethod):
+    def predict_survival(self, X, times):
+        return np.tile(np.linspace(0.2, 0.9, len(times)), (len(X), 1))
+
+
+class _RiskOnlyRunnerMethod(_ValidRunnerMethod):
+    supports_survival_distribution = False
+
+    def predict_survival(self, X, times):
+        raise AssertionError("risk-only runner path must not request a survival curve")
+
+
+def _runner_fixture() -> tuple[pd.DataFrame, np.ndarray, np.ndarray, SplitDefinition]:
+    frame = pd.DataFrame({"x": np.linspace(0.1, 1.0, 20), "z": np.tile([0.0, 1.0], 10)})
+    time = np.arange(1.0, 21.0)
+    event = np.tile([1, 0], 10)
+    split = SplitDefinition(
+        split_id="fixed",
+        seed=7,
+        repeat=0,
+        fold=0,
+        train_idx=np.asarray([*range(10), *range(15, 20)]),
+        test_idx=np.arange(10, 15),
+    )
+    return frame, time, event, split
+
+
+def _run_method(monkeypatch, method_class: type[BaseSurvivalMethod]) -> dict[str, object]:
+    frame, time, event, split = _runner_fixture()
+    monkeypatch.setattr(runner, "get_method_class", lambda _method_id: method_class)
+    return runner.evaluate_split(
+        benchmark_id="metric_contract",
+        dataset_id="toy",
+        method_id="coxph",
+        split=split,
+        X=frame,
+        time=time,
+        event=event,
+        method_cfg={"method_id": "coxph", "default_params": {}, "search_space": {}},
+        inner_folds=2,
+        timeout_seconds=None,
+        primary_metric="harrell_c",
+        horizons_quantiles=(0.25, 0.5, 0.75),
+        evaluation_horizons=(11.5, 13.0, 14.5),
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg",
+        hpo_cfg={"enabled": False},
+    )
+
+
+def test_runner_rejects_invalid_predictions_with_reason_code(monkeypatch) -> None:
+    record = _run_method(monkeypatch, _InvalidRunnerMethod)
+
+    assert record["status"] == "failed"
+    assert record["comparison_ineligible"] is True
+    assert record["failure_reason_code"] == "survival_nonmonotone"
+    assert record["ineligible_reason"] == "invalid_prediction:survival_nonmonotone"
+    assert np.isnan(float(record["uno_c"]))
+
+
+def test_runner_keeps_fixed_horizons_and_gates_risk_only_metrics(monkeypatch) -> None:
+    valid = _run_method(monkeypatch, _ValidRunnerMethod)
+    risk_only = _run_method(monkeypatch, _RiskOnlyRunnerMethod)
+
+    assert valid["status"] == "success"
+    assert [valid[f"horizon_requested_{label}"] for label in ("25", "50", "75")] == [11.5, 13.0, 14.5]
+    assert risk_only["status"] == "success"
+    assert np.isfinite(float(risk_only["harrell_c"]))
+    assert np.isnan(float(risk_only["ibs"]))
+    assert risk_only["full_distribution_eligible"] is False
+
+
+def test_dataset_run_units_share_one_horizon_tuple(monkeypatch, tmp_path) -> None:
+    frame, time, event, first_split = _runner_fixture()
+    second_split = SplitDefinition(
+        split_id="fixed_2",
+        seed=11,
+        repeat=0,
+        fold=1,
+        train_idx=first_split.train_idx,
+        test_idx=first_split.test_idx,
+    )
+    dataset = SimpleNamespace(
+        X=frame,
+        time=time,
+        event=event,
+        metadata=SimpleNamespace(feature_types={"x": "numerical", "z": "numerical"}, group_col=None),
+    )
+    monkeypatch.setattr("survarena.data.loaders.load_dataset", lambda *_args, **_kwargs: dataset)
+    monkeypatch.setattr(
+        "survarena.data.splitters.load_or_create_splits",
+        lambda **_kwargs: [first_split, second_split],
+    )
+    monkeypatch.setattr(
+        "survarena.data.robustness.resolve_robustness_tracks",
+        lambda *_args, **_kwargs: [SimpleNamespace(track_id="base")],
+    )
+    monkeypatch.setattr("survarena.data.robustness.apply_robustness_track", lambda X, **_kwargs: X)
+    monkeypatch.setattr("survarena.data.robustness.apply_label_noise", lambda values, **_kwargs: values)
+
+    _, units, _ = runner._build_dataset_run_units(
+        repo_root=tmp_path,
+        benchmark_cfg={
+            "split_strategy": "repeated_nested_cv",
+            "outer_folds": 2,
+            "time_horizons_quantiles": [0.25, 0.5, 0.75],
+        },
+        benchmark_id="bench",
+        dataset_id="toy",
+        methods=["coxph"],
+        seeds=[7, 11],
+        outer_repeats=1,
+        regenerate_splits=False,
+        method_cfg_cache={"coxph": {"method_id": "coxph", "default_params": {}, "search_space": {}}},
+        completed_keys=set(),
+        comparison_modes=("no_hpo",),
+        hpo_cfg={},
+        timeout_seconds=None,
+        primary_metric="harrell_c",
+        decision_thresholds=(0.2,),
+        benchmark_cfg_hash="cfg",
+        autogluon_cfg={},
+        max_retries=0,
+    )
+
+    assert len(units) == 2
+    assert len({unit.evaluation_horizons for unit in units}) == 1
+    assert units[0].evaluation_horizons == (5.5, 10.0, 14.5)

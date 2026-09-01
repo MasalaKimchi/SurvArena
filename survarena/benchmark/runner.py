@@ -71,6 +71,7 @@ class BenchmarkRunUnit:
     timeout_seconds: float | None
     primary_metric: str
     horizons_quantiles: tuple[float, float, float]
+    evaluation_horizons: tuple[float, float, float]
     decision_thresholds: tuple[float, ...]
     benchmark_cfg_hash: str
     autogluon_cfg: dict[str, Any]
@@ -172,6 +173,7 @@ def evaluate_split(
     timeout_seconds: float | None,
     primary_metric: str,
     horizons_quantiles: tuple[float, float, float],
+    evaluation_horizons: tuple[float, float, float] | None = None,
     decision_thresholds: tuple[float, ...],
     benchmark_cfg_hash: str,
     autogluon_cfg: dict[str, Any] | None = None,
@@ -184,7 +186,12 @@ def evaluate_split(
     import numpy as np
 
     from survarena.data.preprocess import TabularPreprocessor
-    from survarena.evaluation.metrics import compute_survival_metrics, horizons_from_train_event_times
+    from survarena.evaluation.metrics import (
+        compute_risk_metrics,
+        compute_survival_metrics,
+        horizons_from_train_event_times,
+    )
+    from survarena.evaluation.predictions import PredictionValidationError, validate_prediction_bundle
     from survarena.logging.manifest import RunManifest
     from survarena.logging.tracker import payload_sha256, peak_memory_mb as peak_process_memory_mb
     from survarena.methods.preprocessing import (
@@ -369,31 +376,65 @@ def evaluate_split(
                 _fit_final_model()
         fit_time_sec = fit_timer.elapsed
 
+        horizons = (
+            tuple(float(value) for value in evaluation_horizons)
+            if evaluation_horizons is not None
+            else horizons_from_train_event_times(t_train, e_train, horizons_quantiles)
+        )
+        eval_lower = min(max(1e-8, float(np.percentile(t_train, 5))), min(horizons))
+        eval_upper = max(float(np.percentile(t_train, 95)), max(horizons), eval_lower + 1e-8)
         eval_times = np.linspace(
-            max(1e-8, float(np.percentile(t_train, 5))),
-            max(float(np.percentile(t_train, 95)), max(1e-8, float(np.percentile(t_train, 5)) + 1e-8)),
+            eval_lower,
+            eval_upper,
             50,
         )
+        supports_survival_distribution = bool(
+            getattr(type(model), "supports_survival_distribution", True)
+        )
         with timer() as infer_timer:
-            predictions = model.predict_bundle(X_test_proc, eval_times)
-            risk_scores = predictions.risk
-            surv_probs = predictions.survival
+            if supports_survival_distribution:
+                predictions = model.predict_bundle(X_test_proc, eval_times)
+                risk_scores = predictions.risk
+                surv_probs = predictions.survival
+            else:
+                risk_scores = model.predict_risk(X_test_proc)
+                surv_probs = None
+            validated_predictions = validate_prediction_bundle(
+                risk_scores=risk_scores,
+                survival_probs=surv_probs,
+                survival_times=eval_times if supports_survival_distribution else None,
+                n_rows=len(X_test_proc),
+                require_survival=supports_survival_distribution,
+                survival_capable=supports_survival_distribution,
+            )
         infer_time_sec = infer_timer.elapsed
 
-        horizons = horizons_from_train_event_times(t_train, e_train, horizons_quantiles)
-        metrics = compute_survival_metrics(
-            train_time=t_train,
-            train_event=e_train,
-            test_time=t_test,
-            test_event=e_test,
-            risk_scores=risk_scores,
-            survival_probs=surv_probs,
-            survival_times=eval_times,
-            horizons=horizons,
-            decision_thresholds=decision_thresholds,
-        ).to_dict()
+        risk_scores = validated_predictions.risk
+        if validated_predictions.has_survival_distribution:
+            assert validated_predictions.survival is not None
+            assert validated_predictions.survival_times is not None
+            surv_probs = validated_predictions.survival
+            metrics = compute_survival_metrics(
+                train_time=t_train,
+                train_event=e_train,
+                test_time=t_test,
+                test_event=e_test,
+                risk_scores=risk_scores,
+                survival_probs=surv_probs,
+                survival_times=validated_predictions.survival_times,
+                horizons=horizons,
+                decision_thresholds=decision_thresholds,
+            ).to_dict()
+        else:
+            metrics = compute_risk_metrics(
+                train_time=t_train,
+                train_event=e_train,
+                test_time=t_test,
+                test_event=e_test,
+                risk_scores=risk_scores,
+            ).to_dict()
         artifact_metadata: dict[str, Any] = {}
-        if save_model_artifacts and model_artifact_dir is not None:
+        if save_model_artifacts and model_artifact_dir is not None and surv_probs is not None:
             artifact_metadata = _save_model_artifacts(
                 artifact_dir=model_artifact_dir,
                 benchmark_id=benchmark_id,
@@ -522,6 +563,8 @@ def evaluate_split(
         peak_memory_mb = peak_process_memory_mb()
         failure_type = type(exc).__name__
         failure_message = str(exc)
+        invalid_prediction = isinstance(exc, PredictionValidationError)
+        ineligible_reason = f"invalid_prediction:{exc.reason_code}" if invalid_prediction else ""
         run_identity = {
             "run_id": run_id,
             "dataset_id": dataset_id,
@@ -558,6 +601,9 @@ def evaluate_split(
                 **run_identity,
                 "status": "failed",
                 "failure_type": failure_type,
+                "failure_reason_code": exc.reason_code if invalid_prediction else "",
+                "comparison_ineligible": invalid_prediction,
+                "ineligible_reason": ineligible_reason,
                 "exception_message": failure_message,
                 "elapsed_time_before_failure": elapsed_before_failure,
                 "peak_memory_mb": peak_memory_mb,
@@ -602,7 +648,10 @@ def evaluate_split(
             "validation_diagnostic_horizon_auc_gap": np.nan,
             "status": "failed",
             "failure_type": failure_type,
+            "failure_reason_code": exc.reason_code if invalid_prediction else "",
             "exception_message": failure_message,
+            "comparison_ineligible": invalid_prediction,
+            "ineligible_reason": ineligible_reason,
             **artifact_failure_fields,
         }
 
@@ -873,6 +922,7 @@ def _evaluate_run_unit(unit: BenchmarkRunUnit) -> BenchmarkRunUnitResult:
             timeout_seconds=unit.timeout_seconds,
             primary_metric=unit.primary_metric,
             horizons_quantiles=unit.horizons_quantiles,
+            evaluation_horizons=unit.evaluation_horizons,
             decision_thresholds=unit.decision_thresholds,
             benchmark_cfg_hash=unit.benchmark_cfg_hash,
             autogluon_cfg=unit.autogluon_cfg,
@@ -1091,6 +1141,7 @@ def _build_dataset_run_units(
     from survarena.data.loaders import load_dataset
     from survarena.data.robustness import apply_label_noise, apply_robustness_track, resolve_robustness_tracks
     from survarena.data.splitters import load_or_create_splits
+    from survarena.evaluation.metrics import horizons_from_train_event_times
 
     timings = {"loading": 0.0, "split_prep": 0.0, "evaluation_prep": 0.0}
     phase_started_at = perf_counter()
@@ -1123,6 +1174,11 @@ def _build_dataset_run_units(
     phase_started_at = perf_counter()
     filtered_splits = [split for split in splits if split.seed in seeds]
     horizons_q = tuple(float(x) for x in benchmark_cfg.get("time_horizons_quantiles", [0.25, 0.5, 0.75]))
+    evaluation_horizons = horizons_from_train_event_times(
+        dataset.time,
+        dataset.event,
+        horizons_q,  # type: ignore[arg-type]
+    )
     validation_diagnostics = dict(benchmark_cfg.get("validation_diagnostics", {}) or {})
     robustness_tracks = resolve_robustness_tracks(
         benchmark_cfg.get("robustness", {}),
@@ -1185,6 +1241,7 @@ def _build_dataset_run_units(
                         timeout_seconds=timeout_seconds,
                         primary_metric=primary_metric,
                         horizons_quantiles=horizons_q,  # type: ignore[arg-type]
+                        evaluation_horizons=evaluation_horizons,
                         decision_thresholds=decision_thresholds,
                         benchmark_cfg_hash=benchmark_cfg_hash,
                         autogluon_cfg=autogluon_cfg,
