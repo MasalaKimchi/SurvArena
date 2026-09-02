@@ -10,7 +10,7 @@ dependency_graph:
   affects: [benchmark-protocol, release-evidence, manuscript-readiness]
 tech_stack:
   added: [standard-library-validator, pytest-contract-tests]
-  patterns: [stable-audit-ids, observed-closure-gates, conflict-rejecting-provenance, secret-first-validation, baseline-bound-git-scope]
+  patterns: [stable-audit-ids, observed-closure-gates, conflict-rejecting-provenance, secret-first-validation, baseline-bound-git-scope, digest-only-path-output]
 key_files:
   created: [docs/benchmark_readiness.md, scripts/validate_benchmark_readiness.py, tests/test_benchmark_readiness_validator.py]
   modified: [docs/index.md]
@@ -35,6 +35,9 @@ SurvArena now has a durable, evidence-ranked benchmark-readiness register with a
 | 1 | Establish maturity verdict, wrong-today ledger, and full domain audit | `f7ea000` | `docs/benchmark_readiness.md` |
 | 2 | Add owned prioritized register, exact research crosswalk, maintenance semantics, and index route | `43457a0` | `docs/benchmark_readiness.md`, `docs/index.md` |
 | Repair | Correct priority/status semantics and retain the secret-first, baseline-bound validator with adversarial tests | `72dedf3` | `docs/benchmark_readiness.md`, `scripts/validate_benchmark_readiness.py`, `tests/test_benchmark_readiness_validator.py` |
+| Final validator repair | Redact all path metadata and state the Git-ignored boundary exactly | `fd5d890` | `scripts/validate_benchmark_readiness.py`, `tests/test_benchmark_readiness_validator.py` |
+| Symlink-loop retry | Fail closed on path-resolution loops without exposing credential-shaped path or exception text | `1759561` | `scripts/validate_benchmark_readiness.py`, `tests/test_benchmark_readiness_validator.py` |
+| Exception/CLI repair | Clear retained raw exception context and redact every malformed CLI diagnostic | `25c0e97` | `scripts/validate_benchmark_readiness.py`, `tests/test_benchmark_readiness_validator.py` |
 
 ## Outcome
 
@@ -43,7 +46,7 @@ SurvArena now has a durable, evidence-ranked benchmark-readiness register with a
 - Distinguished current defects, missing release evidence, and deliberate future scope. Live re-inspection showed that exact matching, dataset-scale ranks, dataset-level inference, and dataset-shared horizon behavior are fixed; retained pre-fix matrices remain invalid and must be regenerated.
 - Added 19 owned `BR-*` rows, 22 exact coverage-crosswalk rows, explicit dependencies, target gates, exit evidence, and maintenance rules. Three rows are truthfully `in_progress` because their live kernels have observed fixes but their release-evidence clauses remain open; one is `blocked`, four are `deferred_scope`, 11 are `open`, and none is yet `verified`.
 - Added one and only one `docs/index.md` Reference Docs route.
-- Retained a standard-library validator and 42 focused tests covering exact-buffer secret-first ordering, safe URL/redirect diagnostics, bounded references, requirement reconciliation, dependency/status semantics, citation/link integrity, and baseline-bound Git scope.
+- Retained a standard-library validator and focused tests covering exact-buffer secret-first ordering, safe URL/redirect and path diagnostics, bounded references, requirement reconciliation, dependency/status semantics, citation/link integrity, and baseline-bound Git scope.
 
 ## Publication-Readiness Verdict
 
@@ -65,8 +68,8 @@ The evidence is **not comprehensive or robust enough for manuscript-grade perfor
 | Focused scientific tests | PASS — 35 tests in `test_scientific_comparison.py` and `test_metric_contracts.py`; 14 pre-existing dependency deprecation warnings |
 | External criteria | PASS — 13 unique sources checked with redirect-following GET and manual semantic identity review; ACM returned `403` and is recorded `manual_required` with confirmed official identity |
 | Credential scan | PASS — the retained validator scans all four input documents before Markdown/URL processing; named patterns cover AWS access-key ID/assignment, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, GitHub, OpenAI, Hugging Face, private keys, bearer tokens, and generic assignments |
-| URL diagnostic safety | PASS — adversarial tests prove userinfo, query, and fragment are absent from diagnostics; URL failures use a stable URL ID and sanitized host, and credential findings contain only file, line, and pattern |
-| Durable validator tests | PASS — 42 focused tests, including nested percent-encoded credentials, secret-before-parse/network ordering, safe redirect destinations, malformed/unknown references, checklist/traceability disagreement, self-dependency, cycles, premature verification, superseded/deferred semantics, and scope bypasses |
+| URL and path diagnostic safety | PASS — adversarial tests prove URL userinfo/query/fragment and credential-shaped filenames are absent from diagnostics, exceptions, captured output, and baseline JSON; failures use stable digests and sanitized labels |
+| Durable validator tests | PASS — 91 focused tests include nested percent-encoded credentials, secret-before-parse/network ordering, safe redirect destinations, every configured credential family plus encrypted-PEM/GitLab/Slack-shaped dirty, untracked, and committed filenames, read/stat/decode and self-referential-symlink failures, malformed CLI subprocesses, malformed references, requirement disagreement, graph/status rules, scope bypasses, and the explicit ignored-file exclusion |
 | Whitespace and diff | PASS — terminal newlines, no trailing whitespace, and `git diff --check` |
 | Scoped commits | PASS — Task 1 changed one readiness document; Task 2 staged and committed only the two declared docs; neither commit deleted tracked files |
 
@@ -78,8 +81,8 @@ The original task baseline was captured before its document edits with zero dirt
 |---|---|---|
 | Changed pre-existing dirty content | Reject | PASS |
 | Index-only change | Reject | PASS |
-| New untracked path | Reject | PASS |
-| Removed untracked path | Reject | PASS |
+| New ordinary Git-untracked path | Reject | PASS |
+| Removed ordinary Git-untracked path | Reject | PASS |
 | Rename with both paths preserved | Reject | PASS |
 | Unauthorized tracked path | Reject | PASS |
 | Exact allowlisted change | Accept | PASS |
@@ -88,21 +91,31 @@ The original task baseline was captured before its document edits with zero dirt
 | Untracked file-mode-only change | Reject | PASS |
 | Unauthorized clean commit after baseline | Reject | PASS |
 | Unauthorized commit followed by byte-reverting commit | Reject | PASS |
+| Credential-shaped dirty, untracked, or committed path | Reject without emitting the raw path | PASS |
+| Git-ignored cache path | Exclude by stated contract and report `git_ignored_paths_checked=0` | PASS |
 
-Diagnostics contained only repository-relative path and before/after state labels. A secret marker embedded in disposable file contents was not emitted. The retained guard binds the baseline commit to its tree, verifies ancestry/repository identity, walks every intervening commit, and separately compares the baseline and current dirty/index identities.
+Diagnostics contain only sanitized path labels, short path digests, and before/after state labels. Baseline JSON uses full deterministic path digests as keys and never serializes raw credential-shaped filenames. The retained guard binds the baseline commit to its tree, verifies ancestry/repository identity, walks every intervening commit, and separately compares the baseline and current staged, unstaged, and ordinary Git-untracked identities.
+
+The guard is intentionally a **Git repository-change attribution guard**, not a whole-filesystem monitor. Git-ignored cache, virtual-environment, and generated-environment files are outside its scope unless a future caller opts into a separate ignored-path policy. This limitation is emitted as `git_ignored_paths_checked=0`, recorded in each baseline contract, and covered by an intentional-exclusion test; no claim is made that ignored filesystem contents are monitored.
 
 ## Repair Commit and Durable Gate
 
-**Scoped repair commit:** `72dedf3` contains exactly `docs/benchmark_readiness.md`, `scripts/validate_benchmark_readiness.py`, and `tests/test_benchmark_readiness_validator.py`; it contains no deletion and no `0gy` or planning artifact.
+**Scoped repair commits:** `72dedf3` contains exactly `docs/benchmark_readiness.md`, `scripts/validate_benchmark_readiness.py`, and `tests/test_benchmark_readiness_validator.py`. Hardening commits `fd5d890`, `1759561`, and `25c0e97` each contain exactly the validator and its focused test file. None contains a deletion, `0gy` path, or planning artifact.
 
 The retained commands in `260901-0fd-VALIDATION.md` supersede the flawed inline PLAN checks without rewriting PLAN history. Observed repair results:
 
-- Authenticated baseline-bound offline check before and immediately after commit: PASS with 9 WRONG rows, 13 DOM rows, 19 BR rows, 22 crosswalk rows, 93 tracked provenance tags, 25 local links, and `git_scope_checked=1`.
-- Disposable Git scope self-test: 12/12 adversarial cases PASS, including unauthorized clean commit and commit-then-revert detection.
-- Validator plus scientific/metric suite: 77 passed; 14 pre-existing dependency deprecation warnings.
+- Authenticated current-format baseline-bound offline check before and immediately after `25c0e97`: PASS with 9 WRONG rows, 13 DOM rows, 19 BR rows, 22 crosswalk rows, 93 tracked provenance tags, 25 local links, `git_scope_checked=1`, and the explicit `git_ignored_paths_checked=0` boundary.
+- Disposable Git scope self-test: 14/14 adversarial cases PASS, including unauthorized clean commits, commit-then-revert detection, credential-shaped path redaction, and intentional ignored-path exclusion.
+- Focused validator suite: 91/91 passed. Validator plus scientific/metric suite: 126 passed; 14 pre-existing dependency deprecation warnings.
+- Self-referential symlink proof: 2/2 HF- and GitLab-token-shaped loop cases fail closed with a digest-only `ValidationError`; the raw filename and path are absent from the exception and captured stdout/stderr.
+- Exception-object proof: credential-shaped symlink, read, stat, and decode failures have safe `str`, safe `repr`, safe formatted tracebacks, `__context__ is None`, and `__cause__ is None`; no original exception is retained by the sanitized error.
+- Malformed CLI proof: six subprocess cases—extra positional argument, invalid subcommand, invalid `--external` choice, unknown option, self-looping baseline/path, and URL userinfo/query/fragment—return nonzero without emitting any raw argument fragment or traceback.
 - Ruff, Python compilation, staged diff check, and post-commit deletion check: PASS.
 - External criteria: 13/13 sources accepted as automated success or recorded manual exception after the credential gate; the ACM 403 remains the sole `manual_required` row and its official identity was manually confirmed.
-- Credential fixtures: AWS access-key IDs and assignments, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, GitHub, OpenAI, Hugging Face, bearer, private-key, generic token/signature/credential assignments, and nested percent encoding are detected without retaining values.
+- Credential fixtures: AWS access-key IDs and assignments, `AWS_SECRET_ACCESS_KEY`, `AWS_SESSION_TOKEN`, GitHub, OpenAI, Hugging Face, bearer, private-key, generic token/signature/credential assignments, and nested percent encoding are detected without retaining values. Digest-only path output additionally redacts encrypted-PEM, GitLab, and Slack token-shaped filenames even though those are not scanner patterns.
+- The prior read-only review did not exercise a self-referential symlink. Subsequent verification reproduced that missing `RuntimeError` boundary; `1759561` added the safe wrapper and omitted fail-closed fixtures. A further verifier probe showed that `raise ... from None` still retained raw `__context__` and that argparse echoed malformed argv. `25c0e97` creates sanitized failures only after leaving raw exception handlers and replaces default argparse errors with a constant, redacted failure path.
+
+The retained residual limitation is deliberate and visible: Git-ignored files are not monitored. This validator attributes repository changes visible through tracked history, the index, the unstaged worktree, and ordinary Git-untracked paths; it is not a whole-filesystem or environment-integrity monitor.
 
 ## Deviations from Plan
 
@@ -142,4 +155,4 @@ None.
 
 ## Self-Check: PASSED
 
-The original deliverables and the durable validator/test files exist. Commits `f7ea000`, `43457a0`, and `72dedf3` are present in repository history, and the final authenticated baseline-bound check passed after the repair commit.
+The original deliverables and the durable validator/test files exist. Commits `f7ea000`, `43457a0`, `72dedf3`, `fd5d890`, `1759561`, and `25c0e97` are present in repository history, and the authenticated current-format baseline-bound check passed after the final repair commit.
