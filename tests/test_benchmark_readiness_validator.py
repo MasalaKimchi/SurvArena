@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
+import sys
 
 import pytest
 
@@ -12,6 +14,52 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _assert_sensitive_absent(sensitive: str, *outputs: str) -> None:
+    if any(sensitive in output for output in outputs):
+        pytest.fail("credential-shaped test value reached output", pytrace=False)
+
+
+def _credential_filename(kind: str) -> str:
+    values = {
+        "hugging_face": "hf_" + "a" * 32,
+        "aws_access_id": "AKIA" + "B" * 16,
+        "aws_access_assignment": "AWS_ACCESS_KEY_ID=" + "C" * 20,
+        "aws_secret_assignment": "AWS_SECRET_ACCESS_KEY=" + "D" * 40,
+        "aws_session_assignment": "AWS_SESSION_TOKEN=" + "E" * 40,
+        "github": "ghp_" + "c" * 36,
+        "openai": "sk-proj-" + "d" * 32,
+        "bearer": "Bearer " + "e" * 32,
+        "private_key": "-----BEGIN PRIVATE KEY-----",
+        "encrypted_private_key": "-----BEGIN ENCRYPTED PRIVATE KEY-----",
+        "gitlab": "glpat-" + "g" * 24,
+        "slack": "xoxb-" + "1" * 12 + "-" + "h" * 24,
+        "generic": "password=" + "f" * 24,
+    }
+    return values[kind] + ".txt"
+
+
+def _git_add_sensitive_fixture(repo: Path, filename: str) -> None:
+    try:
+        validator._git_text(repo, "add", "--", filename)
+    except Exception:
+        pytest.fail("credential-path Git fixture setup failed", pytrace=False)
+
+
+def _write_sensitive_fixture(path: Path, value: str) -> None:
+    try:
+        path.write_text(value, encoding="utf-8")
+    except Exception:
+        pytest.fail("credential-path file fixture setup failed", pytrace=False)
+
+
+def _commit_sensitive_fixture(repo: Path, filename: str) -> None:
+    _git_add_sensitive_fixture(repo, filename)
+    try:
+        validator._git_text(repo, "commit", "-q", "-m", "credential-path fixture")
+    except Exception:
+        pytest.fail("credential-path commit fixture setup failed", pytrace=False)
 
 
 def _current_inputs() -> tuple[str, str, str, str]:
@@ -50,6 +98,7 @@ def test_current_readiness_contract_passes_offline() -> None:
         "verified_tags": 93,
         "local_links": 25,
         "git_scope_checked": 0,
+        "git_ignored_paths_checked": 0,
     }
 
 
@@ -82,7 +131,7 @@ def test_secret_scanner_reports_only_safe_metadata(
     rendered = validator.format_secret_findings(findings)
 
     assert expected_pattern in {finding.pattern for finding in findings}
-    assert value not in rendered
+    _assert_sensitive_absent(value, rendered)
     assert set(rendered) >= {"{", "}"}
 
 
@@ -125,7 +174,7 @@ def test_secret_gate_precedes_document_and_network_processing(
         )
 
     assert caught.value.exit_code == validator.EXIT_SECRET
-    assert secret not in str(caught.value)
+    _assert_sensitive_absent(secret, str(caught.value))
     assert not parsed
     assert not fetched
 
@@ -141,8 +190,19 @@ def test_percent_encoded_secret_is_detected_without_value_disclosure(tmp_path: P
     rendered = validator.format_secret_findings(findings)
 
     assert any(finding.pattern == "github_token" for finding in findings)
-    assert value not in rendered
-    assert encoded not in rendered
+    _assert_sensitive_absent(value, rendered)
+    _assert_sensitive_absent(encoded, rendered)
+
+
+def test_secret_finding_json_redacts_a_credential_shaped_filename(tmp_path: Path) -> None:
+    filename = _credential_filename("hugging_face")
+    target = tmp_path / filename
+    target.write_text("AWS_SESSION_TOKEN=" + "x" * 40 + "\n", encoding="utf-8")
+
+    rendered = validator.format_secret_findings(validator.scan_credentials([target], repo=tmp_path))
+
+    _assert_sensitive_absent(filename, rendered)
+    assert "<redacted-path>" in rendered
 
 
 def test_url_diagnostics_mask_userinfo_query_and_fragment() -> None:
@@ -175,7 +235,7 @@ def test_effective_url_is_secret_scanned_before_diagnostics() -> None:
         )
 
     assert caught.value.exit_code == validator.EXIT_SECRET
-    assert secret not in str(caught.value)
+    _assert_sensitive_absent(secret, str(caught.value))
 
 
 def test_unapproved_external_host_is_rejected_before_transport() -> None:
@@ -324,6 +384,128 @@ def test_invalid_last_verified_date_is_rejected() -> None:
         validator.validate_structure(readiness, index, roadmap, requirements)
 
 
+@pytest.mark.parametrize(
+    "credential_kind",
+    [
+        "hugging_face",
+        "aws_access_id",
+        "aws_access_assignment",
+        "aws_secret_assignment",
+        "aws_session_assignment",
+        "github",
+        "openai",
+        "bearer",
+        "private_key",
+        "encrypted_private_key",
+        "gitlab",
+        "slack",
+        "generic",
+    ],
+)
+@pytest.mark.parametrize("change_kind", ["dirty", "untracked", "committed"])
+def test_credential_shaped_git_paths_never_reach_metadata_or_output(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    credential_kind: str,
+    change_kind: str,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    validator._init_scope_test_repo(repo)
+    filename = _credential_filename(credential_kind)
+    target = repo / filename
+
+    if change_kind == "dirty":
+        _write_sensitive_fixture(target, "committed\n")
+        _commit_sensitive_fixture(repo, filename)
+        _write_sensitive_fixture(target, "baseline dirty\n")
+        baseline = validator.create_git_baseline(repo)
+        _write_sensitive_fixture(target, "changed dirty\n")
+    else:
+        baseline = validator.create_git_baseline(repo)
+        _write_sensitive_fixture(target, "new\n")
+        if change_kind == "committed":
+            _commit_sensitive_fixture(repo, filename)
+
+    issues = validator.check_git_scope(baseline, repo=repo, allow_paths=[])
+    if not issues:
+        pytest.fail("credential-path scope fixture was not detected", pytrace=False)
+    baseline_json = json.dumps(baseline, sort_keys=True)
+    diagnostics = validator.format_scope_issues(issues)
+    error_text = str(validator.ValidationError("Git scope violations:\n" + diagnostics))
+    print(diagnostics)
+    print(error_text, file=sys.stderr)
+    captured = capsys.readouterr()
+
+    _assert_sensitive_absent(
+        filename,
+        baseline_json,
+        diagnostics,
+        error_text,
+        captured.out,
+        captured.err,
+    )
+    if "<redacted-path>" not in diagnostics or "path_id=" not in diagnostics:
+        pytest.fail("scope diagnostic omitted its safe redacted path identity", pytrace=False)
+    if any(len(path_key) != 64 for path_key in baseline["dirty_entries"]):
+        pytest.fail("baseline path identity is not a digest", pytrace=False)
+
+
+def test_unreadable_credential_shaped_path_raises_only_a_safe_error(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    validator._init_scope_test_repo(repo)
+    filename = _credential_filename("gitlab")
+    target = repo / filename
+    _write_sensitive_fixture(target, "unreadable\n")
+    original_read_bytes = Path.read_bytes
+
+    def fail_sensitive_read(path: Path) -> bytes:
+        if path == target:
+            raise PermissionError(str(path))
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", fail_sensitive_read)
+    try:
+        validator.create_git_baseline(repo)
+    except validator.ValidationError as error:
+        _assert_sensitive_absent(filename, str(error))
+        assert str(error) == "unable to inspect Git-visible path identity"
+    else:
+        pytest.fail("unreadable credential-path fixture was not rejected", pytrace=False)
+
+
+def test_git_ignored_paths_are_explicitly_excluded_from_scope(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    validator._init_scope_test_repo(repo)
+    (repo / ".gitignore").write_text("ignored-cache/\n", encoding="utf-8")
+    validator._git_text(repo, "add", ".gitignore")
+    validator._git_text(repo, "commit", "-q", "-m", "declare ignored cache")
+    baseline = validator.create_git_baseline(repo)
+    ignored_directory = repo / "ignored-cache"
+    ignored_directory.mkdir()
+    (ignored_directory / "cache.bin").write_text("ignored\n", encoding="utf-8")
+
+    issues = validator.check_git_scope(baseline, repo=repo, allow_paths=[])
+
+    assert issues == []
+    assert baseline["scope_contract"]["git_ignored"] == "excluded"
+
+
+def test_cli_discloses_that_git_ignored_paths_are_not_checked(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    assert validator.main(["check", "--external", "offline"]) == 0
+
+    captured = capsys.readouterr()
+    assert "git_ignored_paths_checked=0" in captured.out
+    assert captured.err == ""
+
+
 def test_scope_self_tests_cover_dirty_index_paths_renames_and_clean_commits() -> None:
     results = validator.run_scope_self_tests()
 
@@ -340,4 +522,6 @@ def test_scope_self_tests_cover_dirty_index_paths_renames_and_clean_commits() ->
         "untracked_mode_change": True,
         "unauthorized_clean_commit": True,
         "unauthorized_commit_then_revert": True,
+        "credential_shaped_path_redaction": True,
+        "git_ignored_path_excluded_by_contract": True,
     }

@@ -32,7 +32,7 @@ EXIT_DOCUMENT = 3
 EXIT_SCOPE = 4
 EXIT_EXTERNAL = 5
 EXIT_USAGE = 64
-BASELINE_VERSION = 3
+BASELINE_VERSION = 4
 MAX_REDIRECTS = 5
 
 WRONG_COLUMNS = [
@@ -191,12 +191,27 @@ class RequirementInfo:
     phase: int | None
 
 
+def _path_digest(value: str) -> str:
+    return hashlib.sha256(os.fsencode(value)).hexdigest()
+
+
+def sanitize_path(value: str) -> str:
+    """Return a digest-only path label; raw path text never crosses an output boundary."""
+    if re.fullmatch(
+        r"<redacted-path> \[path_id=[0-9a-f]{12}\](?: \[snapshot_key=[0-9a-f]{12}\])?",
+        value,
+    ):
+        return value
+    return f"<redacted-path> [path_id={_path_digest(value)[:12]}]"
+
+
 def _safe_file_label(path: Path, repo: Path) -> str:
-    resolved = path.resolve()
     try:
-        return resolved.relative_to(repo.resolve()).as_posix()
-    except ValueError:
-        return path.name
+        resolved = path.resolve()
+        relative = resolved.relative_to(repo.resolve()).as_posix()
+    except (OSError, ValueError):
+        relative = path.name
+    return sanitize_path(relative)
 
 
 def _run_git(
@@ -205,7 +220,10 @@ def _run_git(
     *,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
-    return subprocess.run(["git", *args], cwd=repo, check=check, capture_output=True)
+    try:
+        return subprocess.run(["git", *args], cwd=repo, check=check, capture_output=True)
+    except (OSError, subprocess.CalledProcessError):
+        raise ValidationError("Git command failed; command details redacted", exit_code=EXIT_SCOPE) from None
 
 
 def _repo_root(start: Path = ROOT) -> Path:
@@ -216,9 +234,9 @@ def _repo_root(start: Path = ROOT) -> Path:
 def _canonical_relative_path(value: str) -> str:
     path = PurePosixPath(value)
     if path.is_absolute() or value != path.as_posix() or "\\" in value:
-        raise ValidationError(f"noncanonical repository path: {value}", exit_code=EXIT_SCOPE)
+        raise ValidationError(f"noncanonical repository path: {sanitize_path(value)}", exit_code=EXIT_SCOPE)
     if not path.parts or any(part in {"", ".", ".."} for part in path.parts):
-        raise ValidationError(f"unsafe repository path: {value}", exit_code=EXIT_SCOPE)
+        raise ValidationError(f"unsafe repository path: {sanitize_path(value)}", exit_code=EXIT_SCOPE)
     return value
 
 
@@ -235,25 +253,29 @@ def _decoded_candidates(line: str) -> tuple[str, ...]:
 def scan_credential_texts(documents: Iterable[tuple[str, str]]) -> list[SecretFinding]:
     findings: list[SecretFinding] = []
     for label, text in documents:
+        safe_label = sanitize_path(label)
         for line_number, line in enumerate(text.splitlines(), start=1):
             candidates = _decoded_candidates(line)
             for pattern_name, pattern in CREDENTIAL_PATTERNS:
                 if any(pattern.search(candidate) for candidate in candidates):
-                    findings.append(SecretFinding(file=label, line=line_number, pattern=pattern_name))
+                    findings.append(SecretFinding(file=safe_label, line=line_number, pattern=pattern_name))
     return sorted(findings, key=lambda item: (item.file, item.line, item.pattern))
 
 
 def scan_credentials(paths: Iterable[Path], *, repo: Path = ROOT) -> list[SecretFinding]:
-    documents = [
-        (_safe_file_label(path, repo), path.read_text(encoding="utf-8"))
-        for path in paths
-    ]
+    documents: list[tuple[str, str]] = []
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            raise ValidationError(f"unable to read credential-scan input: {_safe_file_label(path, repo)}") from None
+        documents.append((_safe_file_label(path, repo), text))
     return scan_credential_texts(documents)
 
 
 def format_secret_findings(findings: Sequence[SecretFinding]) -> str:
     metadata = [
-        {"file": finding.file, "line": finding.line, "pattern": finding.pattern}
+        {"file": sanitize_path(finding.file), "line": finding.line, "pattern": finding.pattern}
         for finding in findings
     ]
     return json.dumps(metadata, sort_keys=True, separators=(",", ":"))
@@ -802,28 +824,57 @@ def validate_provenance_text(text: str, *, repo: Path) -> int:
         raise ValidationError("malformed VERIFIED provenance tag")
     for tag in tags:
         relative = _canonical_relative_path(tag.group("path"))
-        target = (repo / relative).resolve()
-        if not target.is_relative_to(repo.resolve()) or not target.is_file():
-            raise ValidationError(f"VERIFIED target is missing or escapes the repository: {relative}")
-        tracked = _run_git(repo, ["ls-files", "--error-unmatch", "--", relative], check=False)
+        try:
+            target = (repo / relative).resolve()
+            repo_root = repo.resolve()
+            target_exists = target.is_file()
+        except OSError:
+            raise ValidationError(
+                f"unable to inspect VERIFIED target: {sanitize_path(relative)}"
+            ) from None
+        if not target.is_relative_to(repo_root) or not target_exists:
+            raise ValidationError(
+                f"VERIFIED target is missing or escapes the repository: {sanitize_path(relative)}"
+            )
+        try:
+            tracked = _run_git(repo, ["ls-files", "--error-unmatch", "--", relative], check=False)
+        except OSError:
+            raise ValidationError(
+                f"unable to inspect VERIFIED target tracking: {sanitize_path(relative)}"
+            ) from None
         if tracked.returncode != 0:
-            raise ValidationError(f"VERIFIED target is untracked: {relative}")
-        line_count = len(target.read_text(encoding="utf-8").splitlines())
+            raise ValidationError(f"VERIFIED target is untracked: {sanitize_path(relative)}")
+        try:
+            line_count = len(target.read_text(encoding="utf-8").splitlines())
+        except (OSError, UnicodeError):
+            raise ValidationError(
+                f"unable to read VERIFIED target: {sanitize_path(relative)}"
+            ) from None
         start = int(tag.group("start"))
         end = int(tag.group("end"))
         if not 1 <= start <= end <= line_count:
-            raise ValidationError(f"VERIFIED line range is invalid: {relative}")
+            raise ValidationError(f"VERIFIED line range is invalid: {sanitize_path(relative)}")
     return len(tags)
 
 
 def validate_provenance(readiness_path: Path, *, repo: Path) -> int:
-    return validate_provenance_text(readiness_path.read_text(encoding="utf-8"), repo=repo)
+    try:
+        text = readiness_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        raise ValidationError(
+            f"unable to read provenance input: {_safe_file_label(readiness_path, repo)}"
+        ) from None
+    return validate_provenance_text(text, repo=repo)
 
 
 def _heading_slugs(path: Path) -> set[str]:
     counts: dict[str, int] = {}
     slugs: set[str] = set()
-    for line in path.read_text(encoding="utf-8").splitlines():
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError):
+        raise ValidationError(f"unable to read local-link target: {sanitize_path(path.name)}") from None
+    for line in lines:
         match = re.match(r"^#{1,6}\s+(.+?)\s*#*$", line)
         if not match:
             continue
@@ -846,8 +897,13 @@ def validate_local_link_texts(documents: Sequence[tuple[Path, str]], *, repo: Pa
                 continue
             if parsed.scheme or parsed.netloc:
                 raise ValidationError("unsupported local-link scheme")
-            destination = source if not parsed.path else (source.parent / unquote(parsed.path)).resolve()
-            if not destination.is_relative_to(repo.resolve()) or not destination.is_file():
+            try:
+                destination = source if not parsed.path else (source.parent / unquote(parsed.path)).resolve()
+                repo_root = repo.resolve()
+                destination_exists = destination.is_file()
+            except OSError:
+                raise ValidationError("unable to inspect local-link target") from None
+            if not destination.is_relative_to(repo_root) or not destination_exists:
                 raise ValidationError("local link is missing or escapes the repository")
             if parsed.fragment and unquote(parsed.fragment) not in _heading_slugs(destination):
                 raise ValidationError("local link fragment is missing")
@@ -856,10 +912,16 @@ def validate_local_link_texts(documents: Sequence[tuple[Path, str]], *, repo: Pa
 
 
 def validate_local_links(paths: Sequence[Path], *, repo: Path) -> int:
-    return validate_local_link_texts(
-        [(path, path.read_text(encoding="utf-8")) for path in paths],
-        repo=repo,
-    )
+    documents: list[tuple[Path, str]] = []
+    for path in paths:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            raise ValidationError(
+                f"unable to read local-link source: {_safe_file_label(path, repo)}"
+            ) from None
+        documents.append((path, text))
+    return validate_local_link_texts(documents, repo=repo)
 
 
 class _NoRedirectHandler(HTTPRedirectHandler):
@@ -1042,29 +1104,34 @@ def _status_paths(repo: Path) -> dict[str, str]:
 def _worktree_identity(path: Path) -> tuple[str, str | None]:
     try:
         path.lstat()
+        if path.is_symlink():
+            return "symlink", hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
+        if path.is_file():
+            mode = stat.S_IMODE(path.stat().st_mode)
+            return f"file:{mode:04o}", hashlib.sha256(path.read_bytes()).hexdigest()
+        if path.is_dir():
+            mode = stat.S_IMODE(path.stat().st_mode)
+            digest = hashlib.sha256()
+            for child in sorted(path.rglob("*"), key=lambda item: os.fsencode(str(item.relative_to(path)))):
+                relative = os.fsencode(str(child.relative_to(path)))
+                kind, child_hash = _worktree_identity(child)
+                digest.update(relative)
+                digest.update(kind.encode("ascii"))
+                if child_hash is not None:
+                    digest.update(bytes.fromhex(child_hash))
+            return f"directory:{mode:04o}", digest.hexdigest()
+        return "special", hashlib.sha256(str(path.lstat().st_mode).encode("ascii")).hexdigest()
     except FileNotFoundError:
         return "missing", None
-    if path.is_symlink():
-        return "symlink", hashlib.sha256(os.fsencode(os.readlink(path))).hexdigest()
-    if path.is_file():
-        mode = stat.S_IMODE(path.stat().st_mode)
-        return f"file:{mode:04o}", hashlib.sha256(path.read_bytes()).hexdigest()
-    if path.is_dir():
-        mode = stat.S_IMODE(path.stat().st_mode)
-        digest = hashlib.sha256()
-        for child in sorted(path.rglob("*"), key=lambda item: os.fsencode(str(item.relative_to(path)))):
-            relative = os.fsencode(str(child.relative_to(path)))
-            kind, child_hash = _worktree_identity(child)
-            digest.update(relative)
-            digest.update(kind.encode("ascii"))
-            if child_hash is not None:
-                digest.update(bytes.fromhex(child_hash))
-        return f"directory:{mode:04o}", digest.hexdigest()
-    return "special", hashlib.sha256(str(path.lstat().st_mode).encode("ascii")).hexdigest()
+    except (OSError, ValueError):
+        raise ValidationError("unable to inspect Git-visible path identity", exit_code=EXIT_SCOPE) from None
 
 
 def _index_entries(repo: Path, relative: str) -> list[dict[str, str]]:
-    raw = _run_git(repo, ["ls-files", "--stage", "-z", "--", relative]).stdout
+    try:
+        raw = _run_git(repo, ["ls-files", "--stage", "-z", "--", relative]).stdout
+    except (OSError, subprocess.CalledProcessError):
+        raise ValidationError("unable to inspect Git index identity", exit_code=EXIT_SCOPE) from None
     entries: list[dict[str, str]] = []
     for record in raw.split(b"\0"):
         if not record:
@@ -1072,10 +1139,10 @@ def _index_entries(repo: Path, relative: str) -> list[dict[str, str]]:
         metadata, separator, raw_path = record.partition(b"\t")
         if not separator:
             raise ValidationError("malformed Git index entry", exit_code=EXIT_SCOPE)
+        if _path_digest(os.fsdecode(raw_path)) != _path_digest(relative):
+            raise ValidationError("Git index returned an unexpected path", exit_code=EXIT_SCOPE)
         mode, object_id, stage = metadata.decode("ascii").split()
-        entries.append(
-            {"mode": mode, "object_id": object_id, "stage": stage, "path": os.fsdecode(raw_path)}
-        )
+        entries.append({"mode": mode, "object_id": object_id, "stage": stage})
     return entries
 
 
@@ -1083,7 +1150,11 @@ def _dirty_snapshot(repo: Path) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for relative, status in sorted(_status_paths(repo).items(), key=lambda item: os.fsencode(item[0])):
         kind, sha256 = _worktree_identity(repo / relative)
-        result[relative] = {
+        path_key = _path_digest(relative)
+        if path_key in result:
+            raise ValidationError("Git path-identity collision", exit_code=EXIT_SCOPE)
+        result[path_key] = {
+            "path_label": sanitize_path(relative),
             "status": status,
             "worktree": {"kind": kind, "sha256": sha256},
             "index": _index_entries(repo, relative),
@@ -1104,18 +1175,32 @@ def create_git_baseline(repo: Path) -> dict[str, Any]:
         "repository_fingerprint": _repository_fingerprint(repo),
         "baseline_commit": head,
         "baseline_tree": tree,
+        "scope_contract": {
+            "tracked_commit_tree": "included",
+            "staged": "included",
+            "unstaged": "included",
+            "git_untracked": "included",
+            "git_ignored": "excluded",
+        },
         "dirty_entries": _dirty_snapshot(repo),
     }
 
 
 def write_git_baseline(output: Path, *, repo: Path) -> str:
-    resolved_output = output.resolve()
-    if resolved_output == repo.resolve() or resolved_output.is_relative_to(repo.resolve()):
+    try:
+        resolved_output = output.resolve()
+        repo_root = repo.resolve()
+    except OSError:
+        raise ValidationError("unable to resolve Git baseline output", exit_code=EXIT_SCOPE) from None
+    if resolved_output == repo_root or resolved_output.is_relative_to(repo_root):
         raise ValidationError("Git baseline output must be outside the repository", exit_code=EXIT_SCOPE)
     payload = create_git_baseline(repo)
-    output.parent.mkdir(parents=True, exist_ok=True)
     serialized = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
-    output.write_bytes(serialized)
+    try:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_bytes(serialized)
+    except OSError:
+        raise ValidationError("unable to write Git baseline output", exit_code=EXIT_SCOPE) from None
     return hashlib.sha256(serialized).hexdigest()
 
 
@@ -1123,8 +1208,28 @@ def _state_label(entry: Mapping[str, Any] | None) -> str:
     if entry is None:
         return "absent"
     worktree = entry.get("worktree", {})
+    raw_status = entry.get("status", "??")
+    status = raw_status if isinstance(raw_status, str) and re.fullmatch(r"[ MADRCU?!]{2}", raw_status) else "invalid"
+    raw_kind = worktree.get("kind", "unknown") if isinstance(worktree, Mapping) else "unknown"
+    kind = (
+        raw_kind
+        if isinstance(raw_kind, str)
+        and re.fullmatch(r"(?:missing|symlink|special|file:[0-7]{4}|directory:[0-7]{4})", raw_kind)
+        else "invalid"
+    )
     index_label = "present" if entry.get("index") else "absent"
-    return f"status={entry.get('status', '??')!r},worktree={worktree.get('kind', 'unknown')},index={index_label}"
+    return f"status={status!r},worktree={kind},index={index_label}"
+
+
+def _snapshot_path_label(
+    path_key: str,
+    before: Mapping[str, Any] | None,
+    after: Mapping[str, Any] | None,
+) -> str:
+    entry = after or before or {}
+    candidate = str(entry.get("path_label", "<unavailable-path>"))
+    label = sanitize_path(candidate)
+    return f"{label} [snapshot_key={path_key[:12]}]"
 
 
 def _parse_name_status(raw: bytes) -> list[tuple[str, list[str]]]:
@@ -1158,6 +1263,15 @@ def check_git_scope(
         raise ValidationError("accepted dirty paths must also be allowlisted", exit_code=EXIT_SCOPE)
     if baseline.get("version") != BASELINE_VERSION:
         raise ValidationError("incompatible Git baseline version", exit_code=EXIT_SCOPE)
+    expected_contract = {
+        "tracked_commit_tree": "included",
+        "staged": "included",
+        "unstaged": "included",
+        "git_untracked": "included",
+        "git_ignored": "excluded",
+    }
+    if baseline.get("scope_contract") != expected_contract:
+        raise ValidationError("Git baseline scope contract is missing or incompatible", exit_code=EXIT_SCOPE)
     if baseline.get("repository_fingerprint") != _repository_fingerprint(repo):
         raise ValidationError("Git baseline belongs to another repository", exit_code=EXIT_SCOPE)
     commit = str(baseline.get("baseline_commit", ""))
@@ -1193,7 +1307,7 @@ def check_git_scope(
                 if canonical not in allowlist:
                     issues.append(
                         ScopeIssue(
-                            path=canonical,
+                            path=sanitize_path(canonical),
                             code="committed_path",
                             before=f"baseline={commit[:12]}",
                             after=f"commit={current[:12]},status={status}",
@@ -1203,27 +1317,33 @@ def check_git_scope(
     before = baseline.get("dirty_entries")
     if not isinstance(before, dict):
         raise ValidationError("Git baseline lacks dirty identities", exit_code=EXIT_SCOPE)
+    if any(
+        re.fullmatch(r"[0-9a-f]{64}", key) is None or not isinstance(entry, dict)
+        for key, entry in before.items()
+    ):
+        raise ValidationError("Git baseline contains malformed path identities", exit_code=EXIT_SCOPE)
     after = _dirty_snapshot(repo)
-    for relative in sorted(set(before) | set(after), key=os.fsencode):
-        if relative in allowlist:
-            old = before.get(relative)
-            new = after.get(relative)
-            if old is not None and old != new and relative not in accepted_dirty:
+    allow_keys = {_path_digest(path) for path in allowlist}
+    accepted_dirty_keys = {_path_digest(path) for path in accepted_dirty}
+    for path_key in sorted(set(before) | set(after)):
+        old = before.get(path_key)
+        new = after.get(path_key)
+        path_label = _snapshot_path_label(path_key, old, new)
+        if path_key in allow_keys:
+            if old is not None and old != new and path_key not in accepted_dirty_keys:
                 issues.append(
                     ScopeIssue(
-                        path=relative,
+                        path=path_label,
                         code="changed_preexisting_allowlisted_path",
                         before=_state_label(old),
                         after=_state_label(new),
                     )
                 )
             continue
-        old = before.get(relative)
-        new = after.get(relative)
         if old != new:
             issues.append(
                 ScopeIssue(
-                    path=relative,
+                    path=path_label,
                     code="dirty_identity",
                     before=_state_label(old),
                     after=_state_label(new),
@@ -1234,7 +1354,7 @@ def check_git_scope(
 
 def format_scope_issues(issues: Sequence[ScopeIssue]) -> str:
     return "\n".join(
-        f"- {issue.path}: code={issue.code} before[{issue.before}] after[{issue.after}]"
+        f"- {sanitize_path(issue.path)}: code={issue.code} before[{issue.before}] after[{issue.after}]"
         for issue in issues
     )
 
@@ -1254,8 +1374,16 @@ def validate_files(
     fetch: Callable[[str], tuple[int, str]] = _fetch_external,
 ) -> dict[str, int]:
     target_paths = [readiness_path, index_path, roadmap_path, requirements_path]
-    raw_documents = {path: path.read_bytes() for path in target_paths}
-    texts = {path: value.decode("utf-8") for path, value in raw_documents.items()}
+    raw_documents: dict[Path, bytes] = {}
+    for path in target_paths:
+        try:
+            raw_documents[path] = path.read_bytes()
+        except OSError:
+            raise ValidationError(f"unable to read validation input: {_safe_file_label(path, repo)}") from None
+    try:
+        texts = {path: value.decode("utf-8") for path, value in raw_documents.items()}
+    except UnicodeError:
+        raise ValidationError("validation input is not valid UTF-8; file identity redacted") from None
     documents = [(_safe_file_label(path, repo), texts[path]) for path in target_paths]
     _secret_gate(documents)
 
@@ -1272,13 +1400,23 @@ def validate_files(
         repo=repo,
     )
     counts["git_scope_checked"] = 0
+    counts["git_ignored_paths_checked"] = 0
     if baseline_path is not None:
-        raw_baseline = baseline_path.read_bytes()
+        try:
+            raw_baseline = baseline_path.read_bytes()
+        except OSError:
+            raise ValidationError(
+                f"unable to read Git baseline: {_safe_file_label(baseline_path, repo)}",
+                exit_code=EXIT_SCOPE,
+            ) from None
         if baseline_sha256 is None or re.fullmatch(r"[0-9a-f]{64}", baseline_sha256) is None:
             raise ValidationError("Git baseline requires an externally retained SHA-256", exit_code=EXIT_SCOPE)
         if hashlib.sha256(raw_baseline).hexdigest() != baseline_sha256:
             raise ValidationError("Git baseline SHA-256 mismatch", exit_code=EXIT_SCOPE)
-        baseline = json.loads(raw_baseline.decode("utf-8"))
+        try:
+            baseline = json.loads(raw_baseline.decode("utf-8"))
+        except (UnicodeError, json.JSONDecodeError):
+            raise ValidationError("Git baseline is not valid UTF-8 JSON", exit_code=EXIT_SCOPE) from None
         issues = check_git_scope(
             baseline,
             repo=repo,
@@ -1321,6 +1459,7 @@ def run_scope_self_tests() -> dict[str, bool]:
         setup: Callable[[Path], None] | None = None,
         allow_paths: Sequence[str] = (),
         accept_dirty_allow_paths: Sequence[str] = (),
+        sensitive_markers: Sequence[str] = ("TOP_SECRET_MARKER",),
         expect_issues: bool = True,
     ) -> None:
         with tempfile.TemporaryDirectory(prefix="survarena-readiness-scope-") as temporary:
@@ -1339,7 +1478,11 @@ def run_scope_self_tests() -> dict[str, bool]:
                 accept_dirty_allow_paths=accept_dirty_allow_paths,
             )
             diagnostics = format_scope_issues(issues)
-            safe = "TOP_SECRET_MARKER" not in diagnostics
+            serialized_baseline = json.dumps(baseline, sort_keys=True)
+            safe = all(
+                marker not in diagnostics and marker not in serialized_baseline
+                for marker in sensitive_markers
+            )
             results[name] = bool(issues) == expect_issues and safe
 
     run_case(
@@ -1399,6 +1542,28 @@ def run_scope_self_tests() -> dict[str, bool]:
         _git_text(repo, "commit", "-q", "-m", "revert bytes")
 
     run_case("unauthorized_commit_then_revert", commit_and_revert)
+
+    credential_path = "hf_" + "q" * 32 + ".txt"
+    run_case(
+        "credential_shaped_path_redaction",
+        lambda repo: _write(repo / credential_path, "content\n"),
+        sensitive_markers=[credential_path],
+    )
+
+    def ignored_setup(repo: Path) -> None:
+        _write(repo / ".gitignore", "ignored-cache/\n")
+        _git_text(repo, "add", ".gitignore")
+        _git_text(repo, "commit", "-q", "-m", "declare ignored cache")
+
+    run_case(
+        "git_ignored_path_excluded_by_contract",
+        lambda repo: (_write(repo / "ignored-cache" / "cache.bin", "ignored\n")),
+        setup=lambda repo: (
+            ignored_setup(repo),
+            (repo / "ignored-cache").mkdir(),
+        ),
+        expect_issues=False,
+    )
     return results
 
 
