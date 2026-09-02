@@ -15,7 +15,7 @@ import stat
 import subprocess
 import sys
 import tempfile
-from typing import Any
+from typing import Any, NoReturn
 from urllib.error import HTTPError, URLError
 from urllib.parse import unquote, urljoin, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
@@ -161,6 +161,10 @@ class ValidationError(RuntimeError):
         self.exit_code = exit_code
 
 
+class CliArgumentError(RuntimeError):
+    """Marker for malformed argv whose original argparse message must not escape."""
+
+
 @dataclass(frozen=True)
 class SecretFinding:
     file: str
@@ -234,24 +238,34 @@ def _run_git(
     *,
     check: bool = True,
 ) -> subprocess.CompletedProcess[bytes]:
+    result: subprocess.CompletedProcess[bytes] | None = None
+    failed = False
     try:
-        return subprocess.run(["git", *args], cwd=repo, check=check, capture_output=True)
+        result = subprocess.run(["git", *args], cwd=repo, check=check, capture_output=True)
     except (OSError, subprocess.CalledProcessError):
-        raise ValidationError("Git command failed; command details redacted", exit_code=EXIT_SCOPE) from None
+        failed = True
+    if failed or result is None:
+        raise ValidationError("Git command failed; command details redacted", exit_code=EXIT_SCOPE)
+    return result
 
 
 def _repo_root(start: Path = ROOT) -> Path:
     result = _run_git(start, ["rev-parse", "--show-toplevel"])
     candidate = Path(os.fsdecode(result.stdout).strip())
+    resolved: Path | None = None
+    failed = False
     try:
-        return candidate.resolve()
+        resolved = candidate.resolve()
     except PATH_ACCESS_ERRORS:
+        failed = True
+    if failed or resolved is None:
         raise _safe_path_error(
             "unable to resolve repository root",
             candidate,
             repo=start,
             exit_code=EXIT_SCOPE,
-        ) from None
+        )
+    return resolved
 
 
 def _canonical_relative_path(value: str) -> str:
@@ -288,10 +302,14 @@ def scan_credential_texts(documents: Iterable[tuple[str, str]]) -> list[SecretFi
 def scan_credentials(paths: Iterable[Path], *, repo: Path = ROOT) -> list[SecretFinding]:
     documents: list[tuple[str, str]] = []
     for path in paths:
+        text: str | None = None
+        failed = False
         try:
             text = path.read_text(encoding="utf-8")
         except PATH_ACCESS_ERRORS:
-            raise _safe_path_error("unable to read credential-scan input", path, repo=repo) from None
+            failed = True
+        if failed or text is None:
+            raise _safe_path_error("unable to read credential-scan input", path, repo=repo)
         documents.append((_safe_file_label(path, repo), text))
     return scan_credential_texts(documents)
 
@@ -413,12 +431,17 @@ def _validate_link_expression(value: str) -> list[tuple[str, str]]:
 def _validate_static_external_url(url: str) -> None:
     _secret_gate_url(url, label="external-url")
     identity = url_identity(url)
+    parsed: Any = None
+    hostname: str | None = None
+    failed = False
     try:
         parsed = urlsplit(url)
         _ = parsed.port
         hostname = (parsed.hostname or "").encode("idna").decode("ascii").lower()
     except (UnicodeError, ValueError):
-        raise ValidationError(f"invalid external URL: {identity}") from None
+        failed = True
+    if failed or parsed is None or hostname is None:
+        raise ValidationError(f"invalid external URL: {identity}")
     if parsed.scheme != "https" or not hostname:
         raise ValidationError(f"external URL must use HTTPS with a hostname: {identity}")
     if hostname not in EXTERNAL_HOST_ALLOWLIST:
@@ -724,10 +747,14 @@ def _validate_provenance_cell(value: str) -> None:
 
 
 def _validate_iso_date(value: str) -> None:
+    parsed: date | None = None
+    failed = False
     try:
         parsed = date.fromisoformat(value)
     except ValueError:
-        raise ValidationError("Last verified is not a valid ISO date") from None
+        failed = True
+    if failed or parsed is None:
+        raise ValidationError("Last verified is not a valid ISO date")
     if parsed > date.today():
         raise ValidationError("Last verified is in the future")
 
@@ -848,12 +875,18 @@ def validate_provenance_text(text: str, *, repo: Path) -> int:
     for tag in tags:
         relative = _canonical_relative_path(tag.group("path"))
         candidate = repo / relative
+        target: Path | None = None
+        repo_root: Path | None = None
+        target_exists = False
+        failed = False
         try:
             target = candidate.resolve()
             repo_root = repo.resolve()
             target_exists = target.is_file()
         except PATH_ACCESS_ERRORS:
-            raise _safe_path_error("unable to inspect VERIFIED target", candidate, repo=repo) from None
+            failed = True
+        if failed or target is None or repo_root is None:
+            raise _safe_path_error("unable to inspect VERIFIED target", candidate, repo=repo)
         if not target.is_relative_to(repo_root) or not target_exists:
             raise ValidationError(
                 f"VERIFIED target is missing or escapes the repository: {sanitize_path(relative)}"
@@ -861,10 +894,15 @@ def validate_provenance_text(text: str, *, repo: Path) -> int:
         tracked = _run_git(repo, ["ls-files", "--error-unmatch", "--", relative], check=False)
         if tracked.returncode != 0:
             raise ValidationError(f"VERIFIED target is untracked: {sanitize_path(relative)}")
+        target_text: str | None = None
+        failed = False
         try:
-            line_count = len(target.read_text(encoding="utf-8").splitlines())
+            target_text = target.read_text(encoding="utf-8")
         except PATH_ACCESS_ERRORS:
-            raise _safe_path_error("unable to read VERIFIED target", candidate, repo=repo) from None
+            failed = True
+        if failed or target_text is None:
+            raise _safe_path_error("unable to read VERIFIED target", candidate, repo=repo)
+        line_count = len(target_text.splitlines())
         start = int(tag.group("start"))
         end = int(tag.group("end"))
         if not 1 <= start <= end <= line_count:
@@ -873,20 +911,29 @@ def validate_provenance_text(text: str, *, repo: Path) -> int:
 
 
 def validate_provenance(readiness_path: Path, *, repo: Path) -> int:
+    text: str | None = None
+    failed = False
     try:
         text = readiness_path.read_text(encoding="utf-8")
     except PATH_ACCESS_ERRORS:
-        raise _safe_path_error("unable to read provenance input", readiness_path, repo=repo) from None
+        failed = True
+    if failed or text is None:
+        raise _safe_path_error("unable to read provenance input", readiness_path, repo=repo)
     return validate_provenance_text(text, repo=repo)
 
 
 def _heading_slugs(path: Path, *, repo: Path = ROOT) -> set[str]:
     counts: dict[str, int] = {}
     slugs: set[str] = set()
+    text: str | None = None
+    failed = False
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        text = path.read_text(encoding="utf-8")
     except PATH_ACCESS_ERRORS:
-        raise _safe_path_error("unable to read local-link target", path, repo=repo) from None
+        failed = True
+    if failed or text is None:
+        raise _safe_path_error("unable to read local-link target", path, repo=repo)
+    lines = text.splitlines()
     for line in lines:
         match = re.match(r"^#{1,6}\s+(.+?)\s*#*$", line)
         if not match:
@@ -911,12 +958,18 @@ def validate_local_link_texts(documents: Sequence[tuple[Path, str]], *, repo: Pa
             if parsed.scheme or parsed.netloc:
                 raise ValidationError("unsupported local-link scheme")
             candidate = source if not parsed.path else source.parent / unquote(parsed.path)
+            destination: Path | None = None
+            repo_root: Path | None = None
+            destination_exists = False
+            failed = False
             try:
                 destination = candidate.resolve()
                 repo_root = repo.resolve()
                 destination_exists = destination.is_file()
             except PATH_ACCESS_ERRORS:
-                raise _safe_path_error("unable to inspect local-link target", candidate, repo=repo) from None
+                failed = True
+            if failed or destination is None or repo_root is None:
+                raise _safe_path_error("unable to inspect local-link target", candidate, repo=repo)
             if not destination.is_relative_to(repo_root) or not destination_exists:
                 raise ValidationError("local link is missing or escapes the repository")
             if parsed.fragment and unquote(parsed.fragment) not in _heading_slugs(destination, repo=repo):
@@ -928,10 +981,14 @@ def validate_local_link_texts(documents: Sequence[tuple[Path, str]], *, repo: Pa
 def validate_local_links(paths: Sequence[Path], *, repo: Path) -> int:
     documents: list[tuple[Path, str]] = []
     for path in paths:
+        text: str | None = None
+        failed = False
         try:
             text = path.read_text(encoding="utf-8")
         except PATH_ACCESS_ERRORS:
-            raise _safe_path_error("unable to read local-link source", path, repo=repo) from None
+            failed = True
+        if failed or text is None:
+            raise _safe_path_error("unable to read local-link source", path, repo=repo)
         documents.append((path, text))
     return validate_local_link_texts(documents, repo=repo)
 
@@ -954,13 +1011,17 @@ def _require_public_resolution(url: str) -> None:
     hostname = parsed.hostname
     if hostname is None:
         raise ValidationError(f"external destination lacks a hostname: {url_identity(url)}", exit_code=EXIT_EXTERNAL)
+    addresses: set[ipaddress.IPv4Address | ipaddress.IPv6Address] | None = None
+    failed = False
     try:
         addresses = {
             ipaddress.ip_address(result[4][0])
             for result in socket.getaddrinfo(hostname, parsed.port or 443, type=socket.SOCK_STREAM)
         }
     except (OSError, ValueError):
-        raise URLError("resolution failed") from None
+        failed = True
+    if failed or addresses is None:
+        raise URLError("resolution failed")
     if not addresses or any(not address.is_global for address in addresses):
         raise ValidationError(
             f"external destination resolved outside the public Internet: {url_identity(url)}",
@@ -1011,15 +1072,18 @@ def check_external_links(
         unique.setdefault(url, label)
     results: list[ExternalResult] = []
     for url, label in sorted(unique.items(), key=lambda item: item[1].lower()):
+        transport_failed = False
         try:
             code, effective = fetch(url)
         except ValidationError:
             raise
         except Exception:
+            transport_failed = True
+        if transport_failed:
             raise ValidationError(
                 f"external transport failed without exposing transport data: {url_identity(url)}",
                 exit_code=EXIT_EXTERNAL,
-            ) from None
+            )
         _secret_gate_url(effective, label="external-effective-url")
         _validate_static_external_url(effective)
         if code in range(200, 400):
@@ -1059,10 +1123,14 @@ def _validate_manual_external_rows(readiness_text: str, results: Sequence[Extern
         destinations = _validate_link_expression(row["Final destination"])
         if len(destinations) != 1:
             raise ValidationError("manual-source final destination must be one Markdown link")
+        checked_on: date | None = None
+        failed = False
         try:
             checked_on = date.fromisoformat(row["Checked on"])
         except ValueError:
-            raise ValidationError("manual-source review date is invalid") from None
+            failed = True
+        if failed or checked_on is None:
+            raise ValidationError("manual-source review date is invalid")
         if checked_on > date.today():
             raise ValidationError("manual-source review date is in the future")
         records[links[0][1]] = (row, destinations[0][1])
@@ -1114,6 +1182,8 @@ def _status_paths(repo: Path) -> dict[str, str]:
 
 
 def _worktree_identity(path: Path) -> tuple[str, str | None]:
+    missing = False
+    failed = False
     try:
         path.lstat()
         if path.is_symlink():
@@ -1134,26 +1204,35 @@ def _worktree_identity(path: Path) -> tuple[str, str | None]:
             return f"directory:{mode:04o}", digest.hexdigest()
         return "special", hashlib.sha256(str(path.lstat().st_mode).encode("ascii")).hexdigest()
     except FileNotFoundError:
-        return "missing", None
+        missing = True
     except PATH_ACCESS_ERRORS:
+        failed = True
+    if missing:
+        return "missing", None
+    if failed:
         raise _safe_path_error(
             "unable to inspect Git-visible path identity",
             path,
             repo=path.parent,
             exit_code=EXIT_SCOPE,
-        ) from None
+        )
+    raise ValidationError("Git-visible path identity ended unexpectedly", exit_code=EXIT_SCOPE)
 
 
 def _index_entries(repo: Path, relative: str) -> list[dict[str, str]]:
+    raw: bytes | None = None
+    failed = False
     try:
         raw = _run_git(repo, ["ls-files", "--stage", "-z", "--", relative]).stdout
     except ValidationError:
+        failed = True
+    if failed or raw is None:
         raise _safe_path_error(
             "unable to inspect Git index identity",
             repo / relative,
             repo=repo,
             exit_code=EXIT_SCOPE,
-        ) from None
+        )
     entries: list[dict[str, str]] = []
     for record in raw.split(b"\0"):
         if not record:
@@ -1161,16 +1240,23 @@ def _index_entries(repo: Path, relative: str) -> list[dict[str, str]]:
         metadata, separator, raw_path = record.partition(b"\t")
         if not separator:
             raise ValidationError("malformed Git index entry", exit_code=EXIT_SCOPE)
+        returned_path: str | None = None
+        mode: str | None = None
+        object_id: str | None = None
+        stage: str | None = None
+        failed = False
         try:
             returned_path = os.fsdecode(raw_path)
             mode, object_id, stage = metadata.decode("ascii").split()
         except PATH_ACCESS_ERRORS:
+            failed = True
+        if failed or returned_path is None or mode is None or object_id is None or stage is None:
             raise _safe_path_error(
                 "unable to decode Git index identity",
                 repo / relative,
                 repo=repo,
                 exit_code=EXIT_SCOPE,
-            ) from None
+            )
         if _path_digest(returned_path) != _path_digest(relative):
             raise ValidationError("Git index returned an unexpected path", exit_code=EXIT_SCOPE)
         entries.append({"mode": mode, "object_id": object_id, "stage": stage})
@@ -1218,30 +1304,38 @@ def create_git_baseline(repo: Path) -> dict[str, Any]:
 
 
 def write_git_baseline(output: Path, *, repo: Path) -> str:
+    resolved_output: Path | None = None
+    repo_root: Path | None = None
+    failed = False
     try:
         resolved_output = output.resolve()
         repo_root = repo.resolve()
     except PATH_ACCESS_ERRORS:
+        failed = True
+    if failed or resolved_output is None or repo_root is None:
         raise _safe_path_error(
             "unable to resolve Git baseline output",
             output,
             repo=repo,
             exit_code=EXIT_SCOPE,
-        ) from None
+        )
     if resolved_output == repo_root or resolved_output.is_relative_to(repo_root):
         raise ValidationError("Git baseline output must be outside the repository", exit_code=EXIT_SCOPE)
     payload = create_git_baseline(repo)
     serialized = (json.dumps(payload, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    failed = False
     try:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_bytes(serialized)
     except PATH_ACCESS_ERRORS:
+        failed = True
+    if failed:
         raise _safe_path_error(
             "unable to write Git baseline output",
             output,
             repo=repo,
             exit_code=EXIT_SCOPE,
-        ) from None
+        )
     return hashlib.sha256(serialized).hexdigest()
 
 
@@ -1417,10 +1511,15 @@ def validate_files(
     target_paths = [readiness_path, index_path, roadmap_path, requirements_path]
     texts: dict[Path, str] = {}
     for path in target_paths:
+        text: str | None = None
+        failed = False
         try:
-            texts[path] = path.read_bytes().decode("utf-8")
+            text = path.read_bytes().decode("utf-8")
         except PATH_ACCESS_ERRORS:
-            raise _safe_path_error("unable to read or decode validation input", path, repo=repo) from None
+            failed = True
+        if failed or text is None:
+            raise _safe_path_error("unable to read or decode validation input", path, repo=repo)
+        texts[path] = text
     documents = [(_safe_file_label(path, repo), texts[path]) for path in target_paths]
     _secret_gate(documents)
 
@@ -1439,28 +1538,36 @@ def validate_files(
     counts["git_scope_checked"] = 0
     counts["git_ignored_paths_checked"] = 0
     if baseline_path is not None:
+        raw_baseline: bytes | None = None
+        failed = False
         try:
             raw_baseline = baseline_path.read_bytes()
         except PATH_ACCESS_ERRORS:
+            failed = True
+        if failed or raw_baseline is None:
             raise _safe_path_error(
                 "unable to read Git baseline",
                 baseline_path,
                 repo=repo,
                 exit_code=EXIT_SCOPE,
-            ) from None
+            )
         if baseline_sha256 is None or re.fullmatch(r"[0-9a-f]{64}", baseline_sha256) is None:
             raise ValidationError("Git baseline requires an externally retained SHA-256", exit_code=EXIT_SCOPE)
         if hashlib.sha256(raw_baseline).hexdigest() != baseline_sha256:
             raise ValidationError("Git baseline SHA-256 mismatch", exit_code=EXIT_SCOPE)
+        baseline: Any = None
+        failed = False
         try:
             baseline = json.loads(raw_baseline.decode("utf-8"))
         except (UnicodeError, json.JSONDecodeError):
+            failed = True
+        if failed or baseline is None:
             raise _safe_path_error(
                 "unable to decode Git baseline",
                 baseline_path,
                 repo=repo,
                 exit_code=EXIT_SCOPE,
-            ) from None
+            )
         issues = check_git_scope(
             baseline,
             repo=repo,
@@ -1611,8 +1718,19 @@ def run_scope_self_tests() -> dict[str, bool]:
     return results
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Validate the SurvArena benchmark-readiness register.")
+class SafeArgumentParser(argparse.ArgumentParser):
+    """Argument parser that never echoes malformed user-controlled argv."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        kwargs.setdefault("prog", "benchmark-readiness-validator")
+        super().__init__(*args, **kwargs)
+
+    def error(self, _message: str) -> NoReturn:
+        raise CliArgumentError("invalid command line; details redacted")
+
+
+def _build_parser() -> SafeArgumentParser:
+    parser = SafeArgumentParser(description="Validate the SurvArena benchmark-readiness register.")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     snapshot = subparsers.add_parser("snapshot-git", help="Record HEAD/tree plus dirty and index identities.")
@@ -1635,8 +1753,16 @@ def _build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
+    args: argparse.Namespace | None = None
+    parse_failed = False
     try:
         args = parser.parse_args(argv)
+    except CliArgumentError:
+        parse_failed = True
+    if parse_failed or args is None:
+        print("benchmark_readiness_validation: FAIL code=invalid_arguments details=redacted", file=sys.stderr)
+        return EXIT_USAGE
+    try:
         repo = _repo_root(ROOT)
         if args.command == "snapshot-git":
             baseline_sha256 = write_git_baseline(args.output, repo=repo)

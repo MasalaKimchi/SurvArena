@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 import json
 from pathlib import Path
+import subprocess
 import sys
+import traceback
 
 import pytest
 
@@ -19,6 +22,40 @@ def _read(path: Path) -> str:
 def _assert_sensitive_absent(sensitive: str, *outputs: str) -> None:
     if any(sensitive in output for output in outputs):
         pytest.fail("credential-shaped test value reached output", pytrace=False)
+
+
+def _capture_validation_error(operation: Callable[[], object]) -> validator.ValidationError:
+    caught: validator.ValidationError | None = None
+    unexpected_error = False
+    try:
+        operation()
+    except validator.ValidationError as error:
+        caught = error
+    except Exception:
+        unexpected_error = True
+    if unexpected_error:
+        pytest.fail("validator exposed an unexpected exception type", pytrace=False)
+    if caught is None:
+        pytest.fail("validator did not fail closed", pytrace=False)
+    return caught
+
+
+def _safe_exception_surfaces(
+    error: validator.ValidationError,
+    sensitive_values: list[str],
+) -> tuple[str, str, str]:
+    if error.__context__ is not None:
+        pytest.fail("sanitized exception retained raw context", pytrace=False)
+    if error.__cause__ is not None:
+        pytest.fail("sanitized exception retained raw cause", pytrace=False)
+    surfaces = (
+        str(error),
+        repr(error),
+        "".join(traceback.format_exception(type(error), error, error.__traceback__)),
+    )
+    for sensitive in sensitive_values:
+        _assert_sensitive_absent(sensitive, *surfaces)
+    return surfaces
 
 
 def _credential_filename(kind: str) -> str:
@@ -232,21 +269,12 @@ def test_credential_scan_fails_closed_without_leaking_self_referential_symlink_p
     if setup_failed:
         pytest.fail("credential-path symlink fixture setup failed", pytrace=False)
 
-    rendered: str | None = None
-    unexpected_error = False
-    try:
-        validator.scan_credentials([target], repo=repo)
-    except validator.ValidationError as error:
-        rendered = str(error)
-    except Exception:
-        unexpected_error = True
-    if unexpected_error:
-        pytest.fail("credential scanner exposed a non-redacted exception boundary", pytrace=False)
-    if rendered is None:
-        pytest.fail("self-referential credential-path symlink was not rejected", pytrace=False)
+    error = _capture_validation_error(lambda: validator.scan_credentials([target], repo=repo))
+    surfaces = _safe_exception_surfaces(error, [filename, str(target)])
+    rendered = surfaces[0]
 
-    print(rendered)
-    print(rendered, file=sys.stderr)
+    print("\n".join(surfaces))
+    print("\n".join(surfaces), file=sys.stderr)
     captured = capsys.readouterr()
     outputs = (rendered, captured.out, captured.err)
     _assert_sensitive_absent(filename, *outputs)
@@ -254,6 +282,123 @@ def test_credential_scan_fails_closed_without_leaking_self_referential_symlink_p
     assert "unable to read credential-scan input" in rendered
     assert "<redacted-path>" in rendered
     assert "path_id=" in rendered
+
+
+@pytest.mark.parametrize("failure_kind", ["read", "stat", "decode"])
+def test_path_failures_clear_context_cause_and_all_rendered_surfaces(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    failure_kind: str,
+) -> None:
+    filename = _credential_filename("hugging_face")
+    target = tmp_path / filename
+    operation: Callable[[], object]
+
+    if failure_kind == "read":
+        _write_sensitive_fixture(target, "read failure\n")
+        original_read_text = Path.read_text
+
+        def fail_read(path: Path, *args: object, **kwargs: object) -> str:
+            if path == target:
+                raise PermissionError(str(path))
+            return original_read_text(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "read_text", fail_read)
+
+        def operation() -> object:
+            return validator.scan_credentials([target], repo=tmp_path)
+
+    elif failure_kind == "stat":
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        validator._init_scope_test_repo(repo)
+        target = repo / filename
+        _write_sensitive_fixture(target, "stat failure\n")
+        original_stat = Path.stat
+
+        def fail_stat(path: Path, *args: object, **kwargs: object) -> object:
+            if path == target:
+                raise OSError(str(path))
+            return original_stat(path, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "stat", fail_stat)
+
+        def operation() -> object:
+            return validator.create_git_baseline(repo)
+
+    else:
+        try:
+            target.write_bytes(b"\xff\xfeinvalid-utf8")
+        except Exception:
+            pytest.fail("credential-path decode fixture setup failed", pytrace=False)
+        def operation() -> object:
+            return validator.validate_files(
+                readiness_path=target,
+                index_path=validator.INDEX_PATH,
+                roadmap_path=validator.ROADMAP_PATH,
+                requirements_path=validator.REQUIREMENTS_PATH,
+                repo=tmp_path,
+            )
+
+    error = _capture_validation_error(operation)
+    surfaces = _safe_exception_surfaces(error, [filename, str(target)])
+    print("\n".join(surfaces))
+    print("\n".join(surfaces), file=sys.stderr)
+    captured = capsys.readouterr()
+    _assert_sensitive_absent(filename, captured.out, captured.err)
+    _assert_sensitive_absent(str(target), captured.out, captured.err)
+
+
+def test_malformed_cli_never_echoes_user_controlled_arguments(tmp_path: Path) -> None:
+    script = ROOT / "scripts/validate_benchmark_readiness.py"
+    baseline_name = _credential_filename("slack")
+    baseline_loop = tmp_path / baseline_name
+    setup_failed = False
+    try:
+        baseline_loop.symlink_to(baseline_name)
+    except Exception:
+        setup_failed = True
+    if setup_failed:
+        pytest.fail("credential-path CLI fixture setup failed", pytrace=False)
+
+    url_userinfo = "url-user-marker:url-password-marker"
+    url_query = "api_key=" + "z" * 24
+    url_fragment = "fragment-marker"
+    unsafe_url = f"https://{url_userinfo}@example.invalid/path?{url_query}#{url_fragment}"
+    cases = [
+        (["self-test", _credential_filename("hugging_face")], [_credential_filename("hugging_face")]),
+        ([_credential_filename("github")], [_credential_filename("github")]),
+        (["check", "--external", _credential_filename("openai")], [_credential_filename("openai")]),
+        (["check", "--" + _credential_filename("generic")], [_credential_filename("generic")]),
+        (
+            ["check", "--baseline", str(baseline_loop), "--baseline-sha256", "0" * 64],
+            [baseline_name, str(baseline_loop)],
+        ),
+        (["self-test", unsafe_url], [unsafe_url, url_userinfo, url_query, url_fragment]),
+    ]
+
+    for arguments, sensitive_values in cases:
+        result: subprocess.CompletedProcess[str] | None = None
+        execution_failed = False
+        try:
+            result = subprocess.run(
+                [sys.executable, str(script), *arguments],
+                cwd=ROOT,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+        except Exception:
+            execution_failed = True
+        if execution_failed or result is None:
+            pytest.fail("malformed CLI fixture could not execute", pytrace=False)
+        if result.returncode == 0:
+            pytest.fail("malformed CLI input did not fail closed", pytrace=False)
+        for sensitive in sensitive_values:
+            _assert_sensitive_absent(sensitive, result.stdout, result.stderr)
+        if "Traceback" in result.stdout or "Traceback" in result.stderr:
+            pytest.fail("malformed CLI emitted a traceback", pytrace=False)
 
 
 def test_url_diagnostics_mask_userinfo_query_and_fragment() -> None:
