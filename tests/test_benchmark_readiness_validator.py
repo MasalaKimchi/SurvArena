@@ -41,24 +41,33 @@ def _credential_filename(kind: str) -> str:
 
 
 def _git_add_sensitive_fixture(repo: Path, filename: str) -> None:
+    failed = False
     try:
         validator._git_text(repo, "add", "--", filename)
     except Exception:
+        failed = True
+    if failed:
         pytest.fail("credential-path Git fixture setup failed", pytrace=False)
 
 
 def _write_sensitive_fixture(path: Path, value: str) -> None:
+    failed = False
     try:
         path.write_text(value, encoding="utf-8")
     except Exception:
+        failed = True
+    if failed:
         pytest.fail("credential-path file fixture setup failed", pytrace=False)
 
 
 def _commit_sensitive_fixture(repo: Path, filename: str) -> None:
     _git_add_sensitive_fixture(repo, filename)
+    failed = False
     try:
         validator._git_text(repo, "commit", "-q", "-m", "credential-path fixture")
     except Exception:
+        failed = True
+    if failed:
         pytest.fail("credential-path commit fixture setup failed", pytrace=False)
 
 
@@ -203,6 +212,48 @@ def test_secret_finding_json_redacts_a_credential_shaped_filename(tmp_path: Path
 
     _assert_sensitive_absent(filename, rendered)
     assert "<redacted-path>" in rendered
+
+
+@pytest.mark.parametrize("credential_kind", ["hugging_face", "gitlab"])
+def test_credential_scan_fails_closed_without_leaking_self_referential_symlink_path(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    credential_kind: str,
+) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    filename = _credential_filename(credential_kind)
+    target = repo / filename
+    setup_failed = False
+    try:
+        target.symlink_to(filename)
+    except Exception:
+        setup_failed = True
+    if setup_failed:
+        pytest.fail("credential-path symlink fixture setup failed", pytrace=False)
+
+    rendered: str | None = None
+    unexpected_error = False
+    try:
+        validator.scan_credentials([target], repo=repo)
+    except validator.ValidationError as error:
+        rendered = str(error)
+    except Exception:
+        unexpected_error = True
+    if unexpected_error:
+        pytest.fail("credential scanner exposed a non-redacted exception boundary", pytrace=False)
+    if rendered is None:
+        pytest.fail("self-referential credential-path symlink was not rejected", pytrace=False)
+
+    print(rendered)
+    print(rendered, file=sys.stderr)
+    captured = capsys.readouterr()
+    outputs = (rendered, captured.out, captured.err)
+    _assert_sensitive_absent(filename, *outputs)
+    _assert_sensitive_absent(str(target), *outputs)
+    assert "unable to read credential-scan input" in rendered
+    assert "<redacted-path>" in rendered
+    assert "path_id=" in rendered
 
 
 def test_url_diagnostics_mask_userinfo_query_and_fragment() -> None:
@@ -469,13 +520,21 @@ def test_unreadable_credential_shaped_path_raises_only_a_safe_error(
         return original_read_bytes(path)
 
     monkeypatch.setattr(Path, "read_bytes", fail_sensitive_read)
+    rendered: str | None = None
+    unexpected_error = False
     try:
         validator.create_git_baseline(repo)
     except validator.ValidationError as error:
-        _assert_sensitive_absent(filename, str(error))
-        assert str(error) == "unable to inspect Git-visible path identity"
-    else:
+        rendered = str(error)
+    except Exception:
+        unexpected_error = True
+    if unexpected_error:
+        pytest.fail("path identity exposed a non-redacted exception boundary", pytrace=False)
+    if rendered is None:
         pytest.fail("unreadable credential-path fixture was not rejected", pytrace=False)
+    _assert_sensitive_absent(filename, rendered)
+    if not rendered.startswith("unable to inspect Git-visible path identity: <redacted-path> [path_id="):
+        pytest.fail("path identity error omitted its safe redacted identity", pytrace=False)
 
 
 def test_git_ignored_paths_are_explicitly_excluded_from_scope(tmp_path: Path) -> None:
