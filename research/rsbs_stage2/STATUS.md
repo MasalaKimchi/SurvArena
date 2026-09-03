@@ -1,0 +1,1 @@
+Exploratory branch. The drop-in loss, concordance references, mathematical tests, findings, and confirmatory protocol are ready for review. No universal performance claim is made.
